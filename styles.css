@@ -105,6 +105,13 @@ html, body {
   grid-template-columns: 1fr 88px auto;
   gap: 8px;
   margin-bottom: 12px;
+  align-items: stretch;
+}
+#addToSetForm.row-form {
+  grid-template-columns: 1fr 88px;
+}
+#addToSetForm #btnAddToSet {
+  grid-column: 1 / -1;
 }
 .grid2 {
   display: grid;
