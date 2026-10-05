@@ -262,6 +262,35 @@ input[type="text"], input[type="number"] {
   font-size: 12px;
   margin-bottom: 0;
 }
+.progress-box {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  width: min(92vw, 360px);
+  margin: 4px 0 8px;
+}
+.progress-item {
+  background: #17130e;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 8px 6px 10px;
+}
+.progress-k {
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.progress-v {
+  font-family: var(--display);
+  font-size: clamp(34px, 11vw, 52px);
+  font-weight: 700;
+  line-height: 1;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+.progress-v span { color: var(--muted); margin: 0 .06em; }
+.progress-item[hidden] { display: none !important; }
 .run-stage.rest .phase {
   font-size: clamp(20px, 5vw, 26px);
   margin-bottom: 0;
@@ -273,18 +302,6 @@ input[type="text"], input[type="number"] {
 .run-stage.rest .move-big { display: none; }
 .run-stage.rest .sub {
   display: none;
-}
-.run-ctx {
-  font-size: clamp(18px, 5vw, 24px);
-  font-weight: 900;
-  color: var(--txt);
-  line-height: 1.35;
-  max-width: 92vw;
-  margin-bottom: 4px;
-  padding: 8px 12px;
-  background: rgba(255, 255, 255, .06);
-  border: 1px solid var(--line);
-  border-radius: 12px;
 }
 .frac {
   font-family: var(--display);

@@ -21,6 +21,7 @@
   let run = null;
   let raf = 0;
   let voiceReady = false;
+  let faVoice = null;
   let enVoice = null;
 
   const viewIds = ["home", "moves", "edit", "run", "done"];
@@ -83,9 +84,13 @@
   function loadVoices() {
     if (!window.speechSynthesis) return;
     const voices = speechSynthesis.getVoices() || [];
+    faVoice =
+      voices.find((v) => /^fa/i.test(v.lang)) ||
+      voices.find((v) => /persian|farsi/i.test(v.name)) ||
+      null;
     enVoice =
-      voices.find((v) => /^en(-|_)?US/i.test(v.lang) && /google|samantha|zira|natural/i.test(v.name)) ||
-      voices.find((v) => /^en(-|_)?US/i.test(v.lang)) ||
+      voices.find((v) => /^en(-|_|$)/i.test(v.lang) && /female|zira|samantha|google|aria|jenny/i.test(v.name)) ||
+      voices.find((v) => /^en-US/i.test(v.lang)) ||
       voices.find((v) => /^en(-|_|$)/i.test(v.lang)) ||
       null;
     voiceReady = true;
@@ -95,31 +100,28 @@
     speechSynthesis.onvoiceschanged = loadVoices;
   }
 
-  /** فقط عدد و زمان — صدای انگلیسی؛ اسم حرکت خوانده نمی‌شود */
+  /** عدد و زمان باقی‌مانده با صدای انگلیسی */
   function speakEn(text) {
     if (!window.speechSynthesis || !text) return;
     try {
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(String(text));
-      u.lang = "en-US";
+      u.lang = (enVoice && enVoice.lang) || "en-US";
       if (enVoice) u.voice = enVoice;
-      u.rate = 0.92;
+      u.rate = 1;
       u.pitch = 1;
       speechSynthesis.speak(u);
     } catch {}
   }
 
-  function speakNum(n) {
-    speakEn(String(Math.round(Number(n) || 0)));
-  }
-
   function speakSeconds(sec) {
-    const n = Math.round(Number(sec) || 0);
-    speakEn(n + " seconds");
+    const n = Math.round(sec);
+    speakEn(String(n));
   }
 
   function speakPhase(step) {
-    speakSeconds(step.dur);
+    const n = Math.round(step.dur);
+    speakEn(String(n) + " seconds");
   }
 
   function bumpNumber(input, dir) {
@@ -439,27 +441,28 @@
     const isRest = step.kind !== "work";
     stage.classList.toggle("work", !isRest);
     stage.classList.toggle("rest", isRest);
-    const ctx = $("#runCtx");
-    const setLine =
-      "ست " + toFaDigits(step.round) + " از " + toFaDigits(step.rounds);
+    $("#runFrac").innerHTML = toFaDigits(step.round) + "<span>/</span>" + toFaDigits(step.rounds);
+    const mc = $("#runMoveCount");
+    const mpi = $("#moveProgressItem");
     if (step.kind === "work") {
-      if (ctx) {
-        ctx.textContent =
-          setLine +
-          " · حرکت " +
-          toFaDigits(step.moveIndex) +
-          " از " +
-          toFaDigits(step.moveCount);
-      }
       $("#runPhase").textContent = "تمرین";
       moveEl.textContent = step.name;
       moveEl.hidden = false;
+      if (mc) {
+        mc.innerHTML =
+          toFaDigits(step.moveIndex) + "<span>/</span>" + toFaDigits(step.moveCount);
+      }
+      if (mpi) mpi.hidden = false;
       $("#runSub").textContent = "";
     } else {
-      if (ctx) ctx.textContent = setLine + " · استراحت";
       $("#runPhase").textContent = step.kind === "rest-set" ? "استراحت ست" : "استراحت";
       moveEl.textContent = "";
       moveEl.hidden = true;
+      if (mc) {
+        mc.innerHTML =
+          toFaDigits(step.moveIndex) + "<span>/</span>" + toFaDigits(step.moveCount);
+      }
+      if (mpi) mpi.hidden = false;
       $("#runSub").textContent = "";
     }
     $("#runTimer").textContent = fmt(run.left);
@@ -534,7 +537,7 @@
     $("#doneFrac").innerHTML = toFaDigits(rounds) + "<span>/</span>" + toFaDigits(rounds);
     const msg = $("#doneMsg");
     if (msg) msg.textContent = "تمام شد · " + toFaDigits(rounds) + " ست";
-    speakNum(rounds);
+    speakEn(String(rounds));
     show("done");
   }
 

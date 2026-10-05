@@ -99,7 +99,16 @@
 
       <section id="view-run" class="view">
         <div class="run-stage" id="runStage">
-          <div class="run-ctx" id="runCtx">ست ۱ از ۴ · حرکت ۱ از ۳</div>
+          <div class="progress-box" id="progressBox">
+            <div class="progress-item">
+              <div class="progress-k">ست</div>
+              <div class="progress-v" id="runFrac">۱<span>/</span>۴</div>
+            </div>
+            <div class="progress-item" id="moveProgressItem">
+              <div class="progress-k">حرکت</div>
+              <div class="progress-v" id="runMoveCount">۱<span>/</span>۳</div>
+            </div>
+          </div>
           <div class="phase" id="runPhase">تمرین</div>
           <div class="move-big" id="runMove">—</div>
           <div class="timer-big" id="runTimer">0:40</div>
