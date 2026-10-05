@@ -440,17 +440,15 @@
     if (step.kind === "work") {
       $("#runPhase").textContent = "کار";
       moveEl.textContent = step.name;
-      moveEl.classList.remove("is-rest-title");
       moveEl.hidden = false;
       $("#runSub").textContent =
         "حرکت " + toFaDigits(step.moveIndex) + " از " + toFaDigits(step.moveCount);
     } else {
+      // استراحت: فقط برچسب + تایمر؛ اسم بعدی فقط داخل کارت بزرگ
       $("#runPhase").textContent = step.kind === "rest-set" ? "استراحت ست" : "استراحت";
-      // فقط نام حرکت بعدی — بدون برچسب گیج‌کننده
-      moveEl.textContent = step.nextName || "—";
-      moveEl.classList.remove("is-rest-title");
-      moveEl.hidden = false;
-      $("#runSub").textContent = "حرکت بعدی بعد از استراحت";
+      moveEl.textContent = "";
+      moveEl.hidden = true;
+      $("#runSub").textContent = "";
     }
     $("#runTimer").textContent = fmt(run.left);
     $("#btnPause").textContent = run.paused ? "ادامه" : "توقف";
@@ -470,12 +468,18 @@
     const step = run.steps[run.i];
 
     if (step.kind !== "work") {
-      // استراحت: اسم بعدی همین الان بالا بزرگ است؛ کارت تکراری لازم نیست
-      card.hidden = true;
+      if (!step.nextName) {
+        card.hidden = true;
+        return;
+      }
+      card.hidden = false;
+      if (lblEl) lblEl.textContent = "حرکت بعدی";
+      if (chipEl) chipEl.textContent = step.kind === "rest-set" ? "ست بعد" : "همین ست";
+      nameEl.textContent = step.nextName;
+      metaEl.textContent = "بعد از تایمر شروع می‌شود";
       return;
     }
 
-    // کار: فقط بگو بعدش چه می‌شود
     const next = run.steps[run.i + 1];
     if (!next) {
       card.hidden = true;
@@ -483,15 +487,15 @@
     }
     card.hidden = false;
     if (next.kind === "work") {
-      if (lblEl) lblEl.textContent = "بعدی";
+      if (lblEl) lblEl.textContent = "حرکت بعدی";
       if (chipEl) chipEl.textContent = "";
       nameEl.textContent = next.name;
       metaEl.textContent = toFaDigits(next.dur) + " ثانیه";
     } else if (next.nextName) {
       if (lblEl) lblEl.textContent = "بعد از استراحت";
-      if (chipEl) chipEl.textContent = toFaDigits(next.dur) + "ث استراحت";
+      if (chipEl) chipEl.textContent = toFaDigits(next.dur) + " ثانیه استراحت";
       nameEl.textContent = next.nextName;
-      metaEl.textContent = "";
+      metaEl.textContent = "اول استراحت، بعد این حرکت";
     } else {
       card.hidden = true;
     }
