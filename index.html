@@ -6,20 +6,20 @@
   <meta name="theme-color" content="#12100c"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-  <meta name="apple-mobile-web-app-title" content="ست‌داد"/>
-  <title>ست‌داد</title>
+  <meta name="apple-mobile-web-app-title" content="ست‌چین"/>
+  <title>ست‌چین</title>
   <link rel="manifest" href="manifest.webmanifest"/>
   <link rel="icon" href="icon.svg" type="image/svg+xml"/>
   <link rel="apple-touch-icon" href="icon-180.png"/>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@500;700;800;900&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet"/>
-  <link rel="stylesheet" href="styles.css?v=2"/>
+  <link rel="stylesheet" href="styles.css?v=3"/>
 </head>
 <body>
   <div id="app">
     <header class="top" id="topBar">
-      <div class="brand">ست<span>‌داد</span></div>
+      <div class="brand">ست<span>‌چین</span></div>
       <nav class="tabs" id="navTabs">
         <button type="button" data-view="home" class="on">جلسات</button>
         <button type="button" data-view="moves">حرکت‌ها</button>
@@ -67,7 +67,7 @@
             <input id="pickMoveName" list="moveDatalist" type="text" required maxlength="60" placeholder="حرکت"/>
             <datalist id="moveDatalist"></datalist>
             <input id="pickWork" type="number" min="5" max="600" step="5" value="40" inputmode="numeric"/>
-            <button type="submit" class="btn primary sm">به ست</button>
+            <button type="submit" class="btn primary sm" id="btnAddToSet">افزودن به این ست</button>
           </form>
           <ol id="circuitList" class="seq"></ol>
         </div>
@@ -86,6 +86,11 @@
           <div class="move-big" id="runMove">—</div>
           <div class="timer-big" id="runTimer">0:40</div>
           <div class="sub" id="runSub"></div>
+          <div class="next-card" id="nextCard" hidden>
+            <div class="next-lbl">بعدی</div>
+            <div class="next-name" id="nextName">—</div>
+            <div class="next-meta" id="nextMeta"></div>
+          </div>
         </div>
         <div class="run-bar">
           <button type="button" class="btn big" id="btnPause">توقف</button>
@@ -102,7 +107,7 @@
       </section>
     </main>
   </div>
-  <script src="app.js?v=2"></script>
+  <script src="app.js?v=3"></script>
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("./sw.js").catch(() => {});

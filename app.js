@@ -425,8 +425,33 @@
     $("#runSub").textContent =
       "حرکت " + toFaDigits(step.moveIndex) + " از " + toFaDigits(step.moveCount) + " · " + run.title;
     $("#btnPause").textContent = run.paused ? "ادامه" : "توقف";
+    paintNext();
     if (announceStart) {
       speakPhase(step.kind, step.name, step.dur);
+    }
+  }
+
+  function paintNext() {
+    const card = $("#nextCard");
+    const nameEl = $("#nextName");
+    const metaEl = $("#nextMeta");
+    if (!card || !run) return;
+    const next = run.steps[run.i + 1];
+    if (!next) {
+      card.hidden = true;
+      return;
+    }
+    card.hidden = false;
+    if (next.kind === "work") {
+      nameEl.textContent = next.name;
+      metaEl.textContent =
+        "کار · " + toFaDigits(next.dur) + " ثانیه · ست " + toFaDigits(next.round) + "/" + toFaDigits(next.rounds);
+    } else if (next.kind === "rest-set") {
+      nameEl.textContent = "استراحت بین ست";
+      metaEl.textContent = toFaDigits(next.dur) + " ثانیه · بعد ست " + toFaDigits(Math.min(next.round + 1, next.rounds));
+    } else {
+      nameEl.textContent = "استراحت بین حرکت";
+      metaEl.textContent = toFaDigits(next.dur) + " ثانیه";
     }
   }
 
