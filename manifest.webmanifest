@@ -7,7 +7,7 @@
   "theme_color": "#12100c",
   "lang": "fa",
   "dir": "rtl",
-  "description": "ست ترکیبی، تایمر، صدای فارسی، آماده‌باش برای حرکت بعدی",
+  "description": "ست ترکیبی، تایمر، صدای فارسی، نمایش حرکت بعدی در استراحت",
   "icons": [
     { "src": "icon-180.png", "sizes": "180x180", "type": "image/png" },
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
