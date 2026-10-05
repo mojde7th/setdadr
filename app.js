@@ -438,16 +438,25 @@
     $("#runFrac").innerHTML = toFaDigits(step.round) + "<span>/</span>" + toFaDigits(step.rounds);
     $("#runFracLbl").textContent = "ست";
     if (step.kind === "work") {
-      $("#runPhase").textContent = "کار";
+      $("#runPhase").textContent = "تمرین";
       moveEl.textContent = step.name;
       moveEl.hidden = false;
-      $("#runSub").textContent =
-        "حرکت " + toFaDigits(step.moveIndex) + " از " + toFaDigits(step.moveCount);
+      const mc = $("#runMoveCount");
+      if (mc) {
+        mc.hidden = false;
+        mc.textContent =
+          "حرکت " + toFaDigits(step.moveIndex) + " از " + toFaDigits(step.moveCount);
+      }
+      $("#runSub").textContent = "";
     } else {
-      // استراحت: فقط برچسب + تایمر؛ اسم بعدی فقط داخل کارت بزرگ
       $("#runPhase").textContent = step.kind === "rest-set" ? "استراحت ست" : "استراحت";
       moveEl.textContent = "";
       moveEl.hidden = true;
+      const mc = $("#runMoveCount");
+      if (mc) {
+        mc.hidden = true;
+        mc.textContent = "";
+      }
       $("#runSub").textContent = "";
     }
     $("#runTimer").textContent = fmt(run.left);
@@ -464,8 +473,18 @@
     const metaEl = $("#nextMeta");
     const lblEl = $("#nextLbl");
     const chipEl = $("#nextChip");
+    const step1 = $("#nextStep1");
+    const step2 = $("#nextStep2");
+    const step1Val = $("#nextStep1Val");
+    const step2Val = $("#nextStep2Val");
     if (!card || !run) return;
     const step = run.steps[run.i];
+
+    function hideSteps() {
+      if (step1) step1.hidden = true;
+      if (step2) step2.hidden = true;
+      if (nameEl) nameEl.hidden = false;
+    }
 
     if (step.kind !== "work") {
       if (!step.nextName) {
@@ -473,10 +492,11 @@
         return;
       }
       card.hidden = false;
+      hideSteps();
       if (lblEl) lblEl.textContent = "حرکت بعدی";
       if (chipEl) chipEl.textContent = step.kind === "rest-set" ? "ست بعد" : "همین ست";
       nameEl.textContent = step.nextName;
-      metaEl.textContent = "بعد از تایمر شروع می‌شود";
+      metaEl.textContent = "بعد از این استراحت";
       return;
     }
 
@@ -486,19 +506,36 @@
       return;
     }
     card.hidden = false;
+
     if (next.kind === "work") {
+      hideSteps();
       if (lblEl) lblEl.textContent = "حرکت بعدی";
       if (chipEl) chipEl.textContent = "";
       nameEl.textContent = next.name;
-      metaEl.textContent = toFaDigits(next.dur) + " ثانیه";
-    } else if (next.nextName) {
-      if (lblEl) lblEl.textContent = "بعد از استراحت";
-      if (chipEl) chipEl.textContent = toFaDigits(next.dur) + " ثانیه استراحت";
-      nameEl.textContent = next.nextName;
-      metaEl.textContent = "اول استراحت، بعد این حرکت";
-    } else {
-      card.hidden = true;
+      metaEl.textContent = toFaDigits(next.dur) + " ثانیه · بدون استراحت وسط";
+      return;
     }
+
+    if (next.nextName) {
+      // اول استراحت، بعد حرکت — دو خط واضح
+      if (lblEl) lblEl.textContent = "صف بعدی";
+      if (chipEl) chipEl.textContent = "";
+      nameEl.hidden = true;
+      nameEl.textContent = "";
+      if (step1 && step1Val) {
+        step1.hidden = false;
+        step1Val.textContent =
+          "استراحت " + toFaDigits(next.dur) + " ثانیه" + (next.kind === "rest-set" ? " بین ست" : "");
+      }
+      if (step2 && step2Val) {
+        step2.hidden = false;
+        step2Val.textContent = next.nextName;
+      }
+      metaEl.textContent = "اول استراحت، بعد این حرکت";
+      return;
+    }
+
+    card.hidden = true;
   }
 
   function finishRun() {

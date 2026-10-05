@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@500;700;800;900&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet"/>
-  <link rel="stylesheet" href="styles.css?v=9"/>
+  <link rel="stylesheet" href="styles.css?v=10"/>
 </head>
 <body>
   <div id="app">
@@ -101,14 +101,23 @@
         <div class="run-stage" id="runStage">
           <div class="frac" id="runFrac">۱<span>/</span>۴</div>
           <div class="frac-lbl" id="runFracLbl">ست</div>
-          <div class="phase" id="runPhase">کار</div>
+          <div class="phase" id="runPhase">تمرین</div>
+          <div class="move-count" id="runMoveCount" hidden></div>
           <div class="move-big" id="runMove">—</div>
           <div class="timer-big" id="runTimer">0:40</div>
           <div class="sub" id="runSub"></div>
           <div class="next-card" id="nextCard" hidden>
             <div class="next-top">
-              <span class="next-lbl" id="nextLbl">حرکت بعدی</span>
+              <span class="next-lbl" id="nextLbl">بعدی</span>
               <span class="next-chip" id="nextChip"></span>
+            </div>
+            <div class="next-step" id="nextStep1" hidden>
+              <span class="next-step-k">اول</span>
+              <span class="next-step-v" id="nextStep1Val"></span>
+            </div>
+            <div class="next-step" id="nextStep2" hidden>
+              <span class="next-step-k">بعد</span>
+              <span class="next-step-v" id="nextStep2Val"></span>
             </div>
             <div class="next-name" id="nextName">—</div>
             <div class="next-meta" id="nextMeta"></div>
@@ -130,7 +139,7 @@
       </section>
     </main>
   </div>
-  <script src="app.js?v=9"></script>
+  <script src="app.js?v=10"></script>
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("./sw.js").catch(() => {});

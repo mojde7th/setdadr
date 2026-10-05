@@ -295,6 +295,14 @@ input[type="text"], input[type="number"] {
   color: var(--glow, var(--accent));
   letter-spacing: .04em;
 }
+.move-count {
+  font-size: clamp(28px, 8vw, 42px);
+  font-weight: 900;
+  color: var(--txt);
+  margin: 2px 0 4px;
+  letter-spacing: .02em;
+}
+.move-count[hidden] { display: none !important; }
 .move-big {
   font-size: clamp(30px, 8.5vw, 44px);
   font-weight: 900;
@@ -370,6 +378,38 @@ input[type="text"], input[type="number"] {
   line-height: 1.2;
   word-break: break-word;
   color: var(--txt);
+}
+.next-name[hidden] { display: none !important; }
+.next-step {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: center;
+  text-align: right;
+  margin: 8px 0;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, .04);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+.next-step[hidden] { display: none !important; }
+.next-step-k {
+  font-size: 15px;
+  font-weight: 900;
+  color: #1a1208;
+  background: var(--accent);
+  border-radius: 999px;
+  padding: 6px 12px;
+  white-space: nowrap;
+}
+.next-step-v {
+  font-size: clamp(22px, 6vw, 30px);
+  font-weight: 900;
+  line-height: 1.25;
+  word-break: break-word;
+}
+#nextStep2 .next-step-k {
+  background: var(--work);
 }
 .run-stage.rest .next-name {
   font-size: clamp(36px, 10vw, 52px);
