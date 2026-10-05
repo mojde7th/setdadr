@@ -102,16 +102,53 @@ html, body {
 .empty[hidden] { display: none; }
 .row-form {
   display: grid;
-  grid-template-columns: 1fr 88px auto;
+  grid-template-columns: 1fr minmax(132px, 150px) auto;
   gap: 8px;
   margin-bottom: 12px;
   align-items: stretch;
 }
 #addToSetForm.row-form {
-  grid-template-columns: 1fr 88px;
+  grid-template-columns: 1fr minmax(132px, 150px);
 }
 #addToSetForm #btnAddToSet {
   grid-column: 1 / -1;
+}
+.num-step {
+  display: grid;
+  grid-template-columns: 44px 1fr 44px;
+  gap: 4px;
+  align-items: stretch;
+  min-width: 0;
+}
+.num-step input[type="number"] {
+  text-align: center;
+  padding-inline: 6px;
+  min-width: 0;
+  /* hide native spinners — we use +/- buttons */
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.num-step input[type="number"]::-webkit-outer-spin-button,
+.num-step input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.num-btn {
+  border: 1px solid var(--line);
+  background: var(--bg2);
+  color: var(--txt);
+  border-radius: 12px;
+  font: 900 22px/1 var(--display);
+  min-height: 48px;
+  padding: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+}
+.num-btn:active {
+  background: var(--accent);
+  color: #1a1208;
+  border-color: var(--accent);
 }
 .grid2 {
   display: grid;

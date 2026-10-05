@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
   <meta charset="utf-8"/>
@@ -14,23 +14,23 @@
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@500;700;800;900&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet"/>
-  <link rel="stylesheet" href="styles.css?v=6"/>
+  <link rel="stylesheet" href="styles.css?v=8"/>
 </head>
 <body>
   <div id="app">
     <header class="top" id="topBar">
       <div class="brand">ست<span>‌یار</span></div>
       <nav class="tabs" id="navTabs">
-        <button type="button" data-view="home" class="on">جلسات</button>
+        <button type="button" data-view="home" class="on">ست‌ها</button>
         <button type="button" data-view="moves">حرکت‌ها</button>
-        <button type="button" data-view="edit" id="tabEdit" hidden>ست</button>
+        <button type="button" data-view="edit" id="tabEdit" hidden>ویرایش</button>
       </nav>
     </header>
 
     <main>
       <section id="view-home" class="view on">
         <div class="home-head">
-          <button type="button" class="btn-hero" id="btnNewPlan">جلسه تازه</button>
+          <button type="button" class="btn-hero" id="btnNewPlan">ست تازه</button>
         </div>
         <ul id="planList" class="list"></ul>
         <p id="planEmpty" class="empty">خالی</p>
@@ -39,7 +39,11 @@
       <section id="view-moves" class="view">
         <form id="moveForm" class="row-form">
           <input id="moveName" type="text" required maxlength="60" placeholder="نام حرکت"/>
-          <input id="moveWork" type="number" min="5" max="600" step="5" value="40" inputmode="numeric" aria-label="ثانیه کار"/>
+          <div class="num-step" data-for="moveWork">
+            <button type="button" class="num-btn" data-dir="-1" aria-label="کم">−</button>
+            <input id="moveWork" type="number" min="5" max="600" step="5" value="40" inputmode="numeric" aria-label="ثانیه کار"/>
+            <button type="button" class="num-btn" data-dir="1" aria-label="زیاد">+</button>
+          </div>
           <button type="submit" class="btn primary sm">افزودن</button>
         </form>
         <ul id="moveLib" class="list"></ul>
@@ -48,17 +52,28 @@
 
       <section id="view-edit" class="view">
         <div class="panel">
-          <input id="planTitle" type="text" maxlength="60" placeholder="نام جلسه"/>
           <div class="grid2">
             <label>تعداد ست
-              <input id="planRounds" type="number" min="1" max="30" value="4" inputmode="numeric"/>
+              <div class="num-step" data-for="planRounds">
+                <button type="button" class="num-btn" data-dir="-1" aria-label="کم">−</button>
+                <input id="planRounds" type="number" min="1" max="30" step="1" value="4" inputmode="numeric"/>
+                <button type="button" class="num-btn" data-dir="1" aria-label="زیاد">+</button>
+              </div>
             </label>
             <label>استراحت بین ست
-              <input id="planRestSet" type="number" min="0" max="600" step="5" value="40" inputmode="numeric"/>
+              <div class="num-step" data-for="planRestSet">
+                <button type="button" class="num-btn" data-dir="-1" aria-label="کم">−</button>
+                <input id="planRestSet" type="number" min="0" max="600" step="5" value="40" inputmode="numeric"/>
+                <button type="button" class="num-btn" data-dir="1" aria-label="زیاد">+</button>
+              </div>
             </label>
           </div>
           <label class="rest-lbl">استراحت بین حرکت داخل ست
-            <input id="planRestMove" type="number" min="0" max="300" step="5" value="10" inputmode="numeric"/>
+            <div class="num-step" data-for="planRestMove">
+              <button type="button" class="num-btn" data-dir="-1" aria-label="کم">−</button>
+              <input id="planRestMove" type="number" min="0" max="300" step="5" value="10" inputmode="numeric"/>
+              <button type="button" class="num-btn" data-dir="1" aria-label="زیاد">+</button>
+            </div>
           </label>
         </div>
 
@@ -66,7 +81,11 @@
           <form id="addToSetForm" class="row-form">
             <input id="pickMoveName" list="moveDatalist" type="text" required maxlength="60" placeholder="حرکت"/>
             <datalist id="moveDatalist"></datalist>
-            <input id="pickWork" type="number" min="5" max="600" step="5" value="40" inputmode="numeric"/>
+            <div class="num-step" data-for="pickWork">
+              <button type="button" class="num-btn" data-dir="-1" aria-label="کم">−</button>
+              <input id="pickWork" type="number" min="5" max="600" step="5" value="40" inputmode="numeric"/>
+              <button type="button" class="num-btn" data-dir="1" aria-label="زیاد">+</button>
+            </div>
             <button type="submit" class="btn primary sm" id="btnAddToSet">افزودن به این ست</button>
           </form>
           <ol id="circuitList" class="seq"></ol>
@@ -106,12 +125,12 @@
         <div class="done-card">
           <div class="frac done-frac" id="doneFrac">۴<span>/</span>۴</div>
           <p class="done-msg" id="doneMsg"></p>
-          <button type="button" class="btn primary block" id="btnDoneHome">جلسات</button>
+          <button type="button" class="btn primary block" id="btnDoneHome">ست‌ها</button>
         </div>
       </section>
     </main>
   </div>
-  <script src="app.js?v=6"></script>
+  <script src="app.js?v=8"></script>
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("./sw.js").catch(() => {});

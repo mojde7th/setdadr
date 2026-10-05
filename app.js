@@ -22,7 +22,6 @@
   let raf = 0;
   let voiceReady = false;
   let faVoice = null;
-  let enVoice = null;
 
   const viewIds = ["home", "moves", "edit", "run", "done"];
 
@@ -48,28 +47,35 @@
     18: "هجده",
     19: "نوزده",
     20: "بیست",
-    25: "بیست و پنج",
     30: "سی",
-    35: "سی و پنج",
     40: "چهل",
-    45: "چهل و پنج",
     50: "پنجاه",
-    55: "پنجاه و پنج",
     60: "شصت",
+    70: "هفتاد",
+    80: "هشتاد",
     90: "نود",
-    120: "صد و بیست",
-    150: "صد و پنجاه",
-    180: "سه دقیقه"
+    100: "صد",
+    200: "دویست",
+    300: "سیصد",
+    400: "چهارصد",
+    500: "پانصد",
+    600: "ششصد"
   };
 
   function faNum(n) {
-    n = Math.round(n);
+    n = Math.round(Math.abs(Number(n) || 0));
     if (FA_NUM[n]) return FA_NUM[n];
     if (n > 20 && n < 100) {
       const tens = Math.floor(n / 10) * 10;
       const ones = n % 10;
       const t = FA_NUM[tens] || String(tens);
       return ones ? t + " و " + (FA_NUM[ones] || ones) : t;
+    }
+    if (n > 100 && n < 1000) {
+      const hundreds = Math.floor(n / 100) * 100;
+      const rest = n % 100;
+      const h = FA_NUM[hundreds] || String(hundreds);
+      return rest ? h + " و " + faNum(rest) : h;
     }
     return String(n);
   }
@@ -81,10 +87,6 @@
       voices.find((v) => /^fa/i.test(v.lang)) ||
       voices.find((v) => /persian|farsi/i.test(v.name)) ||
       null;
-    enVoice =
-      voices.find((v) => /^en(-|_|$)/i.test(v.lang) && /female|zira|samantha|google/i.test(v.name)) ||
-      voices.find((v) => /^en(-|_|$)/i.test(v.lang)) ||
-      null;
     voiceReady = true;
   }
   if (window.speechSynthesis) {
@@ -92,51 +94,57 @@
     speechSynthesis.onvoiceschanged = loadVoices;
   }
 
-  function speak(text, langPrefer) {
-    if (!window.speechSynthesis || !text) return;
+  /** فقط عدد فارسی — بدون اسم حرکت و بدون «ثانیه» */
+  function speakNum(n) {
+    if (!window.speechSynthesis) return;
+    const text = faNum(n);
+    if (!text) return;
     try {
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
-      const wantFa = langPrefer !== "en";
-      if (wantFa) {
-        u.lang = "fa-IR";
-        if (faVoice) u.voice = faVoice;
-      } else if (enVoice) {
-        u.voice = enVoice;
-        u.lang = enVoice.lang || "en-US";
-      } else {
-        u.lang = "en-US";
-      }
-      u.rate = 1.02;
+      u.lang = "fa-IR";
+      if (faVoice) u.voice = faVoice;
+      u.rate = 0.95;
       u.pitch = 1;
       speechSynthesis.speak(u);
     } catch {}
   }
 
   function speakSeconds(sec) {
-    const n = Math.round(sec);
-    speak(faNum(n) + " ثانیه", "fa");
-  }
-
-  function nextWorkAfter(steps, index) {
-    for (let i = index + 1; i < steps.length; i++) {
-      if (steps[i].kind === "work") return steps[i];
-    }
-    return null;
+    speakNum(sec);
   }
 
   function speakPhase(step) {
-    const sec = step.dur;
-    if (step.kind === "work") {
-      speak((step.name || "حرکت") + "، " + faNum(sec) + " ثانیه", "fa");
-      return;
-    }
-    const upcoming = step.nextName || "";
-    if (upcoming) {
-      speak("بعدی، " + upcoming + "، " + faNum(sec) + " ثانیه", "fa");
-    } else {
-      speak(faNum(sec) + " ثانیه", "fa");
-    }
+    speakNum(step.dur);
+  }
+
+  function bumpNumber(input, dir) {
+    if (!input) return;
+    const step = Number(input.step) || 1;
+    const min = input.min === "" ? -Infinity : Number(input.min);
+    const max = input.max === "" ? Infinity : Number(input.max);
+    let v = Number(input.value);
+    if (!Number.isFinite(v)) v = Number.isFinite(min) ? min : 0;
+    v = Math.round((v + dir * step) / step) * step;
+    if (Number.isFinite(min)) v = Math.max(min, v);
+    if (Number.isFinite(max)) v = Math.min(max, v);
+    input.value = String(v);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function wireNumSteppers() {
+    $$(".num-step").forEach((wrap) => {
+      const input = wrap.querySelector('input[type="number"]');
+      if (!input) return;
+      wrap.querySelectorAll(".num-btn").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.preventDefault();
+          const dir = Number(btn.getAttribute("data-dir")) || 0;
+          bumpNumber(input, dir);
+        });
+      });
+    });
   }
 
   function show(name) {
@@ -222,9 +230,9 @@
       const li = document.createElement("li");
       li.innerHTML =
         '<div class="row"><div><div class="title"></div><div class="meta"></div></div></div><div class="row"></div>';
-      li.querySelector(".title").textContent = p.title;
+      li.querySelector(".title").textContent = p.title || autoTitle(p.circuit);
       li.querySelector(".meta").textContent =
-        p.circuit.length + " حرکت در هر ست · " + p.rounds + " ست · استراحت ست " + p.restSet + "ث";
+        p.circuit.length + " حرکت · " + p.rounds + " ست · استراحت ست " + p.restSet + "ث";
       const actions = li.children[1];
       const start = document.createElement("button");
       start.type = "button";
@@ -272,19 +280,24 @@
     });
   }
 
+  function autoTitle(list) {
+    if (!list || !list.length) return "ست";
+    if (list.length === 1) return list[0].name;
+    if (list.length === 2) return list[0].name + " و " + list[1].name;
+    return list[0].name + " و " + (list.length - 1) + " حرکت دیگر";
+  }
+
   function openEdit(id) {
     editId = id || null;
     circuit = [];
     if (id) {
       const p = state.plans.find((x) => x.id === id);
       if (!p) return;
-      $("#planTitle").value = p.title;
       $("#planRounds").value = String(p.rounds);
       $("#planRestSet").value = String(p.restSet);
       $("#planRestMove").value = String(p.restMove);
       circuit = p.circuit.map((c) => ({ ...c }));
     } else {
-      $("#planTitle").value = "";
       $("#planRounds").value = "4";
       $("#planRestSet").value = "40";
       $("#planRestMove").value = "10";
@@ -341,13 +354,12 @@
   function startRun(id) {
     const p = state.plans.find((x) => x.id === id);
     if (!p || !p.circuit.length) return;
+    const steps = buildTimeline(p);
     if (window.speechSynthesis) {
       try {
         speechSynthesis.resume();
       } catch {}
-      speak("شروع", "fa");
     }
-    const steps = buildTimeline(p);
     run = {
       planId: p.id,
       title: p.title,
@@ -431,14 +443,14 @@
       moveEl.classList.remove("is-rest-title");
       moveEl.hidden = false;
       $("#runSub").textContent =
-        "حرکت " + toFaDigits(step.moveIndex) + " از " + toFaDigits(step.moveCount) + " · " + run.title;
+        "حرکت " + toFaDigits(step.moveIndex) + " از " + toFaDigits(step.moveCount);
     } else {
-      // اول استراحت بالا، بعد کارت حرکت بعدی
       $("#runPhase").textContent = step.kind === "rest-set" ? "استراحت ست" : "استراحت";
-      moveEl.textContent = step.kind === "rest-set" ? "بین دو ست" : "بین دو حرکت";
-      moveEl.classList.add("is-rest-title");
+      // فقط نام حرکت بعدی — بدون برچسب گیج‌کننده
+      moveEl.textContent = step.nextName || "—";
+      moveEl.classList.remove("is-rest-title");
       moveEl.hidden = false;
-      $("#runSub").textContent = toFaDigits(Math.ceil(run.left)) + " ثانیه مانده";
+      $("#runSub").textContent = "حرکت بعدی بعد از استراحت";
     }
     $("#runTimer").textContent = fmt(run.left);
     $("#btnPause").textContent = run.paused ? "ادامه" : "توقف";
@@ -458,24 +470,12 @@
     const step = run.steps[run.i];
 
     if (step.kind !== "work") {
-      // استراحت: کارت فقط حرکت بعدی را نشان بده
-      if (!step.nextName) {
-        card.hidden = true;
-        return;
-      }
-      card.hidden = false;
-      if (lblEl) lblEl.textContent = "حرکت بعدی";
-      if (chipEl) chipEl.textContent = step.kind === "rest-set" ? "ست بعد" : "همین ست";
-      nameEl.textContent = step.nextName;
-      metaEl.textContent =
-        "بعد از این استراحت شروع می‌شود · ست " +
-        toFaDigits(step.kind === "rest-set" ? Math.min(step.round + 1, step.rounds) : step.round) +
-        "/" +
-        toFaDigits(step.rounds);
+      // استراحت: اسم بعدی همین الان بالا بزرگ است؛ کارت تکراری لازم نیست
+      card.hidden = true;
       return;
     }
 
-    // کار: کارت بگوید بعدش چیست (استراحت یا حرکت)
+    // کار: فقط بگو بعدش چه می‌شود
     const next = run.steps[run.i + 1];
     if (!next) {
       card.hidden = true;
@@ -483,15 +483,15 @@
     }
     card.hidden = false;
     if (next.kind === "work") {
-      if (lblEl) lblEl.textContent = "حرکت بعدی";
-      if (chipEl) chipEl.textContent = "بدون وقفه";
+      if (lblEl) lblEl.textContent = "بعدی";
+      if (chipEl) chipEl.textContent = "";
       nameEl.textContent = next.name;
-      metaEl.textContent = toFaDigits(next.dur) + " ثانیه · ست " + toFaDigits(next.round) + "/" + toFaDigits(next.rounds);
+      metaEl.textContent = toFaDigits(next.dur) + " ثانیه";
     } else if (next.nextName) {
-      if (lblEl) lblEl.textContent = "حرکت بعدی";
-      if (chipEl) chipEl.textContent = next.kind === "rest-set" ? "بعد استراحت ست" : "بعد استراحت";
+      if (lblEl) lblEl.textContent = "بعد از استراحت";
+      if (chipEl) chipEl.textContent = toFaDigits(next.dur) + "ث استراحت";
       nameEl.textContent = next.nextName;
-      metaEl.textContent = "اول " + toFaDigits(next.dur) + " ثانیه استراحت";
+      metaEl.textContent = "";
     } else {
       card.hidden = true;
     }
@@ -501,24 +501,11 @@
     stopLoop();
     const last = run && run.steps.length ? run.steps[run.steps.length - 1] : null;
     const rounds = last ? last.rounds : 0;
-    const skipped = run ? run.skipped : 0;
-    const title = run ? run.title : "";
     run = null;
     $("#doneFrac").innerHTML = toFaDigits(rounds) + "<span>/</span>" + toFaDigits(rounds);
     const msg = $("#doneMsg");
-    if (skipped > 0) {
-      speak("تمام شد. " + faNum(rounds) + " ست", "fa");
-      if (msg) msg.textContent = "تمام شد · " + toFaDigits(rounds) + " ست · " + title;
-    } else {
-      const cheers = [
-        "عالی بود، همه ست‌ها تموم شد",
-        "دمت گرم، تموم کردی",
-        "آفرین، ست‌ها کامل شد"
-      ];
-      const line = cheers[Math.floor(Math.random() * cheers.length)];
-      speak(line + ". " + faNum(rounds) + " از " + faNum(rounds) + " ست", "fa");
-      if (msg) msg.textContent = line + " · " + toFaDigits(rounds) + " از " + toFaDigits(rounds) + " ست";
-    }
+    if (msg) msg.textContent = "تمام شد · " + toFaDigits(rounds) + " ست";
+    speakNum(rounds);
     show("done");
   }
 
@@ -572,11 +559,11 @@
   });
 
   $("#btnSavePlan").addEventListener("click", () => {
-    const title = ($("#planTitle").value || "").trim() || "جلسه";
     const rounds = Math.max(1, Math.min(30, Number($("#planRounds").value) || 4));
     const restSet = Math.max(0, Math.min(600, Number($("#planRestSet").value) || 0));
     const restMove = Math.max(0, Math.min(300, Number($("#planRestMove").value) || 0));
     if (!circuit.length) return;
+    const title = autoTitle(circuit);
     const payload = {
       title,
       rounds,
@@ -646,6 +633,7 @@
     { once: true }
   );
 
+  wireNumSteppers();
   renderMoves();
   renderPlans();
   show("home");
