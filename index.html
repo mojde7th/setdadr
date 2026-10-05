@@ -6,20 +6,20 @@
   <meta name="theme-color" content="#12100c"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-  <meta name="apple-mobile-web-app-title" content="ست‌چین"/>
-  <title>ست‌چین</title>
+  <meta name="apple-mobile-web-app-title" content="ست‌یار"/>
+  <title>ست‌یار</title>
   <link rel="manifest" href="manifest.webmanifest"/>
   <link rel="icon" href="icon.svg" type="image/svg+xml"/>
   <link rel="apple-touch-icon" href="icon-180.png"/>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@500;700;800;900&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet"/>
-  <link rel="stylesheet" href="styles.css?v=3"/>
+  <link rel="stylesheet" href="styles.css?v=4"/>
 </head>
 <body>
   <div id="app">
     <header class="top" id="topBar">
-      <div class="brand">ست<span>‌چین</span></div>
+      <div class="brand">ست<span>‌یار</span></div>
       <nav class="tabs" id="navTabs">
         <button type="button" data-view="home" class="on">جلسات</button>
         <button type="button" data-view="moves">حرکت‌ها</button>
@@ -54,7 +54,7 @@
               <input id="planRounds" type="number" min="1" max="30" value="4" inputmode="numeric"/>
             </label>
             <label>استراحت بین ست
-              <input id="planRestSet" type="number" min="0" max="600" step="5" value="60" inputmode="numeric"/>
+              <input id="planRestSet" type="number" min="0" max="600" step="5" value="40" inputmode="numeric"/>
             </label>
           </div>
           <label class="rest-lbl">استراحت بین حرکت داخل ست
@@ -102,12 +102,13 @@
       <section id="view-done" class="view">
         <div class="done-card">
           <div class="frac done-frac" id="doneFrac">۴<span>/</span>۴</div>
+          <p class="done-msg" id="doneMsg"></p>
           <button type="button" class="btn primary block" id="btnDoneHome">جلسات</button>
         </div>
       </section>
     </main>
   </div>
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=4"></script>
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("./sw.js").catch(() => {});

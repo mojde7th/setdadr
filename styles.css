@@ -303,7 +303,14 @@ input[type="text"], input[type="number"] {
   text-align: center;
   padding: 48px 16px;
 }
-.done-frac { margin-bottom: 24px; }
+.done-frac { margin-bottom: 12px; }
+.done-msg {
+  margin: 0 0 24px;
+  font-size: clamp(18px, 5vw, 24px);
+  font-weight: 900;
+  color: var(--txt);
+  line-height: 1.5;
+}
 @media (max-width: 420px) {
   .row-form { grid-template-columns: 1fr; }
   .grid2 { grid-template-columns: 1fr; }

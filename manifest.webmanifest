@@ -1,13 +1,13 @@
 {
-  "name": "ست‌چین",
-  "short_name": "ست‌چین",
+  "name": "ست‌یار",
+  "short_name": "ست‌یار",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#12100c",
   "theme_color": "#12100c",
   "lang": "fa",
   "dir": "rtl",
-  "description": "چینش حرکت‌ها داخل ست ترکیبی، تکرار ست، تایمر و صدا",
+  "description": "ست ترکیبی، تایمر، صدای فارسی، آماده‌باش برای حرکت بعدی",
   "icons": [
     { "src": "icon-180.png", "sizes": "180x180", "type": "image/png" },
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }

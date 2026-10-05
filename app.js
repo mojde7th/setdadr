@@ -97,19 +97,17 @@
     try {
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
-      if (langPrefer === "fa" && faVoice) {
-        u.voice = faVoice;
-        u.lang = faVoice.lang || "fa-IR";
-      } else if (faVoice && langPrefer !== "en") {
-        u.voice = faVoice;
-        u.lang = faVoice.lang || "fa-IR";
+      const wantFa = langPrefer !== "en";
+      if (wantFa) {
+        u.lang = "fa-IR";
+        if (faVoice) u.voice = faVoice;
       } else if (enVoice) {
         u.voice = enVoice;
         u.lang = enVoice.lang || "en-US";
       } else {
-        u.lang = langPrefer === "en" ? "en-US" : "fa-IR";
+        u.lang = "en-US";
       }
-      u.rate = 1.05;
+      u.rate = 1.02;
       u.pitch = 1;
       speechSynthesis.speak(u);
     } catch {}
@@ -117,22 +115,27 @@
 
   function speakSeconds(sec) {
     const n = Math.round(sec);
-    if (faVoice) {
-      speak(faNum(n) + " ثانیه", "fa");
-    } else {
-      speak(n + " seconds", "en");
-    }
+    speak(faNum(n) + " ثانیه", "fa");
   }
 
-  function speakPhase(kind, name, sec) {
-    if (faVoice) {
-      if (kind === "work") speak((name || "حرکت") + "، " + faNum(sec) + " ثانیه", "fa");
-      else if (kind === "rest-set") speak("استراحت ست، " + faNum(sec) + " ثانیه", "fa");
-      else speak("استراحت، " + faNum(sec) + " ثانیه", "fa");
+  function nextWorkAfter(steps, index) {
+    for (let i = index + 1; i < steps.length; i++) {
+      if (steps[i].kind === "work") return steps[i];
+    }
+    return null;
+  }
+
+  function speakPhase(step) {
+    const sec = step.dur;
+    if (step.kind === "work") {
+      speak((step.name || "حرکت") + "، " + faNum(sec) + " ثانیه", "fa");
+      return;
+    }
+    const upcoming = step.nextName || "";
+    if (upcoming) {
+      speak("بعدی، " + upcoming + "، " + faNum(sec) + " ثانیه", "fa");
     } else {
-      if (kind === "work") speak((name || "move") + ", " + sec + " seconds", "en");
-      else if (kind === "rest-set") speak("set rest, " + sec + " seconds", "en");
-      else speak("rest, " + sec + " seconds", "en");
+      speak(faNum(sec) + " ثانیه", "fa");
     }
   }
 
@@ -283,7 +286,7 @@
     } else {
       $("#planTitle").value = "";
       $("#planRounds").value = "4";
-      $("#planRestSet").value = "60";
+      $("#planRestSet").value = "40";
       $("#planRestMove").value = "10";
     }
     renderMoves();
@@ -314,6 +317,7 @@
             moveIndex: mi + 1,
             moveCount: plan.circuit.length,
             name: "استراحت",
+            nextName: plan.circuit[mi + 1].name,
             dur: Number(plan.restMove) || 0
           });
         }
@@ -325,6 +329,7 @@
             moveIndex: plan.circuit.length,
             moveCount: plan.circuit.length,
             name: "استراحت ست",
+            nextName: plan.circuit[0].name,
             dur: Number(plan.restSet) || 0
           });
         }
@@ -351,6 +356,7 @@
       left: steps[0].dur,
       phaseDur: steps[0].dur,
       paused: false,
+      skipped: 0,
       announced: {},
       lastTick: performance.now()
     };
@@ -418,16 +424,22 @@
     stage.classList.toggle("rest", isRest);
     $("#runFrac").innerHTML = toFaDigits(step.round) + "<span>/</span>" + toFaDigits(step.rounds);
     $("#runFracLbl").textContent = "ست";
-    $("#runPhase").textContent =
-      step.kind === "work" ? "کار" : step.kind === "rest-set" ? "استراحت ست" : "استراحت";
-    $("#runMove").textContent = step.kind === "work" ? step.name : step.name;
+    if (step.kind === "work") {
+      $("#runPhase").textContent = "کار";
+      $("#runMove").textContent = step.name;
+      $("#runSub").textContent =
+        "حرکت " + toFaDigits(step.moveIndex) + " از " + toFaDigits(step.moveCount) + " · " + run.title;
+    } else {
+      $("#runPhase").textContent = step.kind === "rest-set" ? "آماده‌باش · بین ست" : "آماده‌باش";
+      $("#runMove").textContent = step.nextName || "—";
+      $("#runSub").textContent =
+        "استراحت " + toFaDigits(Math.ceil(run.left)) + " ثانیه · بعد از این حرکت شروع می‌شود";
+    }
     $("#runTimer").textContent = fmt(run.left);
-    $("#runSub").textContent =
-      "حرکت " + toFaDigits(step.moveIndex) + " از " + toFaDigits(step.moveCount) + " · " + run.title;
     $("#btnPause").textContent = run.paused ? "ادامه" : "توقف";
     paintNext();
     if (announceStart) {
-      speakPhase(step.kind, step.name, step.dur);
+      speakPhase(step);
     }
   }
 
@@ -436,7 +448,23 @@
     const nameEl = $("#nextName");
     const metaEl = $("#nextMeta");
     if (!card || !run) return;
-    const next = run.steps[run.i + 1];
+    const step = run.steps[run.i];
+    // during rest the big title already shows the next move; card shows what comes after that
+    const lookFrom = step.kind === "work" ? run.i : run.i;
+    let next = null;
+    if (step.kind === "work") {
+      next = run.steps[run.i + 1];
+    } else {
+      // after current rest's target move, show the following work (or rest label lightly)
+      const afterTarget = nextWorkAfter(run.steps, run.i);
+      if (afterTarget) {
+        const idx = run.steps.indexOf(afterTarget);
+        next = run.steps[idx + 1] || null;
+        // prefer showing the work after the upcoming one
+        const work2 = nextWorkAfter(run.steps, idx);
+        if (work2) next = work2;
+      }
+    }
     if (!next) {
       card.hidden = true;
       return;
@@ -446,25 +474,39 @@
       nameEl.textContent = next.name;
       metaEl.textContent =
         "کار · " + toFaDigits(next.dur) + " ثانیه · ست " + toFaDigits(next.round) + "/" + toFaDigits(next.rounds);
-    } else if (next.kind === "rest-set") {
-      nameEl.textContent = "استراحت بین ست";
-      metaEl.textContent = toFaDigits(next.dur) + " ثانیه · بعد ست " + toFaDigits(Math.min(next.round + 1, next.rounds));
+    } else if (next.nextName) {
+      nameEl.textContent = next.nextName;
+      metaEl.textContent =
+        (next.kind === "rest-set" ? "بعد از استراحت ست · " : "بعد از استراحت · ") +
+        toFaDigits(next.dur) +
+        " ثانیه";
     } else {
-      nameEl.textContent = "استراحت بین حرکت";
-      metaEl.textContent = toFaDigits(next.dur) + " ثانیه";
+      card.hidden = true;
     }
   }
 
   function finishRun() {
     stopLoop();
-    if (window.speechSynthesis) {
-      if (faVoice) speak("تمام", "fa");
-      else speak("done", "en");
-    }
     const last = run && run.steps.length ? run.steps[run.steps.length - 1] : null;
     const rounds = last ? last.rounds : 0;
+    const skipped = run ? run.skipped : 0;
+    const title = run ? run.title : "";
     run = null;
     $("#doneFrac").innerHTML = toFaDigits(rounds) + "<span>/</span>" + toFaDigits(rounds);
+    const msg = $("#doneMsg");
+    if (skipped > 0) {
+      speak("تمام شد. " + faNum(rounds) + " ست", "fa");
+      if (msg) msg.textContent = "تمام شد · " + toFaDigits(rounds) + " ست · " + title;
+    } else {
+      const cheers = [
+        "عالی بود، همه ست‌ها تموم شد",
+        "دمت گرم، تموم کردی",
+        "آفرین، ست‌ها کامل شد"
+      ];
+      const line = cheers[Math.floor(Math.random() * cheers.length)];
+      speak(line + ". " + faNum(rounds) + " از " + faNum(rounds) + " ست", "fa");
+      if (msg) msg.textContent = line + " · " + toFaDigits(rounds) + " از " + toFaDigits(rounds) + " ست";
+    }
     show("done");
   }
 
@@ -557,6 +599,7 @@
 
   $("#btnSkip").addEventListener("click", () => {
     if (!run) return;
+    run.skipped = (run.skipped || 0) + 1;
     advance();
   });
 
