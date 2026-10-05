@@ -21,7 +21,7 @@
   let run = null;
   let raf = 0;
   let voiceReady = false;
-  let faVoice = null;
+  let enVoice = null;
 
   const viewIds = ["home", "moves", "edit", "run", "done"];
 
@@ -83,9 +83,10 @@
   function loadVoices() {
     if (!window.speechSynthesis) return;
     const voices = speechSynthesis.getVoices() || [];
-    faVoice =
-      voices.find((v) => /^fa/i.test(v.lang)) ||
-      voices.find((v) => /persian|farsi/i.test(v.name)) ||
+    enVoice =
+      voices.find((v) => /^en(-|_)?US/i.test(v.lang) && /google|samantha|zira|natural/i.test(v.name)) ||
+      voices.find((v) => /^en(-|_)?US/i.test(v.lang)) ||
+      voices.find((v) => /^en(-|_|$)/i.test(v.lang)) ||
       null;
     voiceReady = true;
   }
@@ -94,28 +95,31 @@
     speechSynthesis.onvoiceschanged = loadVoices;
   }
 
-  /** فقط عدد فارسی — بدون اسم حرکت و بدون «ثانیه» */
-  function speakNum(n) {
-    if (!window.speechSynthesis) return;
-    const text = faNum(n);
-    if (!text) return;
+  /** فقط عدد و زمان — صدای انگلیسی؛ اسم حرکت خوانده نمی‌شود */
+  function speakEn(text) {
+    if (!window.speechSynthesis || !text) return;
     try {
       speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = "fa-IR";
-      if (faVoice) u.voice = faVoice;
-      u.rate = 0.95;
+      const u = new SpeechSynthesisUtterance(String(text));
+      u.lang = "en-US";
+      if (enVoice) u.voice = enVoice;
+      u.rate = 0.92;
       u.pitch = 1;
       speechSynthesis.speak(u);
     } catch {}
   }
 
+  function speakNum(n) {
+    speakEn(String(Math.round(Number(n) || 0)));
+  }
+
   function speakSeconds(sec) {
-    speakNum(sec);
+    const n = Math.round(Number(sec) || 0);
+    speakEn(n + " seconds");
   }
 
   function speakPhase(step) {
-    speakNum(step.dur);
+    speakSeconds(step.dur);
   }
 
   function bumpNumber(input, dir) {
@@ -435,28 +439,27 @@
     const isRest = step.kind !== "work";
     stage.classList.toggle("work", !isRest);
     stage.classList.toggle("rest", isRest);
-    $("#runFrac").innerHTML = toFaDigits(step.round) + "<span>/</span>" + toFaDigits(step.rounds);
-    $("#runFracLbl").textContent = "ست";
+    const ctx = $("#runCtx");
+    const setLine =
+      "ست " + toFaDigits(step.round) + " از " + toFaDigits(step.rounds);
     if (step.kind === "work") {
+      if (ctx) {
+        ctx.textContent =
+          setLine +
+          " · حرکت " +
+          toFaDigits(step.moveIndex) +
+          " از " +
+          toFaDigits(step.moveCount);
+      }
       $("#runPhase").textContent = "تمرین";
       moveEl.textContent = step.name;
       moveEl.hidden = false;
-      const mc = $("#runMoveCount");
-      if (mc) {
-        mc.hidden = false;
-        mc.textContent =
-          "حرکت " + toFaDigits(step.moveIndex) + " از " + toFaDigits(step.moveCount);
-      }
       $("#runSub").textContent = "";
     } else {
+      if (ctx) ctx.textContent = setLine + " · استراحت";
       $("#runPhase").textContent = step.kind === "rest-set" ? "استراحت ست" : "استراحت";
       moveEl.textContent = "";
       moveEl.hidden = true;
-      const mc = $("#runMoveCount");
-      if (mc) {
-        mc.hidden = true;
-        mc.textContent = "";
-      }
       $("#runSub").textContent = "";
     }
     $("#runTimer").textContent = fmt(run.left);
