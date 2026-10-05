@@ -1,0 +1,15 @@
+{
+  "name": "ست‌داد",
+  "short_name": "ست‌داد",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#12100c",
+  "theme_color": "#12100c",
+  "lang": "fa",
+  "dir": "rtl",
+  "description": "تعریف ست و تکرار برای هر حرکت، تیک زدن ست‌ها، سابقه جلسه",
+  "icons": [
+    { "src": "icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

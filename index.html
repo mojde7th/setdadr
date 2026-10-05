@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <meta name="theme-color" content="#12100c"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="ست‌داد"/>
+  <title>ست‌داد</title>
+  <link rel="manifest" href="manifest.webmanifest"/>
+  <link rel="icon" href="icon.svg" type="image/svg+xml"/>
+  <link rel="apple-touch-icon" href="icon-180.png"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@500;700;800;900&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+  <div id="app">
+    <header class="top" id="topBar">
+      <div class="brand">ست<span>‌داد</span></div>
+      <nav class="tabs" id="navTabs">
+        <button type="button" data-view="home" class="on">جلسات</button>
+        <button type="button" data-view="edit" id="tabEdit" hidden>تعریف</button>
+        <button type="button" data-view="history">سابقه</button>
+      </nav>
+    </header>
+
+    <main>
+      <section id="view-home" class="view on">
+        <p class="lead">ست‌ها را از قبل تعریف کن، بعد یکی‌یکی تیک بزن. مربی می‌بیند چند ست زدی، با چه وزن و تکراری.</p>
+        <div class="home-head">
+          <button type="button" class="btn-hero" id="btnNewPlan">جلسه تازه</button>
+        </div>
+        <div class="panel">
+          <h3>جلسات ذخیره‌شده</h3>
+          <p id="planEmpty" class="empty">هنوز جلسه‌ای نیست. بالا جلسه تازه بساز و برای هر حرکت تعداد ست و تکرار بگذار.</p>
+          <ul id="planList" class="list"></ul>
+        </div>
+      </section>
+
+      <section id="view-edit" class="view">
+        <div class="panel">
+          <label class="lbl" for="planTitle">نام جلسه</label>
+          <input id="planTitle" type="text" maxlength="60" placeholder="مثلاً پا، سینه، فول‌بادی"/>
+        </div>
+
+        <div class="panel">
+          <h3>حرکت و ست‌ها</h3>
+          <p class="hint">اسم حرکت را بنویس، تعداد ست و تکرار را بگذار، بعد اضافه کن. همین‌جا می‌توانی وزن پیشنهادی هم بدهی.</p>
+          <form id="exForm" class="ex-form">
+            <input id="exName" type="text" required maxlength="60" placeholder="اسم حرکت"/>
+            <div class="grid3">
+              <label>ست‌ها
+                <input id="exSets" type="number" min="1" max="20" value="3" inputmode="numeric"/>
+              </label>
+              <label>تکرار
+                <input id="exReps" type="number" min="1" max="100" value="10" inputmode="numeric"/>
+              </label>
+              <label>وزن
+                <input id="exWeight" type="number" min="0" max="500" step="0.5" value="0" inputmode="decimal" placeholder="کیلو"/>
+              </label>
+            </div>
+            <label class="rest-lbl">استراحت بین ست (ثانیه)
+              <input id="exRest" type="number" min="0" max="600" step="5" value="90" inputmode="numeric"/>
+            </label>
+            <button type="submit" class="btn primary block">افزودن حرکت با ست‌ها</button>
+          </form>
+          <ol id="exList" class="seq"></ol>
+        </div>
+
+        <div class="actions">
+          <button type="button" class="btn primary block" id="btnSavePlan">ذخیره جلسه</button>
+          <button type="button" class="btn ghost block" id="btnCancelEdit">برگشت</button>
+        </div>
+      </section>
+
+      <section id="view-run" class="view">
+        <div class="run-head">
+          <h2 id="runTitle">جلسه</h2>
+          <p id="runProgress" class="muted"></p>
+        </div>
+        <div id="runStack" class="run-stack"></div>
+        <div class="actions sticky">
+          <button type="button" class="btn primary block" id="btnFinish" disabled>پایان جلسه و ذخیره سابقه</button>
+          <button type="button" class="btn ghost block" id="btnAbort">خروج بدون ذخیره</button>
+        </div>
+      </section>
+
+      <section id="view-history" class="view">
+        <div class="panel">
+          <h3>سابقه جلسات</h3>
+          <p id="histEmpty" class="empty">هنوز سابقه‌ای نیست. یک جلسه را اجرا کن و ست‌ها را تیک بزن.</p>
+          <ul id="histList" class="list"></ul>
+        </div>
+      </section>
+
+      <section id="view-done" class="view">
+        <div class="done-card">
+          <h2>ثبت شد</h2>
+          <p id="doneSummary" class="lead"></p>
+          <button type="button" class="btn primary block" id="btnDoneHome">برگشت به جلسات</button>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="app.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("./sw.js").catch(() => {});
+    }
+  </script>
+</body>
+</html>

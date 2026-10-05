@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img">
+  <rect width="512" height="512" rx="96" fill="#12100c"/>
+  <rect x="96" y="200" width="320" height="48" rx="12" fill="#e8a54b"/>
+  <rect x="96" y="268" width="320" height="48" rx="12" fill="#3a3428"/>
+  <rect x="96" y="336" width="200" height="48" rx="12" fill="#7dcf8a"/>
+  <text x="256" y="150" text-anchor="middle" font-family="Arial Black, sans-serif" font-size="64" fill="#f7f1e6">SET</text>
+</svg>
