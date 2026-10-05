@@ -100,14 +100,19 @@
     speechSynthesis.onvoiceschanged = loadVoices;
   }
 
-  /** عدد و زمان باقی‌مانده با صدای انگلیسی */
-  function speakEn(text) {
+  /** صدای فارسی؛ اگر صدا نباشد از انگلیسی می‌خواند */
+  function speakFa(text) {
     if (!window.speechSynthesis || !text) return;
     try {
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(String(text));
-      u.lang = (enVoice && enVoice.lang) || "en-US";
-      if (enVoice) u.voice = enVoice;
+      if (faVoice) {
+        u.lang = faVoice.lang || "fa-IR";
+        u.voice = faVoice;
+      } else {
+        u.lang = (enVoice && enVoice.lang) || "en-US";
+        if (enVoice) u.voice = enVoice;
+      }
       u.rate = 1;
       u.pitch = 1;
       speechSynthesis.speak(u);
@@ -116,12 +121,12 @@
 
   function speakSeconds(sec) {
     const n = Math.round(sec);
-    speakEn(String(n));
+    speakFa(faNum(n));
   }
 
   function speakPhase(step) {
     const n = Math.round(step.dur);
-    speakEn(String(n) + " seconds");
+    speakFa(faNum(n) + " ثانیه");
   }
 
   function bumpNumber(input, dir) {
@@ -479,23 +484,27 @@
     const flow2 = $("#flow2");
     const row2 = $("#flowRow2");
     const arrow = $("#flowArrow");
+    const arrowLead = $("#flowArrowLead");
     if (!card || !run || !flow1) return;
     const step = run.steps[run.i];
 
     function showOne(text) {
       card.hidden = false;
+      card.classList.remove("is-rest-next");
       flow1.textContent = text;
       if (row2) row2.hidden = true;
       if (arrow) arrow.hidden = true;
+      if (arrowLead) arrowLead.hidden = true;
       if (flow2) flow2.textContent = "";
     }
 
-    function showFlow(a, b) {
+    function showFlow(a, b, lead) {
       card.hidden = false;
       flow1.textContent = a;
       if (flow2) flow2.textContent = b;
       if (row2) row2.hidden = false;
       if (arrow) arrow.hidden = false;
+      if (arrowLead) arrowLead.hidden = !lead;
     }
 
     if (step.kind !== "work") {
@@ -503,9 +512,12 @@
         card.hidden = true;
         return;
       }
-      showOne(step.nextName);
+      card.classList.add("is-rest-next");
+      showFlow("حرکت بعدی", step.nextName, true);
       return;
     }
+
+    card.classList.remove("is-rest-next");
 
     const next = run.steps[run.i + 1];
     if (!next) {
@@ -519,10 +531,7 @@
     }
 
     if (next.nextName) {
-      showFlow(
-        "استراحت " + toFaDigits(next.dur) + "ث",
-        next.nextName
-      );
+      showFlow("↓ استراحت " + toFaDigits(next.dur) + "ث", next.nextName, true);
       return;
     }
 
@@ -537,7 +546,7 @@
     $("#doneFrac").innerHTML = toFaDigits(rounds) + "<span>/</span>" + toFaDigits(rounds);
     const msg = $("#doneMsg");
     if (msg) msg.textContent = "تمام شد · " + toFaDigits(rounds) + " ست";
-    speakEn(String(rounds));
+    speakFa(faNum(rounds) + " ست");
     show("done");
   }
 

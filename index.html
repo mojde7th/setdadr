@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@500;700;800;900&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet"/>
-  <link rel="stylesheet" href="styles.css?v=13"/>
+  <link rel="stylesheet" href="styles.css?v=15"/>
 </head>
 <body>
   <div id="app">
@@ -115,6 +115,7 @@
           <div class="sub" id="runSub"></div>
           <div class="next-card" id="nextCard" hidden>
             <div class="flow" id="nextFlow">
+              <div class="flow-arrow flow-arrow-lead" id="flowArrowLead" hidden>↓</div>
               <div class="flow-row" id="flowRow1">
                 <span class="flow-num">۱</span>
                 <span class="flow-txt" id="flow1"></span>
@@ -143,7 +144,7 @@
       </section>
     </main>
   </div>
-  <script src="app.js?v=13"></script>
+  <script src="app.js?v=15"></script>
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("./sw.js").catch(() => {});

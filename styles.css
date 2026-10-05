@@ -426,6 +426,18 @@ input[type="text"], input[type="number"] {
   line-height: 1;
   direction: ltr;
 }
+.flow-arrow-lead {
+  font-size: 28px;
+  margin-bottom: 2px;
+  color: #f0b75a;
+}
+.next-card.is-rest-next .flow-arrow-lead {
+  display: block !important;
+}
+.next-card.is-rest-next .flow-row:first-of-type .flow-txt {
+  color: #f0b75a;
+  font-weight: 800;
+}
 .flow-arrow[hidden],
 .flow-row[hidden] {
   display: none !important;
