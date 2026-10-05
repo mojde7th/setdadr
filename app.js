@@ -419,6 +419,7 @@
     if (!run) return;
     const step = run.steps[run.i];
     const stage = $("#runStage");
+    const moveEl = $("#runMove");
     const isRest = step.kind !== "work";
     stage.classList.toggle("work", !isRest);
     stage.classList.toggle("rest", isRest);
@@ -426,14 +427,18 @@
     $("#runFracLbl").textContent = "ست";
     if (step.kind === "work") {
       $("#runPhase").textContent = "کار";
-      $("#runMove").textContent = step.name;
+      moveEl.textContent = step.name;
+      moveEl.classList.remove("is-rest-title");
+      moveEl.hidden = false;
       $("#runSub").textContent =
         "حرکت " + toFaDigits(step.moveIndex) + " از " + toFaDigits(step.moveCount) + " · " + run.title;
     } else {
-      $("#runPhase").textContent = step.kind === "rest-set" ? "آماده‌باش · بین ست" : "آماده‌باش";
-      $("#runMove").textContent = step.nextName || "—";
-      $("#runSub").textContent =
-        "استراحت " + toFaDigits(Math.ceil(run.left)) + " ثانیه · بعد از این حرکت شروع می‌شود";
+      // اول استراحت بالا، بعد کارت حرکت بعدی
+      $("#runPhase").textContent = step.kind === "rest-set" ? "استراحت ست" : "استراحت";
+      moveEl.textContent = step.kind === "rest-set" ? "بین دو ست" : "بین دو حرکت";
+      moveEl.classList.add("is-rest-title");
+      moveEl.hidden = false;
+      $("#runSub").textContent = toFaDigits(Math.ceil(run.left)) + " ثانیه مانده";
     }
     $("#runTimer").textContent = fmt(run.left);
     $("#btnPause").textContent = run.paused ? "ادامه" : "توقف";
@@ -447,39 +452,46 @@
     const card = $("#nextCard");
     const nameEl = $("#nextName");
     const metaEl = $("#nextMeta");
+    const lblEl = $("#nextLbl");
+    const chipEl = $("#nextChip");
     if (!card || !run) return;
     const step = run.steps[run.i];
-    // during rest the big title already shows the next move; card shows what comes after that
-    const lookFrom = step.kind === "work" ? run.i : run.i;
-    let next = null;
-    if (step.kind === "work") {
-      next = run.steps[run.i + 1];
-    } else {
-      // after current rest's target move, show the following work (or rest label lightly)
-      const afterTarget = nextWorkAfter(run.steps, run.i);
-      if (afterTarget) {
-        const idx = run.steps.indexOf(afterTarget);
-        next = run.steps[idx + 1] || null;
-        // prefer showing the work after the upcoming one
-        const work2 = nextWorkAfter(run.steps, idx);
-        if (work2) next = work2;
+
+    if (step.kind !== "work") {
+      // استراحت: کارت فقط حرکت بعدی را نشان بده
+      if (!step.nextName) {
+        card.hidden = true;
+        return;
       }
+      card.hidden = false;
+      if (lblEl) lblEl.textContent = "حرکت بعدی";
+      if (chipEl) chipEl.textContent = step.kind === "rest-set" ? "ست بعد" : "همین ست";
+      nameEl.textContent = step.nextName;
+      metaEl.textContent =
+        "بعد از این استراحت شروع می‌شود · ست " +
+        toFaDigits(step.kind === "rest-set" ? Math.min(step.round + 1, step.rounds) : step.round) +
+        "/" +
+        toFaDigits(step.rounds);
+      return;
     }
+
+    // کار: کارت بگوید بعدش چیست (استراحت یا حرکت)
+    const next = run.steps[run.i + 1];
     if (!next) {
       card.hidden = true;
       return;
     }
     card.hidden = false;
     if (next.kind === "work") {
+      if (lblEl) lblEl.textContent = "حرکت بعدی";
+      if (chipEl) chipEl.textContent = "بدون وقفه";
       nameEl.textContent = next.name;
-      metaEl.textContent =
-        "کار · " + toFaDigits(next.dur) + " ثانیه · ست " + toFaDigits(next.round) + "/" + toFaDigits(next.rounds);
+      metaEl.textContent = toFaDigits(next.dur) + " ثانیه · ست " + toFaDigits(next.round) + "/" + toFaDigits(next.rounds);
     } else if (next.nextName) {
+      if (lblEl) lblEl.textContent = "حرکت بعدی";
+      if (chipEl) chipEl.textContent = next.kind === "rest-set" ? "بعد استراحت ست" : "بعد استراحت";
       nameEl.textContent = next.nextName;
-      metaEl.textContent =
-        (next.kind === "rest-set" ? "بعد از استراحت ست · " : "بعد از استراحت · ") +
-        toFaDigits(next.dur) +
-        " ثانیه";
+      metaEl.textContent = "اول " + toFaDigits(next.dur) + " ثانیه استراحت";
     } else {
       card.hidden = true;
     }

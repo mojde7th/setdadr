@@ -1,4 +1,4 @@
-const CACHE = "setdadr-v4";
+﻿const CACHE = "setdadr-v5";
 const ASSETS = ["./", "./index.html", "./app.js", "./styles.css", "./manifest.webmanifest", "./icon.svg", "./icon-180.png"];
 
 self.addEventListener("install", (e) => {
@@ -20,3 +20,4 @@ self.addEventListener("fetch", (e) => {
     }).catch(() => caches.match("./index.html")))
   );
 });
+

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
   <meta charset="utf-8"/>
@@ -6,109 +6,112 @@
   <meta name="theme-color" content="#12100c"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-  <meta name="apple-mobile-web-app-title" content="ست‌یار"/>
-  <title>ست‌یار</title>
+  <meta name="apple-mobile-web-app-title" content="Ø³Øªâ€ŒÛŒØ§Ø±"/>
+  <title>Ø³Øªâ€ŒÛŒØ§Ø±</title>
   <link rel="manifest" href="manifest.webmanifest"/>
   <link rel="icon" href="icon.svg" type="image/svg+xml"/>
   <link rel="apple-touch-icon" href="icon-180.png"/>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@500;700;800;900&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet"/>
-  <link rel="stylesheet" href="styles.css?v=4"/>
+  <link rel="stylesheet" href="styles.css?v=5"/>
 </head>
 <body>
   <div id="app">
     <header class="top" id="topBar">
-      <div class="brand">ست<span>‌یار</span></div>
+      <div class="brand">Ø³Øª<span>â€ŒÛŒØ§Ø±</span></div>
       <nav class="tabs" id="navTabs">
-        <button type="button" data-view="home" class="on">جلسات</button>
-        <button type="button" data-view="moves">حرکت‌ها</button>
-        <button type="button" data-view="edit" id="tabEdit" hidden>ست</button>
+        <button type="button" data-view="home" class="on">Ø¬Ù„Ø³Ø§Øª</button>
+        <button type="button" data-view="moves">Ø­Ø±Ú©Øªâ€ŒÙ‡Ø§</button>
+        <button type="button" data-view="edit" id="tabEdit" hidden>Ø³Øª</button>
       </nav>
     </header>
 
     <main>
       <section id="view-home" class="view on">
         <div class="home-head">
-          <button type="button" class="btn-hero" id="btnNewPlan">جلسه تازه</button>
+          <button type="button" class="btn-hero" id="btnNewPlan">Ø¬Ù„Ø³Ù‡ ØªØ§Ø²Ù‡</button>
         </div>
         <ul id="planList" class="list"></ul>
-        <p id="planEmpty" class="empty">خالی</p>
+        <p id="planEmpty" class="empty">Ø®Ø§Ù„ÛŒ</p>
       </section>
 
       <section id="view-moves" class="view">
         <form id="moveForm" class="row-form">
-          <input id="moveName" type="text" required maxlength="60" placeholder="نام حرکت"/>
-          <input id="moveWork" type="number" min="5" max="600" step="5" value="40" inputmode="numeric" aria-label="ثانیه کار"/>
-          <button type="submit" class="btn primary sm">افزودن</button>
+          <input id="moveName" type="text" required maxlength="60" placeholder="Ù†Ø§Ù… Ø­Ø±Ú©Øª"/>
+          <input id="moveWork" type="number" min="5" max="600" step="5" value="40" inputmode="numeric" aria-label="Ø«Ø§Ù†ÛŒÙ‡ Ú©Ø§Ø±"/>
+          <button type="submit" class="btn primary sm">Ø§ÙØ²ÙˆØ¯Ù†</button>
         </form>
         <ul id="moveLib" class="list"></ul>
-        <p id="moveEmpty" class="empty">خالی</p>
+        <p id="moveEmpty" class="empty">Ø®Ø§Ù„ÛŒ</p>
       </section>
 
       <section id="view-edit" class="view">
         <div class="panel">
-          <input id="planTitle" type="text" maxlength="60" placeholder="نام جلسه"/>
+          <input id="planTitle" type="text" maxlength="60" placeholder="Ù†Ø§Ù… Ø¬Ù„Ø³Ù‡"/>
           <div class="grid2">
-            <label>تعداد ست
+            <label>ØªØ¹Ø¯Ø§Ø¯ Ø³Øª
               <input id="planRounds" type="number" min="1" max="30" value="4" inputmode="numeric"/>
             </label>
-            <label>استراحت بین ست
+            <label>Ø§Ø³ØªØ±Ø§Ø­Øª Ø¨ÛŒÙ† Ø³Øª
               <input id="planRestSet" type="number" min="0" max="600" step="5" value="40" inputmode="numeric"/>
             </label>
           </div>
-          <label class="rest-lbl">استراحت بین حرکت داخل ست
+          <label class="rest-lbl">Ø§Ø³ØªØ±Ø§Ø­Øª Ø¨ÛŒÙ† Ø­Ø±Ú©Øª Ø¯Ø§Ø®Ù„ Ø³Øª
             <input id="planRestMove" type="number" min="0" max="300" step="5" value="10" inputmode="numeric"/>
           </label>
         </div>
 
         <div class="panel">
           <form id="addToSetForm" class="row-form">
-            <input id="pickMoveName" list="moveDatalist" type="text" required maxlength="60" placeholder="حرکت"/>
+            <input id="pickMoveName" list="moveDatalist" type="text" required maxlength="60" placeholder="Ø­Ø±Ú©Øª"/>
             <datalist id="moveDatalist"></datalist>
             <input id="pickWork" type="number" min="5" max="600" step="5" value="40" inputmode="numeric"/>
-            <button type="submit" class="btn primary sm" id="btnAddToSet">افزودن به این ست</button>
+            <button type="submit" class="btn primary sm" id="btnAddToSet">Ø§ÙØ²ÙˆØ¯Ù† Ø¨Ù‡ Ø§ÛŒÙ† Ø³Øª</button>
           </form>
           <ol id="circuitList" class="seq"></ol>
         </div>
 
         <div class="actions">
-          <button type="button" class="btn primary block" id="btnSavePlan">ذخیره</button>
-          <button type="button" class="btn ghost block" id="btnCancelEdit">برگشت</button>
+          <button type="button" class="btn primary block" id="btnSavePlan">Ø°Ø®ÛŒØ±Ù‡</button>
+          <button type="button" class="btn ghost block" id="btnCancelEdit">Ø¨Ø±Ú¯Ø´Øª</button>
         </div>
       </section>
 
       <section id="view-run" class="view">
         <div class="run-stage" id="runStage">
-          <div class="frac" id="runFrac">۱<span>/</span>۴</div>
-          <div class="frac-lbl" id="runFracLbl">ست</div>
-          <div class="phase" id="runPhase">کار</div>
-          <div class="move-big" id="runMove">—</div>
+          <div class="frac" id="runFrac">Û±<span>/</span>Û´</div>
+          <div class="frac-lbl" id="runFracLbl">Ø³Øª</div>
+          <div class="phase" id="runPhase">Ú©Ø§Ø±</div>
+          <div class="move-big" id="runMove">â€”</div>
           <div class="timer-big" id="runTimer">0:40</div>
           <div class="sub" id="runSub"></div>
           <div class="next-card" id="nextCard" hidden>
-            <div class="next-lbl">بعدی</div>
-            <div class="next-name" id="nextName">—</div>
+            <div class="next-top">
+              <span class="next-lbl" id="nextLbl">Ø­Ø±Ú©Øª Ø¨Ø¹Ø¯ÛŒ</span>
+              <span class="next-chip" id="nextChip"></span>
+            </div>
+            <div class="next-name" id="nextName">â€”</div>
             <div class="next-meta" id="nextMeta"></div>
           </div>
         </div>
         <div class="run-bar">
-          <button type="button" class="btn big" id="btnPause">توقف</button>
-          <button type="button" class="btn big primary" id="btnSkip">بعدی</button>
-          <button type="button" class="btn big ghost" id="btnAbort">خروج</button>
+          <button type="button" class="btn big" id="btnPause">ØªÙˆÙ‚Ù</button>
+          <button type="button" class="btn big primary" id="btnSkip">Ø¨Ø¹Ø¯ÛŒ</button>
+          <button type="button" class="btn big ghost" id="btnAbort">Ø®Ø±ÙˆØ¬</button>
         </div>
       </section>
 
       <section id="view-done" class="view">
         <div class="done-card">
-          <div class="frac done-frac" id="doneFrac">۴<span>/</span>۴</div>
+          <div class="frac done-frac" id="doneFrac">Û´<span>/</span>Û´</div>
           <p class="done-msg" id="doneMsg"></p>
-          <button type="button" class="btn primary block" id="btnDoneHome">جلسات</button>
+          <button type="button" class="btn primary block" id="btnDoneHome">Ø¬Ù„Ø³Ø§Øª</button>
         </div>
       </section>
     </main>
   </div>
-  <script src="app.js?v=4"></script>
+  <script src="app.js?v=5"></script>
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("./sw.js").catch(() => {});
@@ -116,3 +119,4 @@
   </script>
 </body>
 </html>
+
