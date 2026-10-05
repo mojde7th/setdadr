@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@500;700;800;900&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet"/>
-  <link rel="stylesheet" href="styles.css?v=10"/>
+  <link rel="stylesheet" href="styles.css?v=11"/>
 </head>
 <body>
   <div id="app">
@@ -107,20 +107,17 @@
           <div class="timer-big" id="runTimer">0:40</div>
           <div class="sub" id="runSub"></div>
           <div class="next-card" id="nextCard" hidden>
-            <div class="next-top">
-              <span class="next-lbl" id="nextLbl">بعدی</span>
-              <span class="next-chip" id="nextChip"></span>
+            <div class="flow" id="nextFlow">
+              <div class="flow-row" id="flowRow1">
+                <span class="flow-num">۱</span>
+                <span class="flow-txt" id="flow1"></span>
+              </div>
+              <div class="flow-arrow" id="flowArrow" hidden>↓</div>
+              <div class="flow-row" id="flowRow2" hidden>
+                <span class="flow-num">۲</span>
+                <span class="flow-txt" id="flow2"></span>
+              </div>
             </div>
-            <div class="next-step" id="nextStep1" hidden>
-              <span class="next-step-k">اول</span>
-              <span class="next-step-v" id="nextStep1Val"></span>
-            </div>
-            <div class="next-step" id="nextStep2" hidden>
-              <span class="next-step-k">بعد</span>
-              <span class="next-step-v" id="nextStep2Val"></span>
-            </div>
-            <div class="next-name" id="nextName">—</div>
-            <div class="next-meta" id="nextMeta"></div>
           </div>
         </div>
         <div class="run-bar">
@@ -139,7 +136,7 @@
       </section>
     </main>
   </div>
-  <script src="app.js?v=10"></script>
+  <script src="app.js?v=11"></script>
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("./sw.js").catch(() => {});

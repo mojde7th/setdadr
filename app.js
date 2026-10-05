@@ -469,21 +469,27 @@
 
   function paintNext() {
     const card = $("#nextCard");
-    const nameEl = $("#nextName");
-    const metaEl = $("#nextMeta");
-    const lblEl = $("#nextLbl");
-    const chipEl = $("#nextChip");
-    const step1 = $("#nextStep1");
-    const step2 = $("#nextStep2");
-    const step1Val = $("#nextStep1Val");
-    const step2Val = $("#nextStep2Val");
-    if (!card || !run) return;
+    const flow1 = $("#flow1");
+    const flow2 = $("#flow2");
+    const row2 = $("#flowRow2");
+    const arrow = $("#flowArrow");
+    if (!card || !run || !flow1) return;
     const step = run.steps[run.i];
 
-    function hideSteps() {
-      if (step1) step1.hidden = true;
-      if (step2) step2.hidden = true;
-      if (nameEl) nameEl.hidden = false;
+    function showOne(text) {
+      card.hidden = false;
+      flow1.textContent = text;
+      if (row2) row2.hidden = true;
+      if (arrow) arrow.hidden = true;
+      if (flow2) flow2.textContent = "";
+    }
+
+    function showFlow(a, b) {
+      card.hidden = false;
+      flow1.textContent = a;
+      if (flow2) flow2.textContent = b;
+      if (row2) row2.hidden = false;
+      if (arrow) arrow.hidden = false;
     }
 
     if (step.kind !== "work") {
@@ -491,12 +497,7 @@
         card.hidden = true;
         return;
       }
-      card.hidden = false;
-      hideSteps();
-      if (lblEl) lblEl.textContent = "حرکت بعدی";
-      if (chipEl) chipEl.textContent = step.kind === "rest-set" ? "ست بعد" : "همین ست";
-      nameEl.textContent = step.nextName;
-      metaEl.textContent = "بعد از این استراحت";
+      showOne(step.nextName);
       return;
     }
 
@@ -505,33 +506,17 @@
       card.hidden = true;
       return;
     }
-    card.hidden = false;
 
     if (next.kind === "work") {
-      hideSteps();
-      if (lblEl) lblEl.textContent = "حرکت بعدی";
-      if (chipEl) chipEl.textContent = "";
-      nameEl.textContent = next.name;
-      metaEl.textContent = toFaDigits(next.dur) + " ثانیه · بدون استراحت وسط";
+      showOne(next.name);
       return;
     }
 
     if (next.nextName) {
-      // اول استراحت، بعد حرکت — دو خط واضح
-      if (lblEl) lblEl.textContent = "صف بعدی";
-      if (chipEl) chipEl.textContent = "";
-      nameEl.hidden = true;
-      nameEl.textContent = "";
-      if (step1 && step1Val) {
-        step1.hidden = false;
-        step1Val.textContent =
-          "استراحت " + toFaDigits(next.dur) + " ثانیه" + (next.kind === "rest-set" ? " بین ست" : "");
-      }
-      if (step2 && step2Val) {
-        step2.hidden = false;
-        step2Val.textContent = next.nextName;
-      }
-      metaEl.textContent = "اول استراحت، بعد این حرکت";
+      showFlow(
+        "استراحت " + toFaDigits(next.dur) + "ث",
+        next.nextName
+      );
       return;
     }
 

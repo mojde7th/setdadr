@@ -1,4 +1,4 @@
-const CACHE = "setdadr-v10";
+const CACHE = "setdadr-v11";
 const ASSETS = ["./", "./index.html", "./app.js", "./styles.css", "./manifest.webmanifest", "./icon.svg", "./icon-180.png"];
 
 self.addEventListener("install", (e) => {
