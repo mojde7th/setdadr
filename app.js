@@ -23,6 +23,10 @@
   let voiceReady = false;
   let faVoice = null;
   let enVoice = null;
+  let speakToken = 0;
+  let audioCtx = null;
+  let activeBeep = null;
+  let startLock = false;
 
   const viewIds = ["home", "moves", "edit", "run", "done"];
 
@@ -85,47 +89,129 @@
     if (!window.speechSynthesis) return;
     const voices = speechSynthesis.getVoices() || [];
     faVoice =
-      voices.find((v) => /^fa/i.test(v.lang)) ||
-      voices.find((v) => /persian|farsi/i.test(v.name)) ||
+      voices.find((v) => /^fa(-|_|$)/i.test(v.lang)) ||
+      voices.find((v) => /persian|farsi|فارسی/i.test(v.name)) ||
+      voices.find((v) => /fa-IR|fa_IR/i.test(v.lang)) ||
       null;
     enVoice =
       voices.find((v) => /^en(-|_|$)/i.test(v.lang) && /female|zira|samantha|google|aria|jenny/i.test(v.name)) ||
       voices.find((v) => /^en-US/i.test(v.lang)) ||
       voices.find((v) => /^en(-|_|$)/i.test(v.lang)) ||
       null;
-    voiceReady = true;
+    voiceReady = !!voices.length;
   }
   if (window.speechSynthesis) {
     loadVoices();
     speechSynthesis.onvoiceschanged = loadVoices;
   }
 
-  /** صدای فارسی؛ اگر صدا نباشد از انگلیسی می‌خواند */
+  function unlockAudio() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      if (!audioCtx) audioCtx = new AC();
+      if (audioCtx.state === "suspended") audioCtx.resume();
+    } catch {}
+    if (window.speechSynthesis) {
+      try {
+        speechSynthesis.resume();
+        // warm-up silent utterance helps some Android engines
+        if (!voiceReady) loadVoices();
+      } catch {}
+    }
+  }
+
+  function stopBeep() {
+    if (!activeBeep) return;
+    try {
+      activeBeep.gain.gain.cancelScheduledValues(audioCtx ? audioCtx.currentTime : 0);
+      activeBeep.gain.gain.value = 0;
+      activeBeep.osc.stop();
+      activeBeep.osc.disconnect();
+      activeBeep.gain.disconnect();
+    } catch {}
+    activeBeep = null;
+  }
+
+  function stopAllSound() {
+    speakToken += 1;
+    stopBeep();
+    if (window.speechSynthesis) {
+      try {
+        speechSynthesis.cancel();
+      } catch {}
+    }
+  }
+
+  /** بوق سفید کوتاه — همیشه یک نمونه؛ دوبار زدن روی هم نمی‌رود */
+  function beepWhite(ms) {
+    try {
+      unlockAudio();
+      if (!audioCtx) return;
+      stopBeep();
+      const dur = Math.max(0.04, (ms || 140) / 1000);
+      const t0 = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      // سفیدِ ملایم: موج سینوسی با نویز خیلی کوتاه حس «بوق سفید»
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(880, t0);
+      osc.frequency.exponentialRampToValueAtTime(660, t0 + dur);
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(0.18, t0 + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(t0);
+      osc.stop(t0 + dur + 0.02);
+      activeBeep = { osc, gain };
+      osc.onended = () => {
+        if (activeBeep && activeBeep.osc === osc) activeBeep = null;
+      };
+    } catch {}
+  }
+
+  /** صدای فارسی؛ همیشه lang=fa-IR — صف صدا قفل می‌شود تا زوم نشود */
   function speakFa(text) {
     if (!window.speechSynthesis || !text) return;
+    unlockAudio();
+    speakToken += 1;
+    const tok = speakToken;
     try {
       speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(String(text));
-      if (faVoice) {
-        u.lang = faVoice.lang || "fa-IR";
-        u.voice = faVoice;
-      } else {
-        u.lang = (enVoice && enVoice.lang) || "en-US";
-        if (enVoice) u.voice = enVoice;
-      }
-      u.rate = 1;
-      u.pitch = 1;
-      speechSynthesis.speak(u);
     } catch {}
+    // بعد از cancel کمی صبر — بدون این روی کروم/اندروید صدا روی هم می‌افتد
+    setTimeout(() => {
+      if (tok !== speakToken) return;
+      try {
+        if (speechSynthesis.speaking || speechSynthesis.pending) {
+          try {
+            speechSynthesis.cancel();
+          } catch {}
+        }
+        const u = new SpeechSynthesisUtterance(String(text));
+        u.lang = "fa-IR";
+        if (faVoice) {
+          u.voice = faVoice;
+          u.lang = faVoice.lang || "fa-IR";
+        }
+        u.rate = 1;
+        u.pitch = 1;
+        u.volume = 1;
+        speechSynthesis.speak(u);
+      } catch {}
+    }, 80);
   }
 
   function speakSeconds(sec) {
     const n = Math.round(sec);
+    beepWhite(90);
     speakFa(faNum(n));
   }
 
   function speakPhase(step) {
     const n = Math.round(step.dur);
+    beepWhite(140);
     speakFa(faNum(n) + " ثانیه");
   }
 
@@ -365,12 +451,16 @@
   function startRun(id) {
     const p = state.plans.find((x) => x.id === id);
     if (!p || !p.circuit.length) return;
+    // دوبار زدن شروع = زوم صدا؛ قفل کوتاه + قطع قبلی
+    if (startLock) return;
+    startLock = true;
+    setTimeout(() => {
+      startLock = false;
+    }, 700);
+    stopLoop();
+    stopAllSound();
     const steps = buildTimeline(p);
-    if (window.speechSynthesis) {
-      try {
-        speechSynthesis.resume();
-      } catch {}
-    }
+    unlockAudio();
     run = {
       planId: p.id,
       title: p.title,
@@ -540,6 +630,7 @@
 
   function finishRun() {
     stopLoop();
+    stopAllSound();
     const last = run && run.steps.length ? run.steps[run.steps.length - 1] : null;
     const rounds = last ? last.rounds : 0;
     run = null;
@@ -629,8 +720,9 @@
     run.paused = !run.paused;
     if (run.paused) {
       stopLoop();
-      if (window.speechSynthesis) speechSynthesis.cancel();
+      stopAllSound();
     } else {
+      unlockAudio();
       run.lastTick = performance.now();
       loop();
     }
@@ -639,13 +731,14 @@
 
   $("#btnSkip").addEventListener("click", () => {
     if (!run) return;
+    stopAllSound();
     run.skipped = (run.skipped || 0) + 1;
     advance();
   });
 
   $("#btnAbort").addEventListener("click", () => {
     stopLoop();
-    if (window.speechSynthesis) speechSynthesis.cancel();
+    stopAllSound();
     run = null;
     show("home");
   });
@@ -662,17 +755,11 @@
     });
   });
 
-  // Unlock audio on first tap (iOS)
-  document.body.addEventListener(
-    "pointerdown",
-    () => {
-      if (!window.speechSynthesis) return;
-      try {
-        speechSynthesis.resume();
-      } catch {}
-    },
-    { once: true }
-  );
+  // Unlock audio on first tap (iOS/Android)
+  const unlockOnce = () => unlockAudio();
+  document.body.addEventListener("pointerdown", unlockOnce, { once: true });
+  document.body.addEventListener("touchstart", unlockOnce, { once: true });
+  document.body.addEventListener("click", unlockOnce, { once: true });
 
   wireNumSteppers();
   renderMoves();
