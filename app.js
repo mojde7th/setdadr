@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "26";
+  const APP_VER = "27";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -34,7 +34,7 @@
   let announceChain = Promise.resolve();
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=26";
+  const VOICE_Q = "?v=27";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -889,7 +889,13 @@
         return;
       }
       card.classList.add("is-rest-next");
-      showFlow("حرکت بعدی", step.nextName, true);
+      // فقط اسم حرکت بعدی + فلش؛ برچسب «حرکت بعدی» تکراری است
+      flow1.textContent = step.nextName;
+      if (flow2) flow2.textContent = "";
+      if (row2) row2.hidden = true;
+      if (arrow) arrow.hidden = true;
+      if (arrowLead) arrowLead.hidden = false;
+      card.hidden = false;
       return;
     }
 
