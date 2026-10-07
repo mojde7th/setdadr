@@ -577,7 +577,7 @@ input[type="text"], input[type="number"] {
   text-align: center;
 }
 
-/* v26 select + rest arrow */
+/* v28 select: هم‌سبک بقیه؛ فلش واضح برای انتخاب */
 .select-wrap {
   position: relative;
   display: block;
@@ -586,13 +586,14 @@ input[type="text"], input[type="number"] {
 .pick-select,
 #pickFromLib.pick-select {
   width: 100%;
-  min-height: 48px;
+  min-height: 44px;
   border-radius: 12px;
-  border: 2px solid #f0b75a !important;
-  background: #f7f3ea !important;
-  color: #1a1208 !important;
-  font: 800 16px var(--font) !important;
-  padding: 10px 40px 10px 12px !important;
+  border: 1px solid var(--line) !important;
+  background: var(--bg2, #17130e) !important;
+  color: inherit !important;
+  font: inherit !important;
+  font-weight: 700 !important;
+  padding: 8px 40px 8px 12px !important;
   box-sizing: border-box;
   appearance: none;
   -webkit-appearance: none;
@@ -600,18 +601,20 @@ input[type="text"], input[type="number"] {
 }
 .pick-select:focus {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(240, 183, 90, .35);
-  border-color: #e8a93a !important;
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px rgba(232, 165, 75, .25);
 }
 .select-chev {
   position: absolute;
-  inset-inline-end: 14px;
+  inset-inline-end: 12px;
   top: 50%;
   transform: translateY(-50%);
-  color: #1a1208;
-  font-size: 14px;
+  color: var(--accent);
+  font-size: 18px;
   font-weight: 900;
+  line-height: 1;
   pointer-events: none;
+  text-shadow: 0 0 0 currentColor;
 }
 .next-card.is-rest-next {
   border-color: #f0b75a !important;

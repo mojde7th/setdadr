@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "27";
+  const APP_VER = "28";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -34,7 +34,7 @@
   let announceChain = Promise.resolve();
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=27";
+  const VOICE_Q = "?v=28";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -236,45 +236,47 @@
       if (!audioCtx) return;
       const play = () => {
         stopBeep();
-        const dur = Math.max(0.28, (ms || 300) / 1000);
+        const dur = Math.max(0.32, (ms || 280) / 1000);
         const t0 = audioCtx.currentTime;
         const master = audioCtx.createGain();
-        const comp = audioCtx.createDynamicsCompressor();
-        comp.threshold.setValueAtTime(-10, t0);
-        comp.knee.setValueAtTime(20, t0);
-        comp.ratio.setValueAtTime(2.8, t0);
-        comp.attack.setValueAtTime(0.005, t0);
-        comp.release.setValueAtTime(0.22, t0);
+        const filter = audioCtx.createBiquadFilter();
+        filter.type = "lowpass";
+        filter.frequency.setValueAtTime(2400, t0);
+        filter.Q.setValueAtTime(0.7, t0);
+        // بوق نرم و قشنگ؛ بدون کمپرسور تیز
         master.gain.setValueAtTime(0.0001, t0);
-        master.gain.exponentialRampToValueAtTime(1.2, t0 + 0.035);
-        master.gain.setValueAtTime(1.0, t0 + dur * 0.4);
+        master.gain.exponentialRampToValueAtTime(0.38, t0 + 0.03);
+        master.gain.exponentialRampToValueAtTime(0.22, t0 + dur * 0.35);
         master.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-        master.connect(comp);
-        comp.connect(audioCtx.destination);
+        master.connect(filter);
+        filter.connect(audioCtx.destination);
 
         const o1 = audioCtx.createOscillator();
         const o2 = audioCtx.createOscillator();
         const g1 = audioCtx.createGain();
         const g2 = audioCtx.createGain();
         o1.type = "sine";
-        o2.type = "sine";
-        o1.frequency.setValueAtTime(587.33, t0);
-        o2.frequency.setValueAtTime(880.0, t0);
+        o2.type = "triangle";
+        // دو نت ملایم: می و سی
+        o1.frequency.setValueAtTime(659.25, t0);
+        o1.frequency.exponentialRampToValueAtTime(523.25, t0 + dur * 0.9);
+        o2.frequency.setValueAtTime(987.77, t0);
+        o2.frequency.exponentialRampToValueAtTime(783.99, t0 + dur * 0.85);
         g1.gain.setValueAtTime(0.0001, t0);
-        g1.gain.exponentialRampToValueAtTime(1.0, t0 + 0.04);
+        g1.gain.exponentialRampToValueAtTime(1.0, t0 + 0.025);
         g1.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
         g2.gain.setValueAtTime(0.0001, t0);
-        g2.gain.exponentialRampToValueAtTime(0.45, t0 + 0.05);
-        g2.gain.exponentialRampToValueAtTime(0.0001, t0 + dur * 0.85);
+        g2.gain.exponentialRampToValueAtTime(0.28, t0 + 0.04);
+        g2.gain.exponentialRampToValueAtTime(0.0001, t0 + dur * 0.75);
         o1.connect(g1);
         o2.connect(g2);
         g1.connect(master);
         g2.connect(master);
         o1.start(t0);
         o2.start(t0);
-        o1.stop(t0 + dur + 0.03);
-        o2.stop(t0 + dur + 0.03);
-        activeBeep = { osc: o1, gain: master, osc2: o2, comp };
+        o1.stop(t0 + dur + 0.04);
+        o2.stop(t0 + dur + 0.04);
+        activeBeep = { osc: o1, gain: master, osc2: o2 };
         o1.onended = () => {
           if (activeBeep && activeBeep.osc === o1) activeBeep = null;
         };
@@ -352,7 +354,7 @@
     }
   }
 
-  function speakFaSynthAsync(text, vol) {
+  function speakFaSynthAsync(text, vol, lang) {
     return new Promise((resolve) => {
       if (!window.speechSynthesis || !text) {
         resolve(false);
@@ -375,13 +377,21 @@
         } catch {}
         try {
           const u = new SpeechSynthesisUtterance(String(text));
-          u.lang = "fa-IR";
-          if (faVoice) {
-            u.voice = faVoice;
-            u.lang = faVoice.lang || "fa-IR";
+          const useEn = lang === "en" && enVoice;
+          if (useEn) {
+            u.voice = enVoice;
+            u.lang = enVoice.lang || "en-US";
+            u.rate = 0.95;
+            u.pitch = 1.05;
+          } else {
+            u.lang = "fa-IR";
+            if (faVoice) {
+              u.voice = faVoice;
+              u.lang = faVoice.lang || "fa-IR";
+            }
+            u.rate = 0.98;
+            u.pitch = 1.08;
           }
-          u.rate = 0.98;
-          u.pitch = 1.08;
           u.volume = vol == null ? 0.93 : vol;
           let finished = false;
           const done = (ok) => {
@@ -441,6 +451,127 @@
     });
   }
 
+
+  function normMoveKey(s) {
+    return String(s || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[_./]+/g, " ")
+      .replace(/[-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .replace(/[….,!?()[\]{}«»"']/g, "")
+      .trim();
+  }
+
+  // تلفظ رایج حرکت‌ها برای صدای فارسی
+  const MOVE_SAY = {
+    squat: "اسکوات",
+    squats: "اسکوات",
+    "air squat": "ایر اسکوات",
+    "goblet squat": "گبلت اسکوات",
+    اسکوات: "اسکوات",
+    burpee: "برپی",
+    burpees: "برپی",
+    berpi: "برپی",
+    برپی: "برپی",
+    plank: "پلانک",
+    planks: "پلانک",
+    پلانک: "پلانک",
+    "push up": "شنا سوئدی",
+    "push-up": "شنا سوئدی",
+    pushup: "شنا سوئدی",
+    pushups: "شنا سوئدی",
+    "pull up": "بارفیکس",
+    "pull-up": "بارفیکس",
+    pullup: "بارفیکس",
+    pullups: "بارفیکس",
+    بارفیکس: "بارفیکس",
+    شنا: "شنا",
+    "شنا سوئدی": "شنا سوئدی",
+    deadlift: "ددلیفت",
+    "romanian deadlift": "ددلیفت رومانیایی",
+    rdl: "آر دی ال",
+    ددلیفت: "ددلیفت",
+    lunge: "لانج",
+    lunges: "لانج",
+    لانج: "لانج",
+    "jumping jack": "جامپینگ جک",
+    "jumping jacks": "جامپینگ جک",
+    "mountain climber": "مانتین کلایمر",
+    "mountain climbers": "مانتین کلایمر",
+    crunch: "کرانچ",
+    crunches: "کرانچ",
+    کرانچ: "کرانچ",
+    "sit up": "دراز و نشست",
+    "sit-up": "دراز و نشست",
+    situp: "دراز و نشست",
+    "hip thrust": "هیپ تراست",
+    "glute bridge": "بریج باسن",
+    "wall sit": "وال سیت",
+    "calf raise": "ساق پا",
+    "bicep curl": "جلو بازو",
+    "tricep dip": "دیپ پشت بازو",
+    "shoulder press": "پرس شانه",
+    "bench press": "پرس سینه",
+    "lateral raise": "نشر جانب",
+    "kettlebell swing": "سوئینگ کتل بل",
+    row: "روئینگ",
+    "bent over row": "روئینگ خم",
+    "high knees": "زانو بلند",
+    "butt kicks": "پاشنه به باسن",
+    "leg raise": "پای بالا",
+    "russian twist": "راشن توییست",
+    "box jump": "پرش روی باکس",
+    "jump squat": "اسکوات پرشی",
+    "sumo squat": "اسکوات سومو",
+    "side plank": "پلانک بغل",
+    hollow: "هالو هولد",
+    "hollow hold": "هالو هولد",
+    "farmer walk": "راه رفتن کشاورز",
+    "battle rope": "بتل روپ",
+    "jump rope": "طناب",
+    yoga: "یوگا",
+    stretch: "کشش",
+    کشش: "کشش",
+    استراحت: "استراحت"
+  };
+
+  function sayForMove(name) {
+    const raw = String(name || "").trim();
+    if (!raw) return { text: "", lang: "fa" };
+    const key = normMoveKey(raw);
+    if (MOVE_SAY[key]) return { text: MOVE_SAY[key], lang: "fa" };
+    const compact = key.replace(/\s+/g, "");
+    if (MOVE_SAY[compact]) return { text: MOVE_SAY[compact], lang: "fa" };
+
+    // جایگزینی تک‌واژه‌های انگلیسی داخل عبارت
+    const parts = key.split(" ");
+    let changed = false;
+    const out = parts.map((p) => {
+      if (MOVE_SAY[p]) {
+        changed = true;
+        return MOVE_SAY[p];
+      }
+      return p;
+    });
+    if (changed) {
+      return { text: out.join(" "), lang: "fa" };
+    }
+
+    const hasLatin = /[A-Za-z]/.test(raw);
+    const hasFa = /[\u0600-\u06FF]/.test(raw);
+    if (hasLatin && !hasFa) {
+      return { text: raw, lang: "en" };
+    }
+    return { text: raw, lang: "fa" };
+  }
+
+  async function speakMoveName(name, vol) {
+    const { text, lang } = sayForMove(name);
+    if (!text) return false;
+    return speakFaSynthAsync(text, vol == null ? 0.95 : vol, lang);
+  }
+
   async function speakPhase(step) {
     return queueAnnounce(async () => {
       const n = Math.round(step.dur);
@@ -451,7 +582,7 @@
       await sleep(200);
       const name = step.kind === "work" ? step.name : step.nextName || "";
       if (name) {
-        await speakFaSynthAsync(name, 0.95);
+        await speakMoveName(name, 0.95);
       }
     });
   }
@@ -831,15 +962,10 @@
       $("#runSub").textContent = "";
     } else {
       $("#runPhase").textContent = step.kind === "rest-set" ? "استراحت ست" : "استراحت";
-      if (step.nextName) {
-        moveEl.textContent = step.nextName;
-        moveEl.hidden = false;
-        $("#runSub").textContent = "بعدی";
-      } else {
-        moveEl.textContent = "";
-        moveEl.hidden = true;
-        $("#runSub").textContent = "";
-      }
+      // اسم حرکت بعدی فقط داخل کارت پایین؛ بالا تکرار نشود
+      moveEl.textContent = "";
+      moveEl.hidden = true;
+      $("#runSub").textContent = "";
       if (mc) {
         mc.innerHTML =
           toFaDigits(step.moveIndex) + "<span>/</span>" + toFaDigits(step.moveCount);
