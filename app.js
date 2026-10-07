@@ -28,6 +28,18 @@
   let activeBeep = null;
   let startLock = false;
   let speechWarmed = false;
+  let voicePlayer = null;
+  const VOICE_BASE = "./voice/";
+  const VOICE_FILES = {
+    ready: true,
+    count: { 10: true, 20: true },
+    phase: {},
+    done: {}
+  };
+  [5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120,150,180,240,300,600].forEach((n) => {
+    VOICE_FILES.phase[n] = true;
+  });
+  for (let i = 1; i <= 15; i++) VOICE_FILES.done[i] = true;
 
   const viewIds = ["home", "moves", "edit", "run", "done"];
 
@@ -123,17 +135,23 @@
       // یک‌بار گرم‌کردن موتور گفتار روی ژست کاربر (اندروید/آی‌او‌اس)
       if (!speechWarmed) {
         speechWarmed = true;
-        const warm = new SpeechSynthesisUtterance("آ");
-        warm.lang = "fa-IR";
-        if (faVoice) warm.voice = faVoice;
-        warm.volume = 0.01;
-        warm.rate = 1;
-        speechSynthesis.speak(warm);
-        setTimeout(() => {
-          try {
-            speechSynthesis.cancel();
-          } catch {}
-        }, 30);
+        try {
+          const warmA = new Audio(VOICE_BASE + "ready.mp3");
+          warmA.volume = 0.01;
+          warmA.play().catch(() => {});
+        } catch {}
+        try {
+          const warm = new SpeechSynthesisUtterance("آ");
+          warm.lang = "fa-IR";
+          if (faVoice) warm.voice = faVoice;
+          warm.volume = 0.01;
+          speechSynthesis.speak(warm);
+          setTimeout(() => {
+            try {
+              speechSynthesis.cancel();
+            } catch {}
+          }, 40);
+        } catch {}
       }
     } catch {}
   }
@@ -155,9 +173,21 @@
     activeBeep = null;
   }
 
+  function stopVoiceFile() {
+    if (!voicePlayer) return;
+    try {
+      voicePlayer.onended = null;
+      voicePlayer.onerror = null;
+      voicePlayer.pause();
+      voicePlayer.removeAttribute("src");
+      voicePlayer.load();
+    } catch {}
+  }
+
   function stopAllSound() {
     speakToken += 1;
     stopBeep();
+    stopVoiceFile();
     if (window.speechSynthesis) {
       try {
         speechSynthesis.cancel();
@@ -165,26 +195,25 @@
     }
   }
 
-  /** بوق بلند؛ فقط یک نمونه همزمان */
+  /** بوق نرم ولی بلندتر — دو نت سینوسی */
   function beepWhite(ms) {
     try {
       unlockAudio();
       if (!audioCtx) return;
       const play = () => {
         stopBeep();
-        const dur = Math.max(0.16, (ms || 200) / 1000);
+        const dur = Math.max(0.18, (ms || 220) / 1000);
         const t0 = audioCtx.currentTime;
-        // دو سینوسی ملایم (مثل زنگ نرم باشگاه) — نه بوق تیز مربعی
         const g = audioCtx.createGain();
         const o1 = audioCtx.createOscillator();
         const o2 = audioCtx.createOscillator();
         o1.type = "sine";
         o2.type = "sine";
-        o1.frequency.setValueAtTime(523.25, t0); // C5
-        o2.frequency.setValueAtTime(659.25, t0); // E5
+        o1.frequency.setValueAtTime(523.25, t0);
+        o2.frequency.setValueAtTime(659.25, t0);
         g.gain.setValueAtTime(0.0001, t0);
-        g.gain.exponentialRampToValueAtTime(0.38, t0 + 0.02);
-        g.gain.exponentialRampToValueAtTime(0.22, t0 + dur * 0.5);
+        g.gain.exponentialRampToValueAtTime(0.78, t0 + 0.018);
+        g.gain.exponentialRampToValueAtTime(0.55, t0 + dur * 0.45);
         g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
         o1.connect(g);
         o2.connect(g);
@@ -206,8 +235,50 @@
     } catch {}
   }
 
-  /** فارسی اجباری؛ بدون کنسل دوباره داخل تایمر (علت بی‌صدا شدن) */
-  function speakFa(text) {
+  function nearestPhaseClip(n) {
+    n = Math.round(n);
+    if (VOICE_FILES.phase[n]) return n;
+    const keys = Object.keys(VOICE_FILES.phase).map(Number).sort((a, b) => a - b);
+    let best = keys[0];
+    let dist = Math.abs(best - n);
+    keys.forEach((k) => {
+      const d = Math.abs(k - n);
+      if (d < dist) {
+        dist = d;
+        best = k;
+      }
+    });
+    return dist <= 5 ? best : null;
+  }
+
+  /** پخش فایل فارسی از پیش‌ساخته — مطمئن، آفلاین */
+  function playVoiceFile(rel, vol) {
+    return new Promise((resolve) => {
+      try {
+        unlockAudio();
+        stopVoiceFile();
+        speakToken += 1;
+        const tok = speakToken;
+        const a = new Audio(VOICE_BASE + rel);
+        voicePlayer = a;
+        a.preload = "auto";
+        a.volume = Math.max(0.05, Math.min(1, vol == null ? 0.62 : vol));
+        a.onended = () => {
+          if (tok === speakToken) resolve(true);
+        };
+        a.onerror = () => resolve(false);
+        const p = a.play();
+        if (p && p.then) {
+          p.then(() => {}).catch(() => resolve(false));
+        }
+      } catch {
+        resolve(false);
+      }
+    });
+  }
+
+  /** گفتار سیستم فقط به‌عنوان پشتیبان */
+  function speakFaSynth(text) {
     if (!window.speechSynthesis || !text) return;
     unlockAudio();
     loadVoices();
@@ -230,23 +301,49 @@
         }
         u.rate = 0.95;
         u.pitch = 1;
-        u.volume = 1;
+        u.volume = 0.7;
         speechSynthesis.speak(u);
       } catch {}
-    }, 120);
+    }, 80);
   }
 
-  function speakSeconds(sec) {
+  async function speakFa(text) {
+    // مسیر اصلی: فایل‌های فارسی edge؛ اگر نبود سینت سایز
+    speakFaSynth(text);
+  }
+
+  async function speakSeconds(sec) {
     const n = Math.round(sec);
-    beepWhite(180);
-    // بوق اول، بعد حرف — کمی فاصله تا روی هم نیفتند
-    setTimeout(() => speakFa(faNum(n)), 160);
+    beepWhite(200);
+    await new Promise((r) => setTimeout(r, 140));
+    if (VOICE_FILES.count[n]) {
+      const ok = await playVoiceFile("count-" + n + ".mp3", 0.64);
+      if (ok) return;
+    }
+    speakFaSynth(faNum(n));
   }
 
-  function speakPhase(step) {
+  async function speakPhase(step) {
     const n = Math.round(step.dur);
     beepWhite(240);
-    setTimeout(() => speakFa(faNum(n) + " ثانیه"), 180);
+    await new Promise((r) => setTimeout(r, 160));
+    const clip = nearestPhaseClip(n);
+    if (clip != null) {
+      const ok = await playVoiceFile("phase-" + clip + ".mp3", 0.64);
+      if (ok) return;
+    }
+    speakFaSynth(faNum(n) + " ثانیه");
+  }
+
+  async function speakDone(rounds) {
+    const n = Math.round(rounds);
+    beepWhite(220);
+    await new Promise((r) => setTimeout(r, 150));
+    if (VOICE_FILES.done[n]) {
+      const ok = await playVoiceFile("done-" + n + ".mp3", 0.64);
+      if (ok) return;
+    }
+    speakFaSynth(faNum(n) + " ست");
   }
 
   function bumpNumber(input, dir) {
@@ -602,14 +699,20 @@
       $("#runSub").textContent = "";
     } else {
       $("#runPhase").textContent = step.kind === "rest-set" ? "استراحت ست" : "استراحت";
-      moveEl.textContent = "";
-      moveEl.hidden = true;
+      if (step.nextName) {
+        moveEl.textContent = step.nextName;
+        moveEl.hidden = false;
+        $("#runSub").textContent = "بعدی";
+      } else {
+        moveEl.textContent = "";
+        moveEl.hidden = true;
+        $("#runSub").textContent = "";
+      }
       if (mc) {
         mc.innerHTML =
           toFaDigits(step.moveIndex) + "<span>/</span>" + toFaDigits(step.moveCount);
       }
       if (mpi) mpi.hidden = false;
-      $("#runSub").textContent = "";
     }
     $("#runTimer").textContent = fmt(run.left);
     $("#btnPause").textContent = run.paused ? "ادامه" : "توقف";
@@ -688,7 +791,7 @@
     $("#doneFrac").innerHTML = toFaDigits(rounds) + "<span>/</span>" + toFaDigits(rounds);
     const msg = $("#doneMsg");
     if (msg) msg.textContent = "تمام شد · " + toFaDigits(rounds) + " ست";
-    speakFa(faNum(rounds) + " ست");
+    speakDone(rounds);
     show("done");
   }
 

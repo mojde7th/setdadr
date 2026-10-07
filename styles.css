@@ -283,7 +283,7 @@ input[type="text"], input[type="number"] {
 }
 .progress-v {
   font-family: var(--display);
-  font-size: clamp(34px, 11vw, 52px);
+  font-size: clamp(28px, 8vw, 40px);
   font-weight: 700;
   line-height: 1;
   direction: ltr;
@@ -296,12 +296,19 @@ input[type="text"], input[type="number"] {
   margin-bottom: 0;
 }
 .run-stage.rest .timer-big {
-  font-size: clamp(52px, 15vw, 80px);
-  margin: 2px 0 6px;
+  font-size: clamp(88px, 28vw, 140px);
+  margin: 6px 0 10px;
 }
-.run-stage.rest .move-big { display: none; }
+.run-stage.rest .move-big {
+  display: block;
+  font-size: clamp(28px, 8vw, 40px);
+  color: #f0b75a;
+}
 .run-stage.rest .sub {
-  display: none;
+  display: block;
+  font-size: clamp(16px, 4.5vw, 20px);
+  color: #f0b75a;
+  font-weight: 900;
 }
 .frac {
   font-family: var(--display);
@@ -321,7 +328,7 @@ input[type="text"], input[type="number"] {
   margin-bottom: 2px;
 }
 .phase {
-  font-size: clamp(16px, 4.5vw, 22px);
+  font-size: clamp(20px, 5.5vw, 28px);
   font-weight: 900;
   color: var(--glow, var(--accent));
   letter-spacing: .04em;
@@ -337,22 +344,23 @@ input[type="text"], input[type="number"] {
 }
 .move-count[hidden] { display: none !important; }
 .move-big {
-  font-size: clamp(24px, 6.5vw, 34px);
+  font-size: clamp(32px, 9vw, 48px);
   font-weight: 900;
-  margin: 2px 0 4px;
-  max-width: 92vw;
-  line-height: 1.2;
+  margin: 6px 0 8px;
+  max-width: 94vw;
+  line-height: 1.15;
   word-break: break-word;
 }
 .timer-big {
   font-family: var(--display);
-  font-size: clamp(44px, 13vw, 72px);
+  font-size: clamp(96px, 30vw, 160px);
   font-weight: 700;
-  line-height: 1;
+  line-height: .92;
   color: var(--glow, var(--accent));
   direction: ltr;
   unicode-bidi: isolate;
-  text-shadow: 0 0 28px color-mix(in srgb, var(--glow, var(--accent)) 30%, transparent);
+  text-shadow: 0 0 36px color-mix(in srgb, var(--glow, var(--accent)) 40%, transparent);
+  margin: 4px 0 8px;
 }
 .sub {
   margin-top: 2px;
@@ -412,7 +420,7 @@ input[type="text"], input[type="number"] {
   background: var(--work);
 }
 .flow-txt {
-  font-size: clamp(18px, 5vw, 24px);
+  font-size: clamp(24px, 7vw, 34px);
   font-weight: 900;
   line-height: 1.2;
   word-break: break-word;
