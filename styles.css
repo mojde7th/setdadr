@@ -471,3 +471,14 @@ input[type="text"], input[type="number"] {
   .row-form { grid-template-columns: 1fr; }
   .grid2 { grid-template-columns: 1fr; }
 }
+
+.row-form select {
+  flex: 1 1 100%;
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--line, #3a342c);
+  background: var(--panel, #1a1612);
+  color: inherit;
+  font: inherit;
+  padding: 8px 12px;
+}

@@ -146,6 +146,10 @@
       activeBeep.gain.gain.setValueAtTime(0, now);
       activeBeep.osc.stop(now);
       activeBeep.osc.disconnect();
+      if (activeBeep.osc2) {
+        activeBeep.osc2.stop(now);
+        activeBeep.osc2.disconnect();
+      }
       activeBeep.gain.disconnect();
     } catch {}
     activeBeep = null;
@@ -168,25 +172,30 @@
       if (!audioCtx) return;
       const play = () => {
         stopBeep();
-        const dur = Math.max(0.12, (ms || 220) / 1000);
+        const dur = Math.max(0.16, (ms || 200) / 1000);
         const t0 = audioCtx.currentTime;
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = "square";
-        osc.frequency.setValueAtTime(1200, t0);
-        osc.frequency.setValueAtTime(900, t0 + dur * 0.45);
-        // بلند (نزدیک حداکثر؛ بدون کلیپ شدید)
-        gain.gain.setValueAtTime(0.0001, t0);
-        gain.gain.exponentialRampToValueAtTime(0.95, t0 + 0.01);
-        gain.gain.setValueAtTime(0.95, t0 + dur * 0.7);
-        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start(t0);
-        osc.stop(t0 + dur + 0.03);
-        activeBeep = { osc, gain };
-        osc.onended = () => {
-          if (activeBeep && activeBeep.osc === osc) activeBeep = null;
+        // دو سینوسی ملایم (مثل زنگ نرم باشگاه) — نه بوق تیز مربعی
+        const g = audioCtx.createGain();
+        const o1 = audioCtx.createOscillator();
+        const o2 = audioCtx.createOscillator();
+        o1.type = "sine";
+        o2.type = "sine";
+        o1.frequency.setValueAtTime(523.25, t0); // C5
+        o2.frequency.setValueAtTime(659.25, t0); // E5
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.38, t0 + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.22, t0 + dur * 0.5);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+        o1.connect(g);
+        o2.connect(g);
+        g.connect(audioCtx.destination);
+        o1.start(t0);
+        o2.start(t0);
+        o1.stop(t0 + dur + 0.02);
+        o2.stop(t0 + dur + 0.02);
+        activeBeep = { osc: o1, gain: g, osc2: o2 };
+        o1.onended = () => {
+          if (activeBeep && activeBeep.osc === o1) activeBeep = null;
         };
       };
       if (audioCtx.state === "suspended") {
@@ -299,24 +308,40 @@
     return String(s).replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[d]);
   }
 
+  function fillMoveSelect() {
+    const sel = $("#pickFromLib");
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = "";
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = "از کتابخانه…";
+    sel.appendChild(blank);
+    state.moves.forEach((m) => {
+      const opt = document.createElement("option");
+      opt.value = m.id;
+      opt.textContent = m.name + " · " + m.work + "ث";
+      sel.appendChild(opt);
+    });
+    // بعد از افزودن گزینه داخل اینپوت متنی نیاید؛ سلکت برمی‌گردد اول
+    sel.value = "";
+    if (cur && [...sel.options].some((o) => o.value === cur)) {
+      /* نگه ندار — عمداً خالی بماند تا کشویی اینپوت باز نشود */
+    }
+  }
+
   function renderMoves() {
     const ul = $("#moveLib");
     const empty = $("#moveEmpty");
-    const dl = $("#moveDatalist");
     if (!ul) return;
     ul.innerHTML = "";
-    if (dl) dl.innerHTML = "";
+    fillMoveSelect();
     if (!state.moves.length) {
       if (empty) empty.hidden = false;
       return;
     }
     if (empty) empty.hidden = true;
     state.moves.forEach((m) => {
-      if (dl) {
-        const opt = document.createElement("option");
-        opt.value = m.name;
-        dl.appendChild(opt);
-      }
       const li = document.createElement("li");
       li.innerHTML = '<div class="row"><div><div class="title"></div><div class="meta"></div></div></div>';
       li.querySelector(".title").textContent = m.name;
@@ -426,6 +451,7 @@
     }
     renderMoves();
     renderCircuit();
+    fillMoveSelect();
     show("edit");
   }
 
@@ -682,9 +708,6 @@
     save(state);
     $("#moveName").value = "";
     renderMoves();
-    try {
-      $("#moveName").focus();
-    } catch {}
   });
 
   $("#addToSetForm").addEventListener("submit", (e) => {
@@ -693,26 +716,29 @@
     if (!name) return;
     let work = Math.max(5, Number($("#pickWork").value) || 40);
     const known = state.moves.find((m) => m.name === name);
-    if (known && !Number($("#pickWork").value)) work = known.work;
+    if (known) work = Math.max(5, Number($("#pickWork").value) || known.work);
     if (!known) {
       state.moves.unshift({ id: uid(), name, work });
       save(state);
       renderMoves();
-    } else if (!$("#pickWork").value) {
-      work = known.work;
     }
     circuit.push({ id: uid(), name, work });
     $("#pickMoveName").value = "";
+    const sel = $("#pickFromLib");
+    if (sel) sel.value = "";
     renderCircuit();
-    try {
-      $("#pickMoveName").focus();
-    } catch {}
+    // فوکوس نکن — وگرنه پیشنهادها دوباره داخل اینپوت باز می‌شود
   });
 
-  $("#pickMoveName").addEventListener("change", () => {
-    const name = ($("#pickMoveName").value || "").trim();
-    const known = state.moves.find((m) => m.name === name);
-    if (known) $("#pickWork").value = String(known.work);
+  $("#pickFromLib").addEventListener("change", () => {
+    const sel = $("#pickFromLib");
+    if (!sel || !sel.value) return;
+    const known = state.moves.find((m) => m.id === sel.value);
+    if (!known) return;
+    $("#pickMoveName").value = known.name;
+    $("#pickWork").value = String(known.work);
+    // سلکت را خالی کن تا «گزینه» داخل اینپوت متنی نماند
+    sel.value = "";
   });
 
   $("#btnSavePlan").addEventListener("click", () => {

@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@500;700;800;900&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet"/>
-  <link rel="stylesheet" href="styles.css?v=17"/>
+  <link rel="stylesheet" href="styles.css?v=18"/>
 </head>
 <body>
   <div id="app">
@@ -38,7 +38,7 @@
 
       <section id="view-moves" class="view">
         <form id="moveForm" class="row-form">
-          <input id="moveName" type="text" required maxlength="60" placeholder="نام حرکت"/>
+          <input id="moveName" type="text" required maxlength="60" placeholder="نام حرکت" autocomplete="off" autocorrect="off" spellcheck="false"/>
           <div class="num-step" data-for="moveWork">
             <button type="button" class="num-btn" data-dir="-1" aria-label="کم">−</button>
             <input id="moveWork" type="number" min="5" max="600" step="5" value="40" inputmode="numeric" aria-label="ثانیه کار"/>
@@ -79,8 +79,10 @@
 
         <div class="panel">
           <form id="addToSetForm" class="row-form">
-            <input id="pickMoveName" list="moveDatalist" type="text" required maxlength="60" placeholder="حرکت"/>
-            <datalist id="moveDatalist"></datalist>
+            <select id="pickFromLib" aria-label="از کتابخانه">
+              <option value="">از کتابخانه…</option>
+            </select>
+            <input id="pickMoveName" type="text" required maxlength="60" placeholder="نام حرکت" autocomplete="off" autocorrect="off" spellcheck="false"/>
             <div class="num-step" data-for="pickWork">
               <button type="button" class="num-btn" data-dir="-1" aria-label="کم">−</button>
               <input id="pickWork" type="number" min="5" max="600" step="5" value="40" inputmode="numeric"/>
@@ -144,7 +146,7 @@
       </section>
     </main>
   </div>
-  <script src="app.js?v=17"></script>
+  <script src="app.js?v=18"></script>
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("./sw.js").catch(() => {});
