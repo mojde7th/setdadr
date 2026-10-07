@@ -14,13 +14,13 @@
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@500;700;800;900&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet"/>
-  <link rel="stylesheet" href="styles.css?v=25"/>
+  <link rel="stylesheet" href="styles.css?v=26"/>
 </head>
 <body>
   <div id="app">
     <header class="top" id="topBar">
       <div class="brand">ست<span>‌یار</span></div>
-      <div class="app-ver" id="appVer">v25</div>
+      <div class="app-ver" id="appVer">v26</div>
       <nav class="tabs" id="navTabs">
         <button type="button" data-view="home" class="on">ست‌ها</button>
         <button type="button" data-view="moves">حرکت‌ها</button>
@@ -86,9 +86,12 @@
           <form id="addToSetForm" class="add-set-form">
             <label class="field-block">
               <span class="field-k">حرکت ذخیره‌شده</span>
-              <select id="pickFromLib" aria-label="حرکت ذخیره‌شده">
-                <option value="">انتخاب کن…</option>
-              </select>
+              <div class="select-wrap">
+                <select id="pickFromLib" class="pick-select" aria-label="حرکت ذخیره‌شده">
+                  <option value="">انتخاب کن</option>
+                </select>
+                <span class="select-chev" aria-hidden="true">▼</span>
+              </div>
             </label>
             <label class="field-block">
               <span class="field-k">نام حرکت</span>
@@ -161,7 +164,7 @@
       </section>
     </main>
   </div>
-  <script src="app.js?v=25"></script>
+  <script src="app.js?v=26"></script>
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("./sw.js").catch(() => {});

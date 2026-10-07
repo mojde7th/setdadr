@@ -576,3 +576,49 @@ input[type="text"], input[type="number"] {
 .run-stage .next-card .flow-txt {
   text-align: center;
 }
+
+/* v26 select + rest arrow */
+.select-wrap {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+.pick-select,
+#pickFromLib.pick-select {
+  width: 100%;
+  min-height: 48px;
+  border-radius: 12px;
+  border: 2px solid #f0b75a !important;
+  background: #f7f3ea !important;
+  color: #1a1208 !important;
+  font: 800 16px var(--font) !important;
+  padding: 10px 40px 10px 12px !important;
+  box-sizing: border-box;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+.pick-select:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(240, 183, 90, .35);
+  border-color: #e8a93a !important;
+}
+.select-chev {
+  position: absolute;
+  inset-inline-end: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #1a1208;
+  font-size: 14px;
+  font-weight: 900;
+  pointer-events: none;
+}
+.next-card.is-rest-next {
+  border-color: #f0b75a !important;
+}
+.next-card.is-rest-next .flow-arrow-lead {
+  display: block !important;
+  font-size: 32px;
+  color: #f0b75a;
+  margin-bottom: 4px;
+}

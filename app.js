@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "25";
+  const APP_VER = "26";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -34,6 +34,7 @@
   let announceChain = Promise.resolve();
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
+  const VOICE_Q = "?v=26";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -235,43 +236,47 @@
       if (!audioCtx) return;
       const play = () => {
         stopBeep();
-        const dur = Math.max(0.32, (ms || 340) / 1000);
+        const dur = Math.max(0.28, (ms || 300) / 1000);
         const t0 = audioCtx.currentTime;
-        // زنگ سه‌نتی قشنگ + کمپرسور برای بلندی تمیز
         const master = audioCtx.createGain();
         const comp = audioCtx.createDynamicsCompressor();
-        comp.threshold.setValueAtTime(-12, t0);
-        comp.knee.setValueAtTime(18, t0);
-        comp.ratio.setValueAtTime(3.5, t0);
-        comp.attack.setValueAtTime(0.002, t0);
-        comp.release.setValueAtTime(0.18, t0);
+        comp.threshold.setValueAtTime(-10, t0);
+        comp.knee.setValueAtTime(20, t0);
+        comp.ratio.setValueAtTime(2.8, t0);
+        comp.attack.setValueAtTime(0.005, t0);
+        comp.release.setValueAtTime(0.22, t0);
         master.gain.setValueAtTime(0.0001, t0);
-        master.gain.exponentialRampToValueAtTime(1.15, t0 + 0.02);
-        master.gain.setValueAtTime(1.05, t0 + dur * 0.45);
+        master.gain.exponentialRampToValueAtTime(1.2, t0 + 0.035);
+        master.gain.setValueAtTime(1.0, t0 + dur * 0.4);
         master.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
         master.connect(comp);
         comp.connect(audioCtx.destination);
 
-        const freqs = [523.25, 659.25, 783.99]; // C5 E5 G5
-        const oscs = [];
-        freqs.forEach((f, idx) => {
-          const o = audioCtx.createOscillator();
-          const g = audioCtx.createGain();
-          o.type = idx === 2 ? "triangle" : "sine";
-          const start = t0 + idx * 0.028;
-          o.frequency.setValueAtTime(f, start);
-          g.gain.setValueAtTime(0.0001, start);
-          g.gain.exponentialRampToValueAtTime(0.9 - idx * 0.12, start + 0.018);
-          g.gain.exponentialRampToValueAtTime(0.0001, start + dur - idx * 0.02);
-          o.connect(g);
-          g.connect(master);
-          o.start(start);
-          o.stop(t0 + dur + 0.04);
-          oscs.push(o);
-        });
-        activeBeep = { osc: oscs[0], gain: master, osc2: oscs[1], osc3: oscs[2], comp };
-        oscs[0].onended = () => {
-          if (activeBeep && activeBeep.osc === oscs[0]) activeBeep = null;
+        const o1 = audioCtx.createOscillator();
+        const o2 = audioCtx.createOscillator();
+        const g1 = audioCtx.createGain();
+        const g2 = audioCtx.createGain();
+        o1.type = "sine";
+        o2.type = "sine";
+        o1.frequency.setValueAtTime(587.33, t0);
+        o2.frequency.setValueAtTime(880.0, t0);
+        g1.gain.setValueAtTime(0.0001, t0);
+        g1.gain.exponentialRampToValueAtTime(1.0, t0 + 0.04);
+        g1.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+        g2.gain.setValueAtTime(0.0001, t0);
+        g2.gain.exponentialRampToValueAtTime(0.45, t0 + 0.05);
+        g2.gain.exponentialRampToValueAtTime(0.0001, t0 + dur * 0.85);
+        o1.connect(g1);
+        o2.connect(g2);
+        g1.connect(master);
+        g2.connect(master);
+        o1.start(t0);
+        o2.start(t0);
+        o1.stop(t0 + dur + 0.03);
+        o2.stop(t0 + dur + 0.03);
+        activeBeep = { osc: o1, gain: master, osc2: o2, comp };
+        o1.onended = () => {
+          if (activeBeep && activeBeep.osc === o1) activeBeep = null;
         };
       };
       if (audioCtx.state === "suspended") {
@@ -302,7 +307,7 @@
     if (voiceBuf.has(rel)) return voiceBuf.get(rel);
     unlockAudio();
     if (!audioCtx) return null;
-    const res = await fetch(VOICE_BASE + rel, { cache: "force-cache" });
+    const res = await fetch(VOICE_BASE + rel + VOICE_Q, { cache: "force-cache" });
     if (!res.ok) return null;
     const raw = await res.arrayBuffer();
     const buf = await audioCtx.decodeAudioData(raw.slice(0));
@@ -375,9 +380,9 @@
             u.voice = faVoice;
             u.lang = faVoice.lang || "fa-IR";
           }
-          u.rate = 1.05;
-          u.pitch = 1.05;
-          u.volume = vol == null ? 0.92 : vol;
+          u.rate = 0.98;
+          u.pitch = 1.08;
+          u.volume = vol == null ? 0.93 : vol;
           let finished = false;
           const done = (ok) => {
             if (finished) return;
@@ -425,32 +430,27 @@
   async function speakSeconds(sec) {
     const n = Math.round(sec);
     return queueAnnounce(async () => {
-      buzz(n <= 10 ? [55, 40, 55] : [40]);
-      beepWhite(240);
-      await sleep(160);
+      buzz(n <= 10 ? [40, 30, 40] : [28]);
+      beepWhite(200);
+      await sleep(120);
       if (VOICE_FILES.count[n]) {
-        const ok = await playVoiceFile("count-" + n + ".mp3", 0.88);
+        const ok = await playVoiceFile("count-" + n + ".mp3", 0.82);
         if (ok) return;
       }
-      await speakFaSynthAsync(timePhrase(n), 0.95);
+      await speakFaSynthAsync(faNum(n), 0.9);
     });
   }
 
   async function speakPhase(step) {
     return queueAnnounce(async () => {
       const n = Math.round(step.dur);
-      buzz(step.kind === "work" ? [70, 40, 70] : [35, 35, 35, 35, 35]);
-      beepWhite(320);
-      await sleep(220);
+      buzz(step.kind === "work" ? [55, 35, 55] : [30, 30, 30]);
+      beepWhite(280);
+      await sleep(200);
       await sayTime(n);
-      await sleep(220);
+      await sleep(200);
       const name = step.kind === "work" ? step.name : step.nextName || "";
       if (name) {
-        // برای استراحت بگو: استراحت + اسم بعدی
-        if (step.kind !== "work") {
-          await speakFaSynthAsync("استراحت", 0.85);
-          await sleep(120);
-        }
         await speakFaSynthAsync(name, 0.95);
       }
     });
@@ -780,7 +780,7 @@
     run.prevLeftCeil = cur;
     if (prev == null) return;
     // اگر فریم از روی ۲۰/۱۰ بپرد هم اعلام شود
-    const marks = [60, 30, 20, 10];
+    const marks = [20, 10];
     marks.forEach((m) => {
       const key = run.i + ":" + m;
       if (run.phaseDur > m && !run.announced[key] && prev > m && cur <= m) {
@@ -880,12 +880,16 @@
       if (arrowLead) arrowLead.hidden = !lead;
     }
 
-    // داخل استراحت فلش/کارت بعدی لازم نیست؛ بیرون (runMove) کافی است
     if (step.kind !== "work") {
-      card.hidden = true;
-      card.classList.remove("is-rest-next");
-      if (arrowLead) arrowLead.hidden = true;
-      if (arrow) arrow.hidden = true;
+      if (!step.nextName) {
+        card.hidden = true;
+        card.classList.remove("is-rest-next");
+        if (arrowLead) arrowLead.hidden = true;
+        if (arrow) arrow.hidden = true;
+        return;
+      }
+      card.classList.add("is-rest-next");
+      showFlow("حرکت بعدی", step.nextName, true);
       return;
     }
 
@@ -903,7 +907,7 @@
     }
 
     if (next.nextName) {
-      showFlow("استراحت " + toFaDigits(next.dur) + " ثانیه", next.nextName, false);
+      showFlow("استراحت " + toFaDigits(next.dur) + " ثانیه", next.nextName, true);
       return;
     }
 
