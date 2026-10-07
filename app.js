@@ -202,18 +202,19 @@
       if (!audioCtx) return;
       const play = () => {
         stopBeep();
-        const dur = Math.max(0.18, (ms || 220) / 1000);
+        const dur = Math.max(0.22, (ms || 260) / 1000);
         const t0 = audioCtx.currentTime;
         const g = audioCtx.createGain();
         const o1 = audioCtx.createOscillator();
         const o2 = audioCtx.createOscillator();
         o1.type = "sine";
         o2.type = "sine";
-        o1.frequency.setValueAtTime(523.25, t0);
-        o2.frequency.setValueAtTime(659.25, t0);
+        // نرم‌تر (زیرتر) ولی بلندتر
+        o1.frequency.setValueAtTime(392.0, t0);  // G4
+        o2.frequency.setValueAtTime(493.88, t0); // B4
         g.gain.setValueAtTime(0.0001, t0);
-        g.gain.exponentialRampToValueAtTime(0.78, t0 + 0.018);
-        g.gain.exponentialRampToValueAtTime(0.55, t0 + dur * 0.45);
+        g.gain.exponentialRampToValueAtTime(0.92, t0 + 0.03);
+        g.gain.exponentialRampToValueAtTime(0.7, t0 + dur * 0.5);
         g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
         o1.connect(g);
         o2.connect(g);
@@ -262,7 +263,7 @@
         const a = new Audio(VOICE_BASE + rel);
         voicePlayer = a;
         a.preload = "auto";
-        a.volume = Math.max(0.05, Math.min(1, vol == null ? 0.62 : vol));
+        a.volume = Math.max(0.05, Math.min(1, vol == null ? 0.52 : vol));
         a.onended = () => {
           if (tok === speakToken) resolve(true);
         };
@@ -299,9 +300,9 @@
           u.voice = faVoice;
           u.lang = faVoice.lang || "fa-IR";
         }
-        u.rate = 0.95;
-        u.pitch = 1;
-        u.volume = 0.7;
+        u.rate = 0.85;
+        u.pitch = 0.95;
+        u.volume = 0.48;
         speechSynthesis.speak(u);
       } catch {}
     }, 80);
@@ -317,7 +318,7 @@
     beepWhite(200);
     await new Promise((r) => setTimeout(r, 140));
     if (VOICE_FILES.count[n]) {
-      const ok = await playVoiceFile("count-" + n + ".mp3", 0.64);
+      const ok = await playVoiceFile("count-" + n + ".mp3", 0.5);
       if (ok) return;
     }
     speakFaSynth(faNum(n));
@@ -325,14 +326,27 @@
 
   async function speakPhase(step) {
     const n = Math.round(step.dur);
-    beepWhite(240);
-    await new Promise((r) => setTimeout(r, 160));
+    // فقط اول فاز: بوق + زمان + نام حرکت/بعدی
+    beepWhite(260);
+    await new Promise((r) => setTimeout(r, 180));
     const clip = nearestPhaseClip(n);
+    let saidTime = false;
     if (clip != null) {
-      const ok = await playVoiceFile("phase-" + clip + ".mp3", 0.64);
-      if (ok) return;
+      saidTime = await playVoiceFile("phase-" + clip + ".mp3", 0.52);
     }
-    speakFaSynth(faNum(n) + " ثانیه");
+    if (!saidTime) {
+      speakFaSynth(faNum(n) + " ثانیه");
+      await new Promise((r) => setTimeout(r, 900));
+    } else {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    const name =
+      step.kind === "work"
+        ? step.name
+        : step.nextName || "";
+    if (name) {
+      speakFaSynth(name);
+    }
   }
 
   async function speakDone(rounds) {
@@ -340,7 +354,7 @@
     beepWhite(220);
     await new Promise((r) => setTimeout(r, 150));
     if (VOICE_FILES.done[n]) {
-      const ok = await playVoiceFile("done-" + n + ".mp3", 0.64);
+      const ok = await playVoiceFile("done-" + n + ".mp3", 0.5);
       if (ok) return;
     }
     speakFaSynth(faNum(n) + " ست");
@@ -412,12 +426,12 @@
     sel.innerHTML = "";
     const blank = document.createElement("option");
     blank.value = "";
-    blank.textContent = "از کتابخانه…";
+    blank.textContent = "انتخاب کن…";
     sel.appendChild(blank);
     state.moves.forEach((m) => {
       const opt = document.createElement("option");
       opt.value = m.id;
-      opt.textContent = m.name + " · " + m.work + "ث";
+      opt.textContent = m.name + " · " + m.work + " ثانیه";
       sel.appendChild(opt);
     });
     // بعد از افزودن گزینه داخل اینپوت متنی نیاید؛ سلکت برمی‌گردد اول

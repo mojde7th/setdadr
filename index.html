@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@500;700;800;900&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet"/>
-  <link rel="stylesheet" href="styles.css?v=19"/>
+  <link rel="stylesheet" href="styles.css?v=20"/>
 </head>
 <body>
   <div id="app">
@@ -39,10 +39,11 @@
       <section id="view-moves" class="view">
         <form id="moveForm" class="row-form">
           <input id="moveName" type="text" required maxlength="60" placeholder="نام حرکت" autocomplete="off" autocorrect="off" spellcheck="false"/>
-          <div class="num-step" data-for="moveWork">
+          <div class="num-step with-unit" data-for="moveWork">
             <button type="button" class="num-btn" data-dir="-1" aria-label="کم">−</button>
             <input id="moveWork" type="number" min="5" max="600" step="5" value="40" inputmode="numeric" aria-label="ثانیه کار"/>
             <button type="button" class="num-btn" data-dir="1" aria-label="زیاد">+</button>
+            <span class="unit-lbl">ثانیه</span>
           </div>
           <button type="submit" class="btn primary sm">افزودن</button>
         </form>
@@ -78,16 +79,26 @@
         </div>
 
         <div class="panel">
-          <form id="addToSetForm" class="row-form">
-            <select id="pickFromLib" aria-label="از کتابخانه">
-              <option value="">از کتابخانه…</option>
-            </select>
-            <input id="pickMoveName" type="text" required maxlength="60" placeholder="نام حرکت" autocomplete="off" autocorrect="off" spellcheck="false"/>
-            <div class="num-step" data-for="pickWork">
-              <button type="button" class="num-btn" data-dir="-1" aria-label="کم">−</button>
-              <input id="pickWork" type="number" min="5" max="600" step="5" value="40" inputmode="numeric"/>
-              <button type="button" class="num-btn" data-dir="1" aria-label="زیاد">+</button>
-            </div>
+          <form id="addToSetForm" class="add-set-form">
+            <label class="field-block">
+              <span class="field-k">حرکت ذخیره‌شده</span>
+              <select id="pickFromLib" aria-label="حرکت ذخیره‌شده">
+                <option value="">انتخاب کن…</option>
+              </select>
+            </label>
+            <label class="field-block">
+              <span class="field-k">نام حرکت</span>
+              <input id="pickMoveName" type="text" required maxlength="60" placeholder="مثلاً اسکوات" autocomplete="off" autocorrect="off" spellcheck="false"/>
+            </label>
+            <label class="field-block">
+              <span class="field-k">زمان این حرکت</span>
+              <div class="num-step with-unit" data-for="pickWork">
+                <button type="button" class="num-btn" data-dir="-1" aria-label="کم">−</button>
+                <input id="pickWork" type="number" min="5" max="600" step="5" value="40" inputmode="numeric"/>
+                <button type="button" class="num-btn" data-dir="1" aria-label="زیاد">+</button>
+                <span class="unit-lbl">ثانیه</span>
+              </div>
+            </label>
             <button type="submit" class="btn primary sm" id="btnAddToSet">افزودن به این ست</button>
           </form>
           <ol id="circuitList" class="seq"></ol>
@@ -146,7 +157,7 @@
       </section>
     </main>
   </div>
-  <script src="app.js?v=19"></script>
+  <script src="app.js?v=20"></script>
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("./sw.js").catch(() => {});

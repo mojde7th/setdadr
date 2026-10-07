@@ -107,11 +107,46 @@ html, body {
   margin-bottom: 12px;
   align-items: stretch;
 }
-#addToSetForm.row-form {
-  grid-template-columns: 1fr minmax(132px, 150px);
-}
 #addToSetForm #btnAddToSet {
-  grid-column: 1 / -1;
+  width: 100%;
+}
+.add-set-form {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.field-block {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+.field-k {
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--muted);
+}
+.add-set-form select,
+.add-set-form input[type="text"] {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--bg2, #17130e);
+  color: inherit;
+  font: inherit;
+  padding: 8px 12px;
+  box-sizing: border-box;
+}
+.num-step.with-unit {
+  grid-template-columns: 44px 1fr 44px auto;
+  align-items: center;
+}
+.unit-lbl {
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--accent);
+  padding-inline: 6px 2px;
+  white-space: nowrap;
 }
 .num-step {
   display: grid;
@@ -461,7 +496,8 @@ input[type="text"], input[type="number"] {
   min-width: max-content;
 }
 @media (max-width: 420px) {
-  .row-form #btnAddToSet { width: 100%; }
+  .row-form #btnAddToSet,
+  .add-set-form #btnAddToSet { width: 100%; }
 }
 .done-card {
   text-align: center;
