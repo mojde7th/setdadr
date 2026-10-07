@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "24";
+  const APP_VER = "25";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -189,7 +189,12 @@
         activeBeep.osc2.stop(now);
         activeBeep.osc2.disconnect();
       }
+      if (activeBeep.osc3) {
+        activeBeep.osc3.stop(now);
+        activeBeep.osc3.disconnect();
+      }
       activeBeep.gain.disconnect();
+      if (activeBeep.comp) activeBeep.comp.disconnect();
     } catch {}
     activeBeep = null;
   }
@@ -230,29 +235,43 @@
       if (!audioCtx) return;
       const play = () => {
         stopBeep();
-        const dur = Math.max(0.26, (ms || 300) / 1000);
+        const dur = Math.max(0.32, (ms || 340) / 1000);
         const t0 = audioCtx.currentTime;
-        const g = audioCtx.createGain();
-        const o1 = audioCtx.createOscillator();
-        const o2 = audioCtx.createOscillator();
-        o1.type = "sine";
-        o2.type = "sine";
-        o1.frequency.setValueAtTime(349.23, t0);
-        o2.frequency.setValueAtTime(440.0, t0);
-        g.gain.setValueAtTime(0.0001, t0);
-        g.gain.exponentialRampToValueAtTime(1.0, t0 + 0.03);
-        g.gain.setValueAtTime(1.0, t0 + dur * 0.5);
-        g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-        o1.connect(g);
-        o2.connect(g);
-        g.connect(audioCtx.destination);
-        o1.start(t0);
-        o2.start(t0);
-        o1.stop(t0 + dur + 0.03);
-        o2.stop(t0 + dur + 0.03);
-        activeBeep = { osc: o1, gain: g, osc2: o2 };
-        o1.onended = () => {
-          if (activeBeep && activeBeep.osc === o1) activeBeep = null;
+        // زنگ سه‌نتی قشنگ + کمپرسور برای بلندی تمیز
+        const master = audioCtx.createGain();
+        const comp = audioCtx.createDynamicsCompressor();
+        comp.threshold.setValueAtTime(-12, t0);
+        comp.knee.setValueAtTime(18, t0);
+        comp.ratio.setValueAtTime(3.5, t0);
+        comp.attack.setValueAtTime(0.002, t0);
+        comp.release.setValueAtTime(0.18, t0);
+        master.gain.setValueAtTime(0.0001, t0);
+        master.gain.exponentialRampToValueAtTime(1.15, t0 + 0.02);
+        master.gain.setValueAtTime(1.05, t0 + dur * 0.45);
+        master.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+        master.connect(comp);
+        comp.connect(audioCtx.destination);
+
+        const freqs = [523.25, 659.25, 783.99]; // C5 E5 G5
+        const oscs = [];
+        freqs.forEach((f, idx) => {
+          const o = audioCtx.createOscillator();
+          const g = audioCtx.createGain();
+          o.type = idx === 2 ? "triangle" : "sine";
+          const start = t0 + idx * 0.028;
+          o.frequency.setValueAtTime(f, start);
+          g.gain.setValueAtTime(0.0001, start);
+          g.gain.exponentialRampToValueAtTime(0.9 - idx * 0.12, start + 0.018);
+          g.gain.exponentialRampToValueAtTime(0.0001, start + dur - idx * 0.02);
+          o.connect(g);
+          g.connect(master);
+          o.start(start);
+          o.stop(t0 + dur + 0.04);
+          oscs.push(o);
+        });
+        activeBeep = { osc: oscs[0], gain: master, osc2: oscs[1], osc3: oscs[2], comp };
+        oscs[0].onended = () => {
+          if (activeBeep && activeBeep.osc === oscs[0]) activeBeep = null;
         };
       };
       if (audioCtx.state === "suspended") {

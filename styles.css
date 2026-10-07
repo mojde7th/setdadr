@@ -539,3 +539,40 @@ input[type="text"], input[type="number"] {
   font: inherit;
   padding: 8px 12px;
 }
+
+/* v25 units + center */
+.num-step.with-unit {
+  grid-template-columns: 44px minmax(0, 1fr) 44px auto !important;
+  align-items: center;
+}
+.unit-lbl {
+  font-size: 15px !important;
+  font-weight: 900 !important;
+  color: var(--accent) !important;
+  white-space: nowrap;
+  min-width: 2.8em;
+}
+.grid2 .num-step.with-unit .unit-lbl {
+  font-size: 14px !important;
+}
+.run-stage .next-card {
+  align-self: center !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  width: min(92vw, 360px) !important;
+  max-width: 100% !important;
+}
+.run-stage .next-card .flow {
+  justify-items: center;
+  width: 100%;
+}
+.run-stage .next-card .flow-row {
+  width: 100%;
+  box-sizing: border-box;
+  text-align: center;
+  grid-template-columns: 36px 1fr;
+  justify-content: center;
+}
+.run-stage .next-card .flow-txt {
+  text-align: center;
+}

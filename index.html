@@ -14,13 +14,13 @@
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@500;700;800;900&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet"/>
-  <link rel="stylesheet" href="styles.css?v=24"/>
+  <link rel="stylesheet" href="styles.css?v=25"/>
 </head>
 <body>
   <div id="app">
     <header class="top" id="topBar">
       <div class="brand">ست<span>‌یار</span></div>
-      <div class="app-ver" id="appVer">v24</div>
+      <div class="app-ver" id="appVer">v25</div>
       <nav class="tabs" id="navTabs">
         <button type="button" data-view="home" class="on">ست‌ها</button>
         <button type="button" data-view="moves">حرکت‌ها</button>
@@ -56,25 +56,28 @@
         <div class="panel">
           <div class="grid2">
             <label>تعداد ست
-              <div class="num-step" data-for="planRounds">
+              <div class="num-step with-unit" data-for="planRounds">
                 <button type="button" class="num-btn" data-dir="-1" aria-label="کم">−</button>
                 <input id="planRounds" type="number" min="1" max="30" step="1" value="4" inputmode="numeric"/>
                 <button type="button" class="num-btn" data-dir="1" aria-label="زیاد">+</button>
+                <span class="unit-lbl">ست</span>
               </div>
             </label>
             <label>استراحت بین ست
-              <div class="num-step" data-for="planRestSet">
+              <div class="num-step with-unit" data-for="planRestSet">
                 <button type="button" class="num-btn" data-dir="-1" aria-label="کم">−</button>
                 <input id="planRestSet" type="number" min="0" max="600" step="5" value="40" inputmode="numeric"/>
                 <button type="button" class="num-btn" data-dir="1" aria-label="زیاد">+</button>
+                <span class="unit-lbl">ثانیه</span>
               </div>
             </label>
           </div>
           <label class="rest-lbl">استراحت بین حرکت داخل ست
-            <div class="num-step" data-for="planRestMove">
+            <div class="num-step with-unit" data-for="planRestMove">
               <button type="button" class="num-btn" data-dir="-1" aria-label="کم">−</button>
               <input id="planRestMove" type="number" min="0" max="300" step="5" value="10" inputmode="numeric"/>
               <button type="button" class="num-btn" data-dir="1" aria-label="زیاد">+</button>
+              <span class="unit-lbl">ثانیه</span>
             </div>
           </label>
         </div>
@@ -158,7 +161,7 @@
       </section>
     </main>
   </div>
-  <script src="app.js?v=24"></script>
+  <script src="app.js?v=25"></script>
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("./sw.js").catch(() => {});
