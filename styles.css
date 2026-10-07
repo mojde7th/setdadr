@@ -311,14 +311,14 @@ input[type="text"], input[type="number"] {
   padding: 8px 6px 10px;
 }
 .progress-k {
-  font-size: 13px;
+  font-size: clamp(15px, 4vw, 18px);
   font-weight: 900;
   color: var(--muted);
-  margin-bottom: 2px;
+  margin-bottom: 4px;
 }
 .progress-v {
   font-family: var(--display);
-  font-size: clamp(28px, 8vw, 40px);
+  font-size: clamp(40px, 12vw, 58px);
   font-weight: 700;
   line-height: 1;
   direction: ltr;
@@ -404,17 +404,20 @@ input[type="text"], input[type="number"] {
   font-size: 13px;
 }
 .next-card {
-  margin-top: 8px;
-  width: min(92vw, 360px);
+  margin-top: 10px;
+  margin-left: auto;
+  margin-right: auto;
+  width: min(94vw, 380px);
   max-width: 100%;
   box-sizing: border-box;
   text-align: center;
   position: relative;
   flex-shrink: 0;
+  align-self: center;
   background: #1a1510;
   border: 2px solid var(--accent);
   border-radius: 16px;
-  padding: 10px 10px 12px;
+  padding: 12px 12px 14px;
   box-shadow: 0 10px 24px rgba(0, 0, 0, .35);
 }
 .next-card[hidden] { display: none !important; }
