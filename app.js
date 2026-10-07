@@ -29,9 +29,9 @@
   let startLock = false;
   let speechWarmed = false;
   let voicePlayer = null;
+  let announceSeq = 0;
   const VOICE_BASE = "./voice/";
   const VOICE_FILES = {
-    ready: true,
     count: { 10: true, 20: true },
     phase: {},
     done: {}
@@ -118,6 +118,16 @@
     speechSynthesis.onvoiceschanged = loadVoices;
   }
 
+  function sleep(ms) {
+    return new Promise((r) => setTimeout(r, ms));
+  }
+
+  function buzz(pattern) {
+    try {
+      if (navigator.vibrate) navigator.vibrate(pattern || 40);
+    } catch {}
+  }
+
   function unlockAudio() {
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
@@ -128,32 +138,27 @@
         }
       }
     } catch {}
-    if (!window.speechSynthesis) return;
-    try {
-      speechSynthesis.resume();
-      loadVoices();
-      // یک‌بار گرم‌کردن موتور گفتار روی ژست کاربر (اندروید/آی‌او‌اس)
-      if (!speechWarmed) {
-        speechWarmed = true;
-        try {
-          const warmA = new Audio(VOICE_BASE + "ready.mp3");
-          warmA.volume = 0.01;
-          warmA.play().catch(() => {});
-        } catch {}
-        try {
-          const warm = new SpeechSynthesisUtterance("آ");
-          warm.lang = "fa-IR";
-          if (faVoice) warm.voice = faVoice;
-          warm.volume = 0.01;
-          speechSynthesis.speak(warm);
-          setTimeout(() => {
-            try {
-              speechSynthesis.cancel();
-            } catch {}
-          }, 40);
-        } catch {}
-      }
-    } catch {}
+    if (window.speechSynthesis) {
+      try {
+        speechSynthesis.resume();
+        loadVoices();
+      } catch {}
+    }
+    // بدون گفتن «آماده» — فقط کانتکست صدا را باز کن
+    if (!speechWarmed) {
+      speechWarmed = true;
+      try {
+        if (audioCtx) {
+          const g = audioCtx.createGain();
+          g.gain.value = 0.0001;
+          const o = audioCtx.createOscillator();
+          o.connect(g);
+          g.connect(audioCtx.destination);
+          o.start();
+          o.stop(audioCtx.currentTime + 0.02);
+        }
+      } catch {}
+    }
   }
 
   function stopBeep() {
@@ -182,9 +187,11 @@
       voicePlayer.removeAttribute("src");
       voicePlayer.load();
     } catch {}
+    voicePlayer = null;
   }
 
   function stopAllSound() {
+    announceSeq += 1;
     speakToken += 1;
     stopBeep();
     stopVoiceFile();
@@ -195,34 +202,33 @@
     }
   }
 
-  /** بوق نرم ولی بلندتر — دو نت سینوسی */
+  /** نرم (زیر) ولی خیلی بلند */
   function beepWhite(ms) {
     try {
       unlockAudio();
       if (!audioCtx) return;
       const play = () => {
         stopBeep();
-        const dur = Math.max(0.22, (ms || 260) / 1000);
+        const dur = Math.max(0.24, (ms || 280) / 1000);
         const t0 = audioCtx.currentTime;
         const g = audioCtx.createGain();
         const o1 = audioCtx.createOscillator();
         const o2 = audioCtx.createOscillator();
         o1.type = "sine";
         o2.type = "sine";
-        // نرم‌تر (زیرتر) ولی بلندتر
-        o1.frequency.setValueAtTime(392.0, t0);  // G4
-        o2.frequency.setValueAtTime(493.88, t0); // B4
+        o1.frequency.setValueAtTime(349.23, t0); // F4
+        o2.frequency.setValueAtTime(440.0, t0); // A4
         g.gain.setValueAtTime(0.0001, t0);
-        g.gain.exponentialRampToValueAtTime(0.92, t0 + 0.03);
-        g.gain.exponentialRampToValueAtTime(0.7, t0 + dur * 0.5);
+        g.gain.exponentialRampToValueAtTime(1.0, t0 + 0.025);
+        g.gain.setValueAtTime(0.95, t0 + dur * 0.55);
         g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
         o1.connect(g);
         o2.connect(g);
         g.connect(audioCtx.destination);
         o1.start(t0);
         o2.start(t0);
-        o1.stop(t0 + dur + 0.02);
-        o2.stop(t0 + dur + 0.02);
+        o1.stop(t0 + dur + 0.03);
+        o2.stop(t0 + dur + 0.03);
         activeBeep = { osc: o1, gain: g, osc2: o2 };
         o1.onended = () => {
           if (activeBeep && activeBeep.osc === o1) activeBeep = null;
@@ -252,112 +258,144 @@
     return dist <= 5 ? best : null;
   }
 
-  /** پخش فایل فارسی از پیش‌ساخته — مطمئن، آفلاین */
   function playVoiceFile(rel, vol) {
     return new Promise((resolve) => {
+      let done = false;
+      const finish = (ok) => {
+        if (done) return;
+        done = true;
+        resolve(!!ok);
+      };
       try {
         unlockAudio();
         stopVoiceFile();
-        speakToken += 1;
-        const tok = speakToken;
         const a = new Audio(VOICE_BASE + rel);
         voicePlayer = a;
         a.preload = "auto";
-        a.volume = Math.max(0.05, Math.min(1, vol == null ? 0.52 : vol));
-        a.onended = () => {
-          if (tok === speakToken) resolve(true);
-        };
-        a.onerror = () => resolve(false);
+        a.volume = Math.max(0.05, Math.min(1, vol == null ? 0.7 : vol));
+        a.onended = () => finish(true);
+        a.onerror = () => finish(false);
         const p = a.play();
-        if (p && p.then) {
-          p.then(() => {}).catch(() => resolve(false));
-        }
+        if (p && p.then) p.then(() => {}).catch(() => finish(false));
+        setTimeout(() => finish(a.currentTime > 0), 7000);
       } catch {
-        resolve(false);
+        finish(false);
       }
     });
   }
 
-  /** گفتار سیستم فقط به‌عنوان پشتیبان */
-  function speakFaSynth(text) {
-    if (!window.speechSynthesis || !text) return;
-    unlockAudio();
-    loadVoices();
-    speakToken += 1;
-    const tok = speakToken;
-    try {
-      speechSynthesis.cancel();
-    } catch {}
-    setTimeout(() => {
-      if (tok !== speakToken) return;
+  function speakFaSynthAsync(text, vol) {
+    return new Promise((resolve) => {
+      if (!window.speechSynthesis || !text) {
+        resolve(false);
+        return;
+      }
+      unlockAudio();
+      loadVoices();
+      speakToken += 1;
+      const tok = speakToken;
       try {
-        speechSynthesis.resume();
+        speechSynthesis.cancel();
       } catch {}
-      try {
-        const u = new SpeechSynthesisUtterance(String(text));
-        u.lang = "fa-IR";
-        if (faVoice) {
-          u.voice = faVoice;
-          u.lang = faVoice.lang || "fa-IR";
+      setTimeout(() => {
+        if (tok !== speakToken) {
+          resolve(false);
+          return;
         }
-        u.rate = 0.85;
-        u.pitch = 0.95;
-        u.volume = 0.48;
-        speechSynthesis.speak(u);
-      } catch {}
-    }, 80);
+        try {
+          speechSynthesis.resume();
+        } catch {}
+        try {
+          const u = new SpeechSynthesisUtterance(String(text));
+          u.lang = "fa-IR";
+          if (faVoice) {
+            u.voice = faVoice;
+            u.lang = faVoice.lang || "fa-IR";
+          }
+          u.rate = 0.88;
+          u.pitch = 0.95;
+          u.volume = vol == null ? 0.75 : vol;
+          u.onend = () => resolve(true);
+          u.onerror = () => resolve(false);
+          speechSynthesis.speak(u);
+          setTimeout(() => resolve(true), 5000);
+        } catch {
+          resolve(false);
+        }
+      }, 60);
+    });
+  }
+
+  function speakFaSynth(text) {
+    speakFaSynthAsync(text, 0.75);
   }
 
   async function speakFa(text) {
-    // مسیر اصلی: فایل‌های فارسی edge؛ اگر نبود سینت سایز
-    speakFaSynth(text);
+    await speakFaSynthAsync(text, 0.75);
   }
 
   async function speakSeconds(sec) {
     const n = Math.round(sec);
-    beepWhite(200);
-    await new Promise((r) => setTimeout(r, 140));
+    const my = ++announceSeq;
+    buzz(n <= 10 ? [50, 40, 50] : [35]);
+    beepWhite(220);
+    await sleep(150);
+    if (my !== announceSeq) return;
     if (VOICE_FILES.count[n]) {
-      const ok = await playVoiceFile("count-" + n + ".mp3", 0.5);
-      if (ok) return;
+      const ok = await playVoiceFile("count-" + n + ".mp3", 0.72);
+      if (ok || my !== announceSeq) return;
     }
-    speakFaSynth(faNum(n));
+    if (my !== announceSeq) return;
+    await speakFaSynthAsync(faNum(n), 0.75);
   }
 
   async function speakPhase(step) {
+    const my = ++announceSeq;
     const n = Math.round(step.dur);
-    // فقط اول فاز: بوق + زمان + نام حرکت/بعدی
-    beepWhite(260);
-    await new Promise((r) => setTimeout(r, 180));
+    // هر فاز: ویبره + بوق بلند نرم + زمان + اسم
+    buzz(step.kind === "work" ? [60, 40, 60] : [30, 40, 30, 40, 30]);
+    beepWhite(300);
+    await sleep(200);
+    if (my !== announceSeq) return;
+
     const clip = nearestPhaseClip(n);
     let saidTime = false;
     if (clip != null) {
-      saidTime = await playVoiceFile("phase-" + clip + ".mp3", 0.52);
+      saidTime = await playVoiceFile("phase-" + clip + ".mp3", 0.72);
     }
+    if (my !== announceSeq) return;
     if (!saidTime) {
-      speakFaSynth(faNum(n) + " ثانیه");
-      await new Promise((r) => setTimeout(r, 900));
-    } else {
-      await new Promise((r) => setTimeout(r, 200));
+      await speakFaSynthAsync(faNum(n) + " ثانیه", 0.75);
     }
-    const name =
-      step.kind === "work"
-        ? step.name
-        : step.nextName || "";
+    if (my !== announceSeq) return;
+
+    await sleep(180);
+    if (my !== announceSeq) return;
+
+    const name = step.kind === "work" ? step.name : step.nextName || "";
     if (name) {
-      speakFaSynth(name);
+      // اسم حرکت حتماً گفته شود (حتی اگر موتور سیستم ضعیف باشد دوباره تلاش)
+      let ok = await speakFaSynthAsync(name, 0.85);
+      if (!ok && my === announceSeq) {
+        await sleep(100);
+        if (my === announceSeq) await speakFaSynthAsync(name, 0.9);
+      }
     }
   }
 
   async function speakDone(rounds) {
+    const my = ++announceSeq;
     const n = Math.round(rounds);
-    beepWhite(220);
-    await new Promise((r) => setTimeout(r, 150));
+    buzz([80, 50, 80, 50, 120]);
+    beepWhite(280);
+    await sleep(180);
+    if (my !== announceSeq) return;
     if (VOICE_FILES.done[n]) {
-      const ok = await playVoiceFile("done-" + n + ".mp3", 0.5);
+      const ok = await playVoiceFile("done-" + n + ".mp3", 0.72);
       if (ok) return;
     }
-    speakFaSynth(faNum(n) + " ست");
+    if (my !== announceSeq) return;
+    await speakFaSynthAsync(faNum(n) + " ست", 0.8);
   }
 
   function bumpNumber(input, dir) {
@@ -686,6 +724,13 @@
     run.phaseDur = step.dur;
     run.announced = {};
     run.lastTick = performance.now();
+    // قطع اعلام قبلی تا فاز جدید حتماً بوق+صدا+ویبره بدهد
+    stopVoiceFile();
+    if (window.speechSynthesis) {
+      try {
+        speechSynthesis.cancel();
+      } catch {}
+    }
     paintRun(true);
     loop();
   }
