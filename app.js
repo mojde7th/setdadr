@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "23";
+  const APP_VER = "24";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -356,9 +356,9 @@
             u.voice = faVoice;
             u.lang = faVoice.lang || "fa-IR";
           }
-          u.rate = 0.9;
-          u.pitch = 0.95;
-          u.volume = vol == null ? 0.9 : vol;
+          u.rate = 1.05;
+          u.pitch = 1.05;
+          u.volume = vol == null ? 0.92 : vol;
           let finished = false;
           const done = (ok) => {
             if (finished) return;
@@ -861,13 +861,12 @@
       if (arrowLead) arrowLead.hidden = !lead;
     }
 
+    // داخل استراحت فلش/کارت بعدی لازم نیست؛ بیرون (runMove) کافی است
     if (step.kind !== "work") {
-      if (!step.nextName) {
-        card.hidden = true;
-        return;
-      }
-      card.classList.add("is-rest-next");
-      showFlow("حرکت بعدی", step.nextName, true);
+      card.hidden = true;
+      card.classList.remove("is-rest-next");
+      if (arrowLead) arrowLead.hidden = true;
+      if (arrow) arrow.hidden = true;
       return;
     }
 
@@ -885,7 +884,7 @@
     }
 
     if (next.nextName) {
-      showFlow("↓ استراحت " + toFaDigits(next.dur) + "ث", next.nextName, true);
+      showFlow("استراحت " + toFaDigits(next.dur) + " ثانیه", next.nextName, false);
       return;
     }
 
