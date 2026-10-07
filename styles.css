@@ -48,6 +48,16 @@ html, body {
   line-height: 1;
 }
 .brand span { color: var(--accent); }
+.app-ver {
+  margin-inline-start: auto;
+  font: 800 12px var(--display);
+  color: var(--muted);
+  opacity: .85;
+  letter-spacing: .04em;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
 .tabs { display: flex; gap: 6px; flex-wrap: wrap; }
 .tabs button {
   border: 1px solid var(--line);
@@ -301,8 +311,8 @@ input[type="text"], input[type="number"] {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  width: min(92vw, 360px);
-  margin: 4px 0 8px;
+  width: min(96vw, 420px);
+  margin: 6px 0 10px;
 }
 .progress-item {
   background: #17130e;
@@ -311,14 +321,14 @@ input[type="text"], input[type="number"] {
   padding: 8px 6px 10px;
 }
 .progress-k {
-  font-size: clamp(15px, 4vw, 18px);
+  font-size: clamp(18px, 5vw, 22px);
   font-weight: 900;
   color: var(--muted);
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 .progress-v {
   font-family: var(--display);
-  font-size: clamp(40px, 12vw, 58px);
+  font-size: clamp(52px, 15vw, 72px);
   font-weight: 700;
   line-height: 1;
   direction: ltr;

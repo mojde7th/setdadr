@@ -1,5 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
+  const APP_VER = "23";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -30,9 +31,11 @@
   let speechWarmed = false;
   let voicePlayer = null;
   let announceSeq = 0;
+  let announceChain = Promise.resolve();
+  const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
   const VOICE_FILES = {
-    count: { 10: true, 20: true },
+    count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
     done: {}
   };
@@ -128,6 +131,20 @@
     } catch {}
   }
 
+  function queueAnnounce(task) {
+    announceChain = announceChain.then(() => task()).catch(() => {});
+    return announceChain;
+  }
+
+  function timePhrase(sec) {
+    sec = Math.round(Math.abs(Number(sec) || 0));
+    if (sec < 60) return faNum(sec) + " ثانیه";
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    if (s === 0) return faNum(m) + " دقیقه";
+    return faNum(m) + " دقیقه و " + faNum(s) + " ثانیه";
+  }
+
   function unlockAudio() {
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
@@ -144,7 +161,6 @@
         loadVoices();
       } catch {}
     }
-    // بدون گفتن «آماده» — فقط کانتکست صدا را باز کن
     if (!speechWarmed) {
       speechWarmed = true;
       try {
@@ -155,7 +171,7 @@
           o.connect(g);
           g.connect(audioCtx.destination);
           o.start();
-          o.stop(audioCtx.currentTime + 0.02);
+          o.stop(audioCtx.currentTime + 0.015);
         }
       } catch {}
     }
@@ -181,11 +197,17 @@
   function stopVoiceFile() {
     if (!voicePlayer) return;
     try {
-      voicePlayer.onended = null;
-      voicePlayer.onerror = null;
-      voicePlayer.pause();
-      voicePlayer.removeAttribute("src");
-      voicePlayer.load();
+      if (voicePlayer.stop) voicePlayer.stop();
+      if (voicePlayer.disconnect) voicePlayer.disconnect();
+    } catch {}
+    try {
+      if (voicePlayer.pause) {
+        voicePlayer.onended = null;
+        voicePlayer.onerror = null;
+        voicePlayer.pause();
+        voicePlayer.removeAttribute("src");
+        voicePlayer.load();
+      }
     } catch {}
     voicePlayer = null;
   }
@@ -202,25 +224,24 @@
     }
   }
 
-  /** نرم (زیر) ولی خیلی بلند */
   function beepWhite(ms) {
     try {
       unlockAudio();
       if (!audioCtx) return;
       const play = () => {
         stopBeep();
-        const dur = Math.max(0.24, (ms || 280) / 1000);
+        const dur = Math.max(0.26, (ms || 300) / 1000);
         const t0 = audioCtx.currentTime;
         const g = audioCtx.createGain();
         const o1 = audioCtx.createOscillator();
         const o2 = audioCtx.createOscillator();
         o1.type = "sine";
         o2.type = "sine";
-        o1.frequency.setValueAtTime(349.23, t0); // F4
-        o2.frequency.setValueAtTime(440.0, t0); // A4
+        o1.frequency.setValueAtTime(349.23, t0);
+        o2.frequency.setValueAtTime(440.0, t0);
         g.gain.setValueAtTime(0.0001, t0);
-        g.gain.exponentialRampToValueAtTime(1.0, t0 + 0.025);
-        g.gain.setValueAtTime(0.95, t0 + dur * 0.55);
+        g.gain.exponentialRampToValueAtTime(1.0, t0 + 0.03);
+        g.gain.setValueAtTime(1.0, t0 + dur * 0.5);
         g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
         o1.connect(g);
         o2.connect(g);
@@ -258,30 +279,53 @@
     return dist <= 5 ? best : null;
   }
 
-  function playVoiceFile(rel, vol) {
-    return new Promise((resolve) => {
-      let done = false;
-      const finish = (ok) => {
-        if (done) return;
-        done = true;
-        resolve(!!ok);
-      };
-      try {
-        unlockAudio();
-        stopVoiceFile();
-        const a = new Audio(VOICE_BASE + rel);
-        voicePlayer = a;
-        a.preload = "auto";
-        a.volume = Math.max(0.05, Math.min(1, vol == null ? 0.7 : vol));
-        a.onended = () => finish(true);
-        a.onerror = () => finish(false);
-        const p = a.play();
-        if (p && p.then) p.then(() => {}).catch(() => finish(false));
-        setTimeout(() => finish(a.currentTime > 0), 7000);
-      } catch {
-        finish(false);
+  async function loadVoiceBuffer(rel) {
+    if (voiceBuf.has(rel)) return voiceBuf.get(rel);
+    unlockAudio();
+    if (!audioCtx) return null;
+    const res = await fetch(VOICE_BASE + rel, { cache: "force-cache" });
+    if (!res.ok) return null;
+    const raw = await res.arrayBuffer();
+    const buf = await audioCtx.decodeAudioData(raw.slice(0));
+    voiceBuf.set(rel, buf);
+    return buf;
+  }
+
+  async function playVoiceFile(rel, vol) {
+    try {
+      unlockAudio();
+      if (!audioCtx) return false;
+      if (audioCtx.state === "suspended") {
+        try {
+          await audioCtx.resume();
+        } catch {}
       }
-    });
+      stopVoiceFile();
+      const buf = await loadVoiceBuffer(rel);
+      if (!buf) return false;
+      const gain = Math.max(0.05, Math.min(1, vol == null ? 0.85 : vol));
+      await new Promise((resolve) => {
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          resolve();
+        };
+        const src = audioCtx.createBufferSource();
+        const g = audioCtx.createGain();
+        g.gain.value = gain;
+        src.buffer = buf;
+        src.connect(g);
+        g.connect(audioCtx.destination);
+        voicePlayer = src;
+        src.onended = finish;
+        src.start();
+        setTimeout(finish, Math.min(8000, (buf.duration + 0.4) * 1000));
+      });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   function speakFaSynthAsync(text, vol) {
@@ -312,90 +356,99 @@
             u.voice = faVoice;
             u.lang = faVoice.lang || "fa-IR";
           }
-          u.rate = 0.88;
+          u.rate = 0.9;
           u.pitch = 0.95;
-          u.volume = vol == null ? 0.75 : vol;
-          u.onend = () => resolve(true);
-          u.onerror = () => resolve(false);
+          u.volume = vol == null ? 0.9 : vol;
+          let finished = false;
+          const done = (ok) => {
+            if (finished) return;
+            finished = true;
+            resolve(!!ok);
+          };
+          u.onend = () => done(true);
+          u.onerror = () => done(false);
           speechSynthesis.speak(u);
-          setTimeout(() => resolve(true), 5000);
+          setTimeout(() => done(true), Math.min(6000, 800 + String(text).length * 180));
         } catch {
           resolve(false);
         }
-      }, 60);
+      }, 50);
     });
   }
 
   function speakFaSynth(text) {
-    speakFaSynthAsync(text, 0.75);
+    speakFaSynthAsync(text, 0.9);
   }
 
   async function speakFa(text) {
-    await speakFaSynthAsync(text, 0.75);
+    await speakFaSynthAsync(text, 0.9);
+  }
+
+  async function sayTime(sec) {
+    const n = Math.round(sec);
+    // اول کلیپ؛ برای دقیقه حتماً عبارت درست
+    if (n >= 60) {
+      const clip = nearestPhaseClip(n);
+      if (clip != null) {
+        const ok = await playVoiceFile("phase-" + clip + ".mp3", 0.88);
+        if (ok) return true;
+      }
+      return await speakFaSynthAsync(timePhrase(n), 0.95);
+    }
+    const clip = nearestPhaseClip(n);
+    if (clip != null) {
+      const ok = await playVoiceFile("phase-" + clip + ".mp3", 0.88);
+      if (ok) return true;
+    }
+    return await speakFaSynthAsync(timePhrase(n), 0.95);
   }
 
   async function speakSeconds(sec) {
     const n = Math.round(sec);
-    const my = ++announceSeq;
-    buzz(n <= 10 ? [50, 40, 50] : [35]);
-    beepWhite(220);
-    await sleep(150);
-    if (my !== announceSeq) return;
-    if (VOICE_FILES.count[n]) {
-      const ok = await playVoiceFile("count-" + n + ".mp3", 0.72);
-      if (ok || my !== announceSeq) return;
-    }
-    if (my !== announceSeq) return;
-    await speakFaSynthAsync(faNum(n), 0.75);
+    return queueAnnounce(async () => {
+      buzz(n <= 10 ? [55, 40, 55] : [40]);
+      beepWhite(240);
+      await sleep(160);
+      if (VOICE_FILES.count[n]) {
+        const ok = await playVoiceFile("count-" + n + ".mp3", 0.88);
+        if (ok) return;
+      }
+      await speakFaSynthAsync(timePhrase(n), 0.95);
+    });
   }
 
   async function speakPhase(step) {
-    const my = ++announceSeq;
-    const n = Math.round(step.dur);
-    // هر فاز: ویبره + بوق بلند نرم + زمان + اسم
-    buzz(step.kind === "work" ? [60, 40, 60] : [30, 40, 30, 40, 30]);
-    beepWhite(300);
-    await sleep(200);
-    if (my !== announceSeq) return;
-
-    const clip = nearestPhaseClip(n);
-    let saidTime = false;
-    if (clip != null) {
-      saidTime = await playVoiceFile("phase-" + clip + ".mp3", 0.72);
-    }
-    if (my !== announceSeq) return;
-    if (!saidTime) {
-      await speakFaSynthAsync(faNum(n) + " ثانیه", 0.75);
-    }
-    if (my !== announceSeq) return;
-
-    await sleep(180);
-    if (my !== announceSeq) return;
-
-    const name = step.kind === "work" ? step.name : step.nextName || "";
-    if (name) {
-      // اسم حرکت حتماً گفته شود (حتی اگر موتور سیستم ضعیف باشد دوباره تلاش)
-      let ok = await speakFaSynthAsync(name, 0.85);
-      if (!ok && my === announceSeq) {
-        await sleep(100);
-        if (my === announceSeq) await speakFaSynthAsync(name, 0.9);
+    return queueAnnounce(async () => {
+      const n = Math.round(step.dur);
+      buzz(step.kind === "work" ? [70, 40, 70] : [35, 35, 35, 35, 35]);
+      beepWhite(320);
+      await sleep(220);
+      await sayTime(n);
+      await sleep(220);
+      const name = step.kind === "work" ? step.name : step.nextName || "";
+      if (name) {
+        // برای استراحت بگو: استراحت + اسم بعدی
+        if (step.kind !== "work") {
+          await speakFaSynthAsync("استراحت", 0.85);
+          await sleep(120);
+        }
+        await speakFaSynthAsync(name, 0.95);
       }
-    }
+    });
   }
 
   async function speakDone(rounds) {
-    const my = ++announceSeq;
-    const n = Math.round(rounds);
-    buzz([80, 50, 80, 50, 120]);
-    beepWhite(280);
-    await sleep(180);
-    if (my !== announceSeq) return;
-    if (VOICE_FILES.done[n]) {
-      const ok = await playVoiceFile("done-" + n + ".mp3", 0.72);
-      if (ok) return;
-    }
-    if (my !== announceSeq) return;
-    await speakFaSynthAsync(faNum(n) + " ست", 0.8);
+    return queueAnnounce(async () => {
+      const n = Math.round(rounds);
+      buzz([90, 50, 90, 50, 140]);
+      beepWhite(300);
+      await sleep(180);
+      if (VOICE_FILES.done[n]) {
+        const ok = await playVoiceFile("done-" + n + ".mp3", 0.88);
+        if (ok) return;
+      }
+      await speakFaSynthAsync(faNum(n) + " ست", 0.95);
+    });
   }
 
   function bumpNumber(input, dir) {
@@ -671,10 +724,12 @@
       paused: false,
       skipped: 0,
       announced: {},
+      prevLeftCeil: Math.ceil(steps[0].dur),
       lastTick: performance.now()
     };
-    paintRun(true);
     show("run");
+    paintRun(false);
+    speakPhase(steps[0]);
     loop();
   }
 
@@ -701,11 +756,15 @@
 
   function maybeAnnounce() {
     if (!run) return;
-    const left = Math.ceil(run.left);
-    const marks = [20, 10];
+    const cur = Math.ceil(run.left);
+    const prev = run.prevLeftCeil;
+    run.prevLeftCeil = cur;
+    if (prev == null) return;
+    // اگر فریم از روی ۲۰/۱۰ بپرد هم اعلام شود
+    const marks = [60, 30, 20, 10];
     marks.forEach((m) => {
       const key = run.i + ":" + m;
-      if (run.phaseDur > m && left === m && !run.announced[key]) {
+      if (run.phaseDur > m && !run.announced[key] && prev > m && cur <= m) {
         run.announced[key] = true;
         speakSeconds(m);
       }
@@ -723,15 +782,10 @@
     run.left = step.dur;
     run.phaseDur = step.dur;
     run.announced = {};
+    run.prevLeftCeil = Math.ceil(step.dur);
     run.lastTick = performance.now();
-    // قطع اعلام قبلی تا فاز جدید حتماً بوق+صدا+ویبره بدهد
-    stopVoiceFile();
-    if (window.speechSynthesis) {
-      try {
-        speechSynthesis.cancel();
-      } catch {}
-    }
-    paintRun(true);
+    paintRun(false);
+    speakPhase(step);
     loop();
   }
 
@@ -776,9 +830,6 @@
     $("#runTimer").textContent = fmt(run.left);
     $("#btnPause").textContent = run.paused ? "ادامه" : "توقف";
     paintNext();
-    if (announceStart) {
-      speakPhase(step);
-    }
   }
 
   function paintNext() {
@@ -975,6 +1026,8 @@
   document.body.addEventListener("click", unlockOnce, { once: true });
 
   wireNumSteppers();
+  const verEl = $("#appVer");
+  if (verEl) verEl.textContent = "v" + APP_VER;
   renderMoves();
   renderPlans();
   show("home");
