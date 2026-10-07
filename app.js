@@ -27,6 +27,7 @@
   let audioCtx = null;
   let activeBeep = null;
   let startLock = false;
+  let speechWarmed = false;
 
   const viewIds = ["home", "moves", "edit", "run", "done"];
 
@@ -91,7 +92,7 @@
     faVoice =
       voices.find((v) => /^fa(-|_|$)/i.test(v.lang)) ||
       voices.find((v) => /persian|farsi|فارسی/i.test(v.name)) ||
-      voices.find((v) => /fa-IR|fa_IR/i.test(v.lang)) ||
+      voices.find((v) => /fa-IR|fa_IR|fa-AF/i.test(v.lang)) ||
       null;
     enVoice =
       voices.find((v) => /^en(-|_|$)/i.test(v.lang) && /female|zira|samantha|google|aria|jenny/i.test(v.name)) ||
@@ -108,25 +109,42 @@
   function unlockAudio() {
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC) return;
-      if (!audioCtx) audioCtx = new AC();
-      if (audioCtx.state === "suspended") audioCtx.resume();
+      if (AC) {
+        if (!audioCtx) audioCtx = new AC();
+        if (audioCtx.state === "suspended") {
+          audioCtx.resume().catch(() => {});
+        }
+      }
     } catch {}
-    if (window.speechSynthesis) {
-      try {
-        speechSynthesis.resume();
-        // warm-up silent utterance helps some Android engines
-        if (!voiceReady) loadVoices();
-      } catch {}
-    }
+    if (!window.speechSynthesis) return;
+    try {
+      speechSynthesis.resume();
+      loadVoices();
+      // یک‌بار گرم‌کردن موتور گفتار روی ژست کاربر (اندروید/آی‌او‌اس)
+      if (!speechWarmed) {
+        speechWarmed = true;
+        const warm = new SpeechSynthesisUtterance("آ");
+        warm.lang = "fa-IR";
+        if (faVoice) warm.voice = faVoice;
+        warm.volume = 0.01;
+        warm.rate = 1;
+        speechSynthesis.speak(warm);
+        setTimeout(() => {
+          try {
+            speechSynthesis.cancel();
+          } catch {}
+        }, 30);
+      }
+    } catch {}
   }
 
   function stopBeep() {
     if (!activeBeep) return;
     try {
-      activeBeep.gain.gain.cancelScheduledValues(audioCtx ? audioCtx.currentTime : 0);
-      activeBeep.gain.gain.value = 0;
-      activeBeep.osc.stop();
+      const now = audioCtx ? audioCtx.currentTime : 0;
+      activeBeep.gain.gain.cancelScheduledValues(now);
+      activeBeep.gain.gain.setValueAtTime(0, now);
+      activeBeep.osc.stop(now);
       activeBeep.osc.disconnect();
       activeBeep.gain.disconnect();
     } catch {}
@@ -143,76 +161,83 @@
     }
   }
 
-  /** بوق سفید کوتاه — همیشه یک نمونه؛ دوبار زدن روی هم نمی‌رود */
+  /** بوق بلند؛ فقط یک نمونه همزمان */
   function beepWhite(ms) {
     try {
       unlockAudio();
       if (!audioCtx) return;
-      stopBeep();
-      const dur = Math.max(0.04, (ms || 140) / 1000);
-      const t0 = audioCtx.currentTime;
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      // سفیدِ ملایم: موج سینوسی با نویز خیلی کوتاه حس «بوق سفید»
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(880, t0);
-      osc.frequency.exponentialRampToValueAtTime(660, t0 + dur);
-      gain.gain.setValueAtTime(0.0001, t0);
-      gain.gain.exponentialRampToValueAtTime(0.18, t0 + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start(t0);
-      osc.stop(t0 + dur + 0.02);
-      activeBeep = { osc, gain };
-      osc.onended = () => {
-        if (activeBeep && activeBeep.osc === osc) activeBeep = null;
+      const play = () => {
+        stopBeep();
+        const dur = Math.max(0.12, (ms || 220) / 1000);
+        const t0 = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = "square";
+        osc.frequency.setValueAtTime(1200, t0);
+        osc.frequency.setValueAtTime(900, t0 + dur * 0.45);
+        // بلند (نزدیک حداکثر؛ بدون کلیپ شدید)
+        gain.gain.setValueAtTime(0.0001, t0);
+        gain.gain.exponentialRampToValueAtTime(0.95, t0 + 0.01);
+        gain.gain.setValueAtTime(0.95, t0 + dur * 0.7);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(t0);
+        osc.stop(t0 + dur + 0.03);
+        activeBeep = { osc, gain };
+        osc.onended = () => {
+          if (activeBeep && activeBeep.osc === osc) activeBeep = null;
+        };
       };
+      if (audioCtx.state === "suspended") {
+        audioCtx.resume().then(play).catch(play);
+      } else {
+        play();
+      }
     } catch {}
   }
 
-  /** صدای فارسی؛ همیشه lang=fa-IR — صف صدا قفل می‌شود تا زوم نشود */
+  /** فارسی اجباری؛ بدون کنسل دوباره داخل تایمر (علت بی‌صدا شدن) */
   function speakFa(text) {
     if (!window.speechSynthesis || !text) return;
     unlockAudio();
+    loadVoices();
     speakToken += 1;
     const tok = speakToken;
     try {
       speechSynthesis.cancel();
     } catch {}
-    // بعد از cancel کمی صبر — بدون این روی کروم/اندروید صدا روی هم می‌افتد
     setTimeout(() => {
       if (tok !== speakToken) return;
       try {
-        if (speechSynthesis.speaking || speechSynthesis.pending) {
-          try {
-            speechSynthesis.cancel();
-          } catch {}
-        }
+        speechSynthesis.resume();
+      } catch {}
+      try {
         const u = new SpeechSynthesisUtterance(String(text));
         u.lang = "fa-IR";
         if (faVoice) {
           u.voice = faVoice;
           u.lang = faVoice.lang || "fa-IR";
         }
-        u.rate = 1;
+        u.rate = 0.95;
         u.pitch = 1;
         u.volume = 1;
         speechSynthesis.speak(u);
       } catch {}
-    }, 80);
+    }, 120);
   }
 
   function speakSeconds(sec) {
     const n = Math.round(sec);
-    beepWhite(90);
-    speakFa(faNum(n));
+    beepWhite(180);
+    // بوق اول، بعد حرف — کمی فاصله تا روی هم نیفتند
+    setTimeout(() => speakFa(faNum(n)), 160);
   }
 
   function speakPhase(step) {
     const n = Math.round(step.dur);
-    beepWhite(140);
-    speakFa(faNum(n) + " ثانیه");
+    beepWhite(240);
+    setTimeout(() => speakFa(faNum(n) + " ثانیه"), 180);
   }
 
   function bumpNumber(input, dir) {
@@ -335,7 +360,7 @@
       start.type = "button";
       start.className = "btn primary sm";
       start.textContent = "شروع";
-      start.addEventListener("click", () => startRun(p.id));
+      start.addEventListener("click", () => { unlockAudio(); startRun(p.id); });
       const edit = document.createElement("button");
       edit.type = "button";
       edit.className = "btn sm";
