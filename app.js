@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "47";
+  const APP_VER = "48";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=47";
+  const VOICE_Q = "?v=48";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -701,11 +701,16 @@
       if (!name) return;
       const said = sayForMove(name);
       if (!said.text) return;
-      await speakFaSynthAsync("حرکت بعد", 1);
-      if (!announceAlive(seq)) return;
-      await sleep(0);
-      if (!announceAlive(seq)) return;
-      await speakFaSynthAsync(said.text, 1, said.lang === "en" ? "en" : "fa");
+      // یک‌نفس برای فارسی تا فاصله زیاد نباشد؛ انگلیسی جدا با مکث خیلی کوتاه
+      if (said.lang === "en") {
+        await speakFaSynthAsync("حرکت بعد", 1);
+        if (!announceAlive(seq)) return;
+        await sleep(80);
+        if (!announceAlive(seq)) return;
+        await speakFaSynthAsync(said.text, 1, "en");
+      } else {
+        await speakFaSynthAsync("حرکت بعد " + said.text, 1);
+      }
     });
   }
 
