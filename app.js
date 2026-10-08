@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "38";
+  const APP_VER = "39";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=38";
+  const VOICE_Q = "?v=39";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -686,7 +686,7 @@
       const said = sayForMove(name);
       if (!said.text) return;
       await speakFaSynthAsync("حرکت بعد", 1);
-      await sleep(1000);
+      await sleep(350);
       await speakFaSynthAsync(said.text, 1, said.lang === "en" ? "en" : "fa");
     });
   }
