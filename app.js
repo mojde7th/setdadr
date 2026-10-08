@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "53";
+  const APP_VER = "54";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=53";
+  const VOICE_Q = "?v=54";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -746,11 +746,47 @@
     return { text: raw, lang: "fa" };
   }
 
+  // روی آیفون صدای فارسی سیستم غالباً نیست؛ اسم لاتین را انگلیسی بگو
+  function sayForDevice(name, asNext) {
+    const raw = String(name || "").trim();
+    if (!raw) return { text: "", lang: "fa" };
+    const ios = isIOSLike();
+    const hasLatin = /[A-Za-z]/.test(raw);
+    if (ios && hasLatin) {
+      const en = raw;
+      return { text: asNext ? "next " + en : en, lang: "en" };
+    }
+    const said = sayForMove(raw);
+    if (!said.text) return { text: "", lang: "fa" };
+    if (asNext) {
+      if (said.lang === "en") {
+        return { text: said.text, lang: "en", prefixFa: "حرکت بعد" };
+      }
+      return { text: "حرکت بعد " + said.text, lang: "fa" };
+    }
+    return said;
+  }
+
   async function speakMoveName(name, vol) {
-    const { text, lang } = sayForMove(name);
-    if (!text) return false;
+    const said = sayForDevice(name, false);
+    if (!said.text) return false;
     const synthOpts = isIOSLike() ? { noCancel: true } : {};
-    return speakFaSynthAsync(text, vol == null ? 0.95 : vol, lang, synthOpts);
+    return speakFaSynthAsync(said.text, vol == null ? 0.95 : vol, said.lang, synthOpts);
+  }
+
+  async function speakNextMoveName(name, seq) {
+    const said = sayForDevice(name, true);
+    if (!said.text) return false;
+    const ios = isIOSLike();
+    const opts = ios ? { noCancel: true } : {};
+    if (said.prefixFa) {
+      await speakFaSynthAsync(said.prefixFa, 1, "fa", opts);
+      if (seq != null && !announceAlive(seq)) return false;
+      await sleep(80);
+      if (seq != null && !announceAlive(seq)) return false;
+      return speakFaSynthAsync(said.text, 1, said.lang, opts);
+    }
+    return speakFaSynthAsync(said.text, 1, said.lang, opts);
   }
 
   async function speakCheerOnly(seq) {
@@ -768,8 +804,15 @@
       if (!announceAlive(seq)) return;
       const ios = isIOSLike();
       buzz(step.kind === "work" ? [100, 45, 100, 45, 160] : [70, 35, 70, 35, 90]);
-      if (step.kind === "work" && ios) {
-        if (step.name) await speakMoveName(step.name, 1);
+      // روی آیفون اول حرف بزن بعد زنگ؛ وگرنه تلفظ قطع می‌شود
+      if (ios) {
+        await sleep(120);
+        if (!announceAlive(seq)) return;
+        if (step.kind === "work") {
+          if (step.name) await speakMoveName(step.name, 1);
+        } else if (step.nextName) {
+          await speakNextMoveName(step.nextName, seq);
+        }
         if (!announceAlive(seq)) return;
         beepWhite(400, false);
         return;
@@ -781,26 +824,9 @@
         if (step.name) await speakMoveName(step.name, 1);
         return;
       }
-      if (step.kind === "rest-set") {
-        await speakCheerOnly(seq);
-        if (!announceAlive(seq)) return;
-        await sleep(350);
-        if (!announceAlive(seq)) return;
-      }
-      const name = step.nextName || "";
-      if (!name) return;
-      const said = sayForMove(name);
-      if (!said.text) return;
-      // یک‌نفس برای فارسی تا فاصله زیاد نباشد؛ انگلیسی جدا با مکث خیلی کوتاه
-      if (said.lang === "en") {
-        await speakFaSynthAsync("حرکت بعد", 1);
-        if (!announceAlive(seq)) return;
-        await sleep(80);
-        if (!announceAlive(seq)) return;
-        await speakFaSynthAsync(said.text, 1, "en");
-      } else {
-        await speakFaSynthAsync("حرکت بعد " + said.text, 1, "fa", { noCancel: ios });
-      }
+      // استراحت بین ست/حرکت: فقط حرکت بعد؛ عالی نه
+      if (!step.nextName) return;
+      await speakNextMoveName(step.nextName, seq);
     });
   }
 
