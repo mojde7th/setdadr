@@ -1,4 +1,4 @@
-const CACHE = "setdadr-v48";
+const CACHE = "setdadr-v49";
 const ASSETS = [
   "./",
   "./index.html",
@@ -102,11 +102,39 @@ self.addEventListener("activate", (e) => {
 });
 
 self.addEventListener("fetch", (e) => {
+  const url = new URL(e.request.url);
+  const path = url.pathname;
+  const isShell =
+    e.request.mode === "navigate" ||
+    /\/(index\.html)?$/.test(path) ||
+    path.endsWith("/app.js") ||
+    path.endsWith("/styles.css") ||
+    path.endsWith("/sw.js");
+
+  if (isShell) {
+    e.respondWith(
+      fetch(e.request)
+        .then((res) => {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
+          return res;
+        })
+        .catch(() =>
+          caches.match(e.request).then((hit) => hit || caches.match("./index.html"))
+        )
+    );
+    return;
+  }
+
   e.respondWith(
-    caches.match(e.request).then((hit) => hit || fetch(e.request).then((res) => {
-      const copy = res.clone();
-      caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
-      return res;
-    }).catch(() => caches.match("./index.html")))
+    caches.match(e.request).then(
+      (hit) =>
+        hit ||
+        fetch(e.request).then((res) => {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
+          return res;
+        }).catch(() => caches.match("./index.html"))
+    )
   );
 });

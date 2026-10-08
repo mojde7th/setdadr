@@ -14,14 +14,14 @@
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@500;700;800;900&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet"/>
-  <link rel="stylesheet" href="styles.css?v=48"/>
+  <link rel="stylesheet" href="styles.css?v=49"/>
 </head>
 <body>
   <div id="app">
     <header class="top" id="topBar">
       <div class="brand">ست<span>‌یار</span></div>
       <button type="button" class="mute-btn" id="btnMute" aria-pressed="false" aria-label="قطع و وصل صدا">صدا روشن</button>
-      <div class="app-ver" id="appVer">v30</div>
+      <div class="app-ver" id="appVer">v49</div>
       <nav class="tabs" id="navTabs">
         <button type="button" data-view="home" class="on">ست‌ها</button>
         <button type="button" data-view="moves">حرکت‌ها</button>
@@ -165,10 +165,19 @@
       </section>
     </main>
   </div>
-  <script src="app.js?v=48"></script>
+  <script src="app.js?v=49"></script>
   <script>
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("./sw.js").catch(() => {});
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (refreshing) return;
+        refreshing = true;
+        location.reload();
+      });
+      navigator.serviceWorker
+        .register("./sw.js?v=49", { updateViaCache: "none" })
+        .then((reg) => reg.update())
+        .catch(() => {});
     }
   </script>
 </body>
