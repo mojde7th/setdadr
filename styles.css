@@ -144,23 +144,30 @@ html, body {
   margin: 0;
 }
 .field-k {
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 900;
   color: var(--muted);
+}
+.add-set-form {
+  gap: 8px;
 }
 .add-set-form select,
 .add-set-form input[type="text"] {
   width: 100%;
-  min-height: 40px;
-  border-radius: 12px;
+  min-height: 32px;
+  border-radius: 10px;
   border: 1px solid var(--line);
   background: var(--bg2, #17130e);
   color: inherit;
   font: inherit;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 700;
-  padding: 7px 12px;
+  padding: 4px 10px;
   box-sizing: border-box;
+}
+.add-set-form input[type="text"]::placeholder {
+  font-size: 11px;
+  opacity: 0.55;
 }
 .num-step.with-unit {
   grid-template-columns: 44px 1fr 44px auto;
@@ -602,24 +609,30 @@ input[type="text"], input[type="number"] {
 .pick-select,
 #pickFromLib.pick-select {
   width: 100%;
-  min-height: 40px;
-  border-radius: 12px;
+  min-height: 32px !important;
+  border-radius: 10px !important;
   border: 1px solid var(--line) !important;
   background: var(--bg2, #17130e) !important;
   color: inherit !important;
   font: inherit !important;
-  font-size: 13px !important;
+  font-size: 12px !important;
   font-weight: 700 !important;
-  padding: 7px 36px 7px 10px !important;
+  padding: 4px 32px 4px 8px !important;
   box-sizing: border-box;
   appearance: none;
   -webkit-appearance: none;
   cursor: pointer;
 }
 #pickMoveName {
-  font-size: 14px !important;
+  font-size: 12px !important;
   font-weight: 700 !important;
-  min-height: 40px !important;
+  min-height: 32px !important;
+  padding: 4px 8px !important;
+  border-radius: 10px !important;
+}
+#pickMoveName::placeholder {
+  font-size: 11px !important;
+  opacity: 0.55;
 }
 .pick-select:focus {
   outline: none;
@@ -640,6 +653,8 @@ input[type="text"], input[type="number"] {
 }
 .select-chev svg {
   display: block;
+  width: 14px;
+  height: 14px;
   color: #fff;
   stroke: #fff;
 }

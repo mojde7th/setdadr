@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "88";
+  const APP_VER = "89";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=88";
+  const VOICE_Q = "?v=89";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -203,8 +203,11 @@
 
   function buzz(pattern) {
     try {
-      // ویبره همیشه روشن می‌ماند تا در باشگاه حس شود
-      if (navigator.vibrate) navigator.vibrate(pattern || [70]);
+      // ویبره جدا از قطع‌صدا — در باشگاه حس شود
+      if (!navigator.vibrate) return;
+      const p = pattern && pattern.length ? pattern : [90, 45, 110];
+      navigator.vibrate(0);
+      navigator.vibrate(p);
     } catch {}
   }
 
