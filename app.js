@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "65";
+  const APP_VER = "66";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=65";
+  const VOICE_Q = "?v=66";
   const dynFaAudio = new Map(); // متن فارسی → Audio
   const dynFaBlob = new Map(); // متن فارسی → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -328,8 +328,11 @@
         // زنگ باشگاهی چندنُته — بلند و مشخص، نه بوق تیز زشت
         const notes = soft
           ? [
-              { f: 698.46, at: 0, dur: 0.2, g: 0.55 },
-              { f: 880.0, at: 0.12, dur: 0.28, g: 0.45 }
+              // دو زنگ پشت‌سرهم تا تمام‌شدن حس شود
+              { f: 698.46, at: 0, dur: 0.32, g: 0.8 },
+              { f: 880.0, at: 0.2, dur: 0.38, g: 0.75 },
+              { f: 698.46, at: 0.58, dur: 0.34, g: 0.85 },
+              { f: 880.0, at: 0.82, dur: 0.42, g: 0.8 }
             ]
           : [
               { f: 659.25, at: 0, dur: 0.15, g: 1.15 },
@@ -338,8 +341,8 @@
               { f: 1318.51, at: 0.34, dur: 0.38, g: 1.2 }
             ];
 
-        const total = soft ? 0.45 : 0.78;
-        const peak = soft ? 0.7 : 1.55;
+        const total = soft ? 1.4 : 0.78;
+        const peak = soft ? 1.05 : 1.55;
         master.gain.setValueAtTime(0.0001, t0);
         master.gain.exponentialRampToValueAtTime(peak, t0 + 0.02);
         master.gain.setValueAtTime(peak * 0.85, t0 + total * 0.55);
@@ -1029,8 +1032,12 @@
     rdl: "آر دی ال",
     ددلیفت: "ددلیفت",
     lunge: "لانج",
-    lunges: "لانج",
+    lunges: "لانگز",
+    lange: "لانج",
+    langz: "لانگز",
     لانج: "لانج",
+    لانگز: "لانگز",
+    لانگ: "لانگز",
     "jumping jack": "جامپینگ جک",
     "jumping jacks": "جامپینگ جک",
     "mountain climber": "مانتین کلایمر",
@@ -1092,7 +1099,9 @@
     ددلیفت: "move-deadlift.mp3",
     "ددلیفت رومانیایی": "move-rdl.mp3",
     "آر دی ال": "move-rdl-short.mp3",
-    لانج: "move-lunge.mp3",
+    لانج: "move-lange.mp3",
+    لانگز: "move-lunges.mp3",
+    لانگ: "move-lunges.mp3",
     "جامپینگ جک": "move-jj.mp3",
     "مانتین کلایمر": "move-mc.mp3",
     کرانچ: "move-crunch.mp3",
@@ -1141,6 +1150,8 @@
     "ددلیفت رومانیایی": "romanian deadlift",
     "آر دی ال": "R D L",
     لانج: "lunge",
+    لانگز: "lunges",
+    لانگ: "lunges",
     "جامپینگ جک": "jumping jack",
     "مانتین کلایمر": "mountain climber",
     کرانچ: "crunch",
@@ -1206,6 +1217,18 @@
     return { text: raw, lang: "fa" };
   }
 
+  async function playCachedFaOnly(text, vol) {
+    const key = String(text || "").trim().slice(0, 160);
+    if (!key) return false;
+    try {
+      const blob = await loadDynFaFromCache(key);
+      if (!blob) return false;
+      return playBlobFa(blob, vol);
+    } catch {
+      return false;
+    }
+  }
+
   async function speakMoveNameOnly(name, vol) {
     const raw = String(name || "").trim();
     if (!raw) return false;
@@ -1216,50 +1239,51 @@
     const v = vol == null ? 0.98 : vol;
     const hasLatin = /[A-Za-z]/.test(raw);
     const hasFa = /[\u0600-\u06FF]/.test(said.text) || /[\u0600-\u06FF]/.test(raw);
+    const phrase = said.text || raw;
 
-    // ۱) کلیپ آفلاین فارسی
-    const clip = MOVE_CLIP[said.text];
+    // ۱) کلیپ آفلاین داخل اپ
+    const clip = MOVE_CLIP[said.text] || MOVE_CLIP[raw];
     if (clip) {
       const ok = await playVoiceFile(clip, v);
       if (ok) return true;
     }
 
-    // ۲) فقط لاتین → انگلیسی سیستم
-    if (hasLatin && !hasFa && said.lang === "en") {
+    // ۲) صدای ذخیره‌شده روی گوشی (کش آفلاین) — بدون اینترنت
+    if (hasFa) {
+      let ok = await playCachedFaOnly(phrase, v);
+      if (ok) return true;
+      if (phrase !== raw) {
+        ok = await playCachedFaOnly(raw, v);
+        if (ok) return true;
+      }
+    }
+
+    // ۳) تلفظ سیستم (آفلاین؛ ویندوز/اندروید با بسته فارسی)
+    if (hasLatin && !hasFa) {
       return speakFaSynthAsync(said.text || raw, v, "en", opts);
     }
-    if (hasLatin && !/[\u0600-\u06FF]/.test(raw) && !MOVE_SAY[normMoveKey(raw)]) {
-      return speakFaSynthAsync(raw, v, "en", opts);
-    }
-
-    // ۳) راه ساده رایج: تلفظ سیستم فارسی؛ بعد پشتیبان کوتاه آنلاین
     if (hasFa) {
-      const phrase = said.text || raw;
       loadVoices();
-      if (faVoice || !ios) {
-        const synthOk = await speakFaSynthAsync(phrase, v, "fa", {
-          ...opts,
-          rate: 1.35,
-          pitch: 1.18
-        });
-        if (synthOk) return true;
-      }
-      const dyn = await playDynamicFa(phrase, v);
-      if (dyn) return true;
-      if (phrase !== raw) {
-        const dyn2 = await playDynamicFa(raw, v);
-        if (dyn2) return true;
+      const synthOk = await speakFaSynthAsync(phrase, v, "fa", {
+        ...opts,
+        rate: 1.35,
+        pitch: 1.18
+      });
+      if (synthOk) return true;
+      // در پس‌زمینه برای دفعه بعد کش کن (تمرین را معطل نکن)
+      if (typeof navigator !== "undefined" && navigator.onLine) {
+        warmFaTts(phrase);
       }
     }
 
-    // ۴) آخرین راه: معادل انگلیسی شناخته‌شده
-    if (MOVE_EN[said.text]) {
-      return speakFaSynthAsync(MOVE_EN[said.text], v, "en", opts);
+    // ۴) معادل انگلیسی شناخته‌شده (آفلاین)
+    if (MOVE_EN[said.text] || MOVE_EN[raw]) {
+      return speakFaSynthAsync(MOVE_EN[said.text] || MOVE_EN[raw], v, "en", opts);
     }
     if (said.lang === "en") {
       return speakFaSynthAsync(said.text, v, "en", opts);
     }
-    return playDynamicFa(said.text, v);
+    return false;
   }
 
   async function speakMoveName(name, vol) {
@@ -1696,12 +1720,12 @@
       speakDoneAmount(done, total);
     }
 
-    // ۴ ثانیه مانده: بوق ملایم
+    // ۴ ثانیه مانده: دو زنگ ملایم پشت‌سرهم (شنیده‌تر)
     const softKey = run.i + ":soft4";
     if (run.phaseDur > 5 && !run.announced[softKey] && prev > 4 && cur <= 4) {
       run.announced[softKey] = true;
-      beepWhite(220, true);
-      buzz([90, 40, 120]);
+      beepWhite(500, true);
+      buzz([90, 40, 120, 40, 140]);
     }
   }
 
