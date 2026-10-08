@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "32";
+  const APP_VER = "33";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=32";
+  const VOICE_Q = "?v=33";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -654,14 +654,20 @@
 
   async function speakPhase(step) {
     return queueAnnounce(async () => {
-      // اول فاز: زنگ بلند، بعد اسم حرکت (در استراحت: حرکت بعدی)
+      // تمرین: زنگ + اسم حرکت یک‌بار
+      // استراحت: زنگ + «حرکت بعد» + اسم
       buzz(step.kind === "work" ? [100, 45, 100, 45, 160] : [70, 35, 70, 35, 90]);
       beepWhite(400, false);
       await sleep(280);
-      const name = step.kind === "work" ? step.name : step.nextName || "";
-      if (name) {
-        await speakMoveName(name, 1);
+      if (step.kind === "work") {
+        if (step.name) await speakMoveName(step.name, 1);
+        return;
       }
+      const name = step.nextName || "";
+      if (!name) return;
+      await speakFaSynthAsync("حرکت بعد", 1);
+      await sleep(120);
+      await speakMoveName(name, 1);
     });
   }
 
@@ -671,16 +677,9 @@
     return queueAnnounce(async () => {
       buzz([55, 30, 90]);
       await sleep(50);
+      // فقط مقدار انجام‌شده؛ اسم را دوباره نگو
       const phrase = faNum(n) + " ثانیه انجام دادی";
       await speakFaSynthAsync(phrase, 1);
-      if (!run) return;
-      const step = run.steps[run.i];
-      if (!step) return;
-      const name = step.kind === "work" ? step.name : step.nextName || "";
-      if (name) {
-        await sleep(140);
-        await speakMoveName(name, 1);
-      }
     });
   }
 
