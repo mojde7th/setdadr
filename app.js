@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "82";
+  const APP_VER = "83";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=82";
+  const VOICE_Q = "?v=83";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -193,6 +193,12 @@
       /iPad|iPhone|iPod/i.test(ua) ||
       (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
     );
+  }
+
+  function isMobileLike() {
+    if (typeof navigator === "undefined") return false;
+    const ua = navigator.userAgent || "";
+    return isIOSLike() || /Android|Mobile|webOS|BlackBerry/i.test(ua);
   }
 
   function buzz(pattern) {
@@ -1594,8 +1600,101 @@
     return out.replace(/\s+/g, " ").trim().slice(0, 180);
   }
 
+  function hashUnit(s) {
+    let h = 2166136261;
+    const t = String(s || "");
+    for (let i = 0; i < t.length; i++) {
+      h ^= t.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return Math.abs(h);
+  }
+
+  function playSyllableTone(unit, vol) {
+    return new Promise((resolve) => {
+      try {
+        if (soundMuted) {
+          resolve(false);
+          return;
+        }
+        unlockAudio();
+        if (!audioCtx) {
+          resolve(false);
+          return;
+        }
+        const run = () => {
+          const t0 = audioCtx.currentTime;
+          const h = hashUnit(unit);
+          const f0 = 240 + (h % 320);
+          const dur = 0.1 + Math.min(0.07, String(unit).length * 0.015);
+          const peak = Math.max(0.25, Math.min(0.95, (vol == null ? 0.85 : vol) * 0.85));
+          const master = audioCtx.createGain();
+          const lp = audioCtx.createBiquadFilter();
+          lp.type = "lowpass";
+          lp.frequency.setValueAtTime(1700, t0);
+          master.gain.setValueAtTime(0.0001, t0);
+          master.gain.exponentialRampToValueAtTime(peak, t0 + 0.012);
+          master.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+          master.connect(lp);
+          lp.connect(audioCtx.destination);
+          const o1 = audioCtx.createOscillator();
+          const o2 = audioCtx.createOscillator();
+          const g1 = audioCtx.createGain();
+          const g2 = audioCtx.createGain();
+          o1.type = "sine";
+          o2.type = "sine";
+          o1.frequency.setValueAtTime(f0, t0);
+          o2.frequency.setValueAtTime(f0 * 1.5, t0);
+          g1.gain.value = 0.75;
+          g2.gain.value = 0.22;
+          o1.connect(g1);
+          o2.connect(g2);
+          g1.connect(master);
+          g2.connect(master);
+          o1.start(t0);
+          o2.start(t0);
+          o1.stop(t0 + dur + 0.02);
+          o2.stop(t0 + dur + 0.02);
+          setTimeout(() => resolve(true), dur * 1000 + 25);
+        };
+        if (audioCtx.state === "suspended") audioCtx.resume().then(run).catch(run);
+        else run();
+      } catch {
+        resolve(false);
+      }
+    });
+  }
+
+  async function speakAppSpell(text, vol) {
+    // صدای خود اپ با Web Audio — روی گوشی سکوت مطلق نمی‌ماند
+    if (soundMuted) return false;
+    const raw = String(text || "").replace(/\s+/g, " ").trim();
+    if (!raw) return false;
+    const hasFa = /[\u0600-\u06FF]/.test(raw);
+    let spoken = hasFa
+      ? romanizeFaMachine(raw)
+      : raw.toLowerCase().replace(/[^a-z0-9\s]/gi, " ");
+    spoken = String(spoken || "").replace(/\s+/g, " ").trim();
+    if (!spoken) spoken = "x";
+    let units = spoken.split(" ").filter(Boolean);
+    if (units.length === 1 && units[0].length > 4) {
+      units = units[0].match(/.{1,2}/g) || units;
+    }
+    units = units.slice(0, 28);
+    unlockAudio();
+    buzz([18]);
+    for (let i = 0; i < units.length; i++) {
+      const ok = await playSyllableTone(units[i], vol);
+      if (!ok) return false;
+      if (i < units.length - 1) await sleep(28);
+    }
+    return true;
+  }
+
   async function speakMachineAny(text, vol) {
-    // ماشینی سریع: فارسی بی‌ربط → هجی لاتین با صدای انگلیسی گوشی
+    // اول صدای خود اپ (قطعی)، بعد سیستم/گوگل اگر بود
+    const okApp = await speakAppSpell(text, vol);
+    if (okApp) return true;
     const raw = String(text || "").replace(/\s+/g, " ").trim();
     if (!raw) return false;
     const hasFa = /[\u0600-\u06FF]/.test(raw);
@@ -1620,6 +1719,7 @@
     const speakText = raw;
     const isEn = hasLatin && !hasFa;
     const keyLow = raw.toLowerCase();
+    const mobile = isMobileLike();
 
     const clip =
       MOVE_CLIP[raw] ||
@@ -1637,21 +1737,26 @@
       const ok = await playCachedFaOnly(speakText, v);
       if (ok) return true;
     }
+    if (said && said.text && said.text !== speakText && MOVE_CLIP[said.text]) {
+      const ok2 = await playVoiceFile(MOVE_CLIP[said.text], v);
+      if (ok2) return true;
+    }
 
-    // انگلیسی: سریع با نرخ بالا — اول سیستم، گوگل فقط اگر سیستم نبود
+    // گوشی: سیستم/گوگل اغلب سکوت مطلق — صدای خود اپ فوری
+    if (mobile) {
+      return speakAppSpell(speakText, v);
+    }
+
+    // دسکتاپ: سیستم بعد گوگل بعد صدای اپ
     if (isEn) {
       const okS = await speakSynthLang(speakText, v, "en", {
         noCancel: true,
         rate: 1.4
       });
       if (okS) return true;
-      return playGoogleDirect(speakText, v, "en");
-    }
-
-    // فارسی خارج از لیست: اگر صدای فارسی سیستم نیست، فوری ماشینی (قبل از گوگل که دیر است)
-    if (said && said.text && said.text !== speakText && MOVE_CLIP[said.text]) {
-      const ok2 = await playVoiceFile(MOVE_CLIP[said.text], v);
-      if (ok2) return true;
+      const okG = await playGoogleDirect(speakText, v, "en");
+      if (okG) return true;
+      return speakAppSpell(speakText, v);
     }
     if (hasUsableFaVoice()) {
       const ok = await speakSynthLang(speakText, v, "fa", {
@@ -1660,13 +1765,8 @@
       });
       if (ok) return true;
     }
-    // هر متن فارسی بی‌ربط / ناشناس — هجی ماشینی فوری
     {
       const ok = await speakMachineAny(speakText, v);
-      if (ok) return true;
-    }
-    {
-      const ok = await playGoogleDirect(speakText, v, "fa");
       if (ok) return true;
     }
     warmFaTts(speakText);
