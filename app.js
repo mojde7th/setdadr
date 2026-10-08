@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "73";
+  const APP_VER = "74";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,10 +41,13 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=73";
+  const VOICE_Q = "?v=74";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
+  let tickIv = 0;
+  let bgKeepAudio = null;
+  let bgKeepOn = false;
   // سرور دیلارا — هر جمله/کلمه؛ نتیجه در کش گوشی می‌ماند
   const TTS_API_LS = "setdadr-tts-api";
   function getTtsApiBases() {
@@ -212,7 +215,12 @@
     try {
       localStorage.setItem(MUTE_LS, soundMuted ? "1" : "0");
     } catch {}
-    if (soundMuted) stopAllSound();
+    if (soundMuted) {
+      stopAllSound();
+      stopBgKeepAlive();
+    } else if (run && !run.paused) {
+      startBgKeepAlive();
+    }
     paintMuteBtn();
   }
 
@@ -321,6 +329,71 @@
         speechSynthesis.cancel();
       } catch {}
     }
+    // keep-alive پس‌زمینه را قطع نکن — فقط با پایان/خروج/توقف
+  }
+
+  function setMediaPlaying(on, title) {
+    try {
+      if (!navigator.mediaSession) return;
+      navigator.mediaSession.playbackState = on ? "playing" : "paused";
+      if (on) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: title || "ست‌یار",
+          artist: "ست‌یار",
+          album: "تمرین"
+        });
+      }
+    } catch {}
+  }
+
+  function startBgKeepAlive() {
+    if (soundMuted) return;
+    bgKeepOn = true;
+    unlockAudio();
+    try {
+      if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+    } catch {}
+    if (!bgKeepAudio) {
+      const a = makeHtmlAudio(VOICE_BASE + "silence.wav" + VOICE_Q);
+      a.loop = true;
+      a.volume = 0.001;
+      bgKeepAudio = a;
+    }
+    const p = bgKeepAudio.play();
+    if (p && typeof p.then === "function") p.catch(() => {});
+    setMediaPlaying(true, (run && run.title) || "ست‌یار");
+  }
+
+  function stopBgKeepAlive() {
+    bgKeepOn = false;
+    setMediaPlaying(false);
+    if (!bgKeepAudio) return;
+    try {
+      bgKeepAudio.onended = null;
+      bgKeepAudio.onerror = null;
+      bgKeepAudio.pause();
+      bgKeepAudio.removeAttribute("src");
+      bgKeepAudio.load();
+    } catch {}
+    bgKeepAudio = null;
+  }
+
+  function resumeBgIfNeeded() {
+    if (!run || run.paused || soundMuted || !bgKeepOn) return;
+    unlockAudio();
+    try {
+      if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+    } catch {}
+    if (bgKeepAudio) {
+      const p = bgKeepAudio.play();
+      if (p && typeof p.then === "function") p.catch(() => {});
+    } else {
+      startBgKeepAlive();
+    }
+    try {
+      if (window.speechSynthesis) speechSynthesis.resume();
+    } catch {}
+    setMediaPlaying(true, (run && run.title) || "ست‌یار");
   }
 
   // یک زنگ نرم کوتاه — master جدا تا بوق دوم محو نشود
@@ -501,18 +574,30 @@
     return buf;
   }
 
-  function faTtsUrls(text) {
+  function faTtsUrls(text, lang) {
     const q = encodeURIComponent(String(text || "").trim().slice(0, 160));
+    const tl = lang === "en" ? "en" : "fa";
     const direct = [
-      "https://translate.googleapis.com/translate_tts?ie=UTF-8&client=gtx&tl=fa&q=" + q,
-      "https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=fa&q=" + q
+      "https://translate.googleapis.com/translate_tts?ie=UTF-8&client=gtx&tl=" + tl + "&q=" + q,
+      "https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=" + tl + "&q=" + q
     ];
     const out = [...direct];
     direct.forEach((u) => {
       out.push("https://corsproxy.io/?" + encodeURIComponent(u));
       out.push("https://api.allorigins.win/raw?url=" + encodeURIComponent(u));
+      out.push("https://corsproxy.org/?" + encodeURIComponent(u));
     });
     return out;
+  }
+
+  function hasUsableFaVoice() {
+    loadVoices();
+    return !!(faVoice && /^fa/i.test(String(faVoice.lang || "")));
+  }
+
+  function hasUsableEnVoice() {
+    loadVoices();
+    return !!enVoice;
   }
 
   function makeHtmlAudio(src) {
@@ -1354,14 +1439,13 @@
     }
   }
 
-  async function playGoogleFaAudio(text, vol) {
+  async function playGoogleFaAudio(text, vol, lang) {
     // روش رایج اپ‌های ایرانی: گوگل‌تی‌تی‌اس + پروکسی (روی گوشی ایران مستقیم گوگل اغلب بسته است)
     const key = String(text || "").trim().slice(0, 160);
     if (!key) return false;
-    const urls = faTtsUrls(key);
+    const urls = faTtsUrls(key, lang);
     for (let i = 0; i < urls.length; i++) {
       try {
-        // اول fetch→blob (پروکسی‌ها این‌طور پایدارترند روی موبایل)
         try {
           const res = await fetchWithTimeout(urls[i], 7000);
           if (res && res.ok) {
@@ -1384,80 +1468,94 @@
     return false;
   }
 
+  async function speakSynthLang(text, vol, lang, opts) {
+    try {
+      if (window.speechSynthesis) speechSynthesis.resume();
+    } catch {}
+    await sleep(isIOSLike() ? 100 : 40);
+    loadVoices();
+    return speakFaSynthAsync(text, vol, lang, {
+      ...(opts || {}),
+      noCancel: true,
+      rate: lang === "fa" ? 1.28 : 1.12,
+      pitch: 1.12
+    });
+  }
+
   async function speakMoveNameOnly(name, vol) {
-    // همیشه عین متن کاربر — بدون منتظر تونل/دانلود طولانی
+    // ویندوز: صدای فارسی سیستم دارد → می‌خواند
+    // گوشی: معمولاً فارسی سیستم ندارد → باید گوگل/کلیپ؛ انگلیسی سیستم گوشی معمولاً هست
     const raw = String(name || "").replace(/\s+/g, " ").trim();
     if (!raw) return false;
     const said = sayForMove(raw);
-    const ios = isIOSLike();
     const opts = { noCancel: true };
     const v = vol == null ? 0.98 : vol;
     const hasFa = /[\u0600-\u06FF]/.test(raw);
     const hasLatin = /[A-Za-z]/.test(raw);
     const speakText = raw;
+    const lang = hasFa || !hasLatin ? "fa" : "en";
 
-    // ۱) کلیپ آماده
     const clip = MOVE_CLIP[raw] || (said && MOVE_CLIP[said.text]);
     if (clip) {
       const ok = await playVoiceFile(clip, v);
       if (ok) return true;
     }
-
-    // ۲) کلیپ پختهٔ آفلاین
     {
       const ok = await playBakedDynClip(speakText, v);
       if (ok) return true;
     }
-
-    // ۳) کش گوشی (قبلاً شنیده)
     {
       const ok = await playCachedFaOnly(speakText, v);
       if (ok) return true;
     }
 
-    // ۴) گوگل‌ترجمه‌تی‌تی‌اس — مثل اپ‌های ایرانی؛ هر متن را واقعاً می‌خواند
-    {
-      const ok = await playGoogleFaAudio(speakText, v);
+    // انگلیسی روی گوشی: اول سیستم (تقریباً همیشه هست)
+    if (lang === "en" && hasUsableEnVoice()) {
+      const ok = await speakSynthLang(speakText, v, "en", opts);
+      if (ok) return true;
+    }
+    // فارسی روی ویندوز/لپ‌تاپ: اول سیستم (دیوارا/نازنین و…)
+    if (lang === "fa" && hasUsableFaVoice()) {
+      const ok = await speakSynthLang(speakText, v, "fa", opts);
       if (ok) return true;
     }
 
-    // ۵) تلفظ سیستم (آفلاین فوری اگر صدا نصب باشد)
-    try {
-      if (window.speechSynthesis) speechSynthesis.resume();
-    } catch {}
-    await sleep(ios ? 120 : 40);
-    loadVoices();
+    // گوگل + پروکسی — هر جمله/کلمه (فارسی یا انگلیسی)
     {
-      const lang = hasFa || !hasLatin ? "fa" : "en";
-      const synthOk = await speakFaSynthAsync(speakText, v, lang, {
-        ...opts,
-        rate: lang === "fa" ? 1.28 : 1.12,
-        pitch: 1.12
-      });
-      if (synthOk) {
+      const ok = await playGoogleFaAudio(speakText, v, lang);
+      if (ok) return true;
+    }
+
+    // آخرین تلاش سیستم (حتی اگر تشخیص صدا ضعیف باشد)
+    {
+      const ok = await speakSynthLang(speakText, v, lang, opts);
+      if (ok) {
         warmFaTts(speakText);
         return true;
       }
     }
 
-    // ۶) نگاشت معروف
     if (said && said.text && said.text !== speakText) {
       const clip2 = MOVE_CLIP[said.text];
       if (clip2) {
         const ok = await playVoiceFile(clip2, v);
         if (ok) return true;
       }
-      const okG = await playGoogleFaAudio(said.text, v);
+      const mapLang = said.lang === "en" || MOVE_EN[said.text] ? "en" : "fa";
+      const okG = await playGoogleFaAudio(
+        mapLang === "en" ? MOVE_EN[said.text] || said.text : said.text,
+        v,
+        mapLang
+      );
       if (okG) return true;
-      return speakFaSynthAsync(
+      return speakSynthLang(
         MOVE_EN[said.text] || said.text,
         v,
-        said.lang === "en" || MOVE_EN[said.text] ? "en" : "fa",
+        mapLang,
         opts
       );
     }
 
-    // کش پس‌زمینه برای بار بعد — زنده را بلاک نکن
     warmFaTts(speakText);
     return false;
   }
@@ -1824,6 +1922,7 @@
     stopAllSound();
     const steps = buildTimeline(p);
     unlockAudio();
+    startBgKeepAlive();
     // صدا را در پس‌زمینه گرم کن؛ شروع را معطل نکن
     try {
       p.circuit.forEach((c) => {
@@ -1852,22 +1951,30 @@
   function stopLoop() {
     if (raf) cancelAnimationFrame(raf);
     raf = 0;
+    if (tickIv) clearInterval(tickIv);
+    tickIv = 0;
   }
 
   function loop() {
     stopLoop();
     if (!run || run.paused) return;
-    const now = performance.now();
-    const dt = (now - run.lastTick) / 1000;
-    run.lastTick = now;
-    run.left -= dt;
-    maybeAnnounce();
-    if (run.left <= 0) {
-      advance();
-      return;
-    }
-    paintRun(false);
-    raf = requestAnimationFrame(loop);
+    run.lastTick = performance.now();
+    // setInterval در پس‌زمینه زنده می‌ماند؛ rAF روی گوشی قطع می‌شود
+    const tick = () => {
+      if (!run || run.paused) return;
+      const now = performance.now();
+      const dt = (now - run.lastTick) / 1000;
+      run.lastTick = now;
+      run.left -= dt;
+      maybeAnnounce();
+      if (run.left <= 0) {
+        advance();
+        return;
+      }
+      paintRun(false);
+    };
+    tick();
+    tickIv = setInterval(tick, 200);
   }
 
   function maybeAnnounce() {
@@ -2036,6 +2143,7 @@
   function finishRun() {
     stopLoop();
     stopAllSound();
+    stopBgKeepAlive();
     const last = run && run.steps.length ? run.steps[run.steps.length - 1] : null;
     const rounds = last ? last.rounds : 0;
     run = null;
@@ -2133,8 +2241,10 @@
     if (run.paused) {
       stopLoop();
       stopAllSound();
+      stopBgKeepAlive();
     } else {
       unlockAudio();
+      startBgKeepAlive();
       run.lastTick = performance.now();
       loop();
     }
@@ -2151,6 +2261,7 @@
   $("#btnAbort").addEventListener("click", () => {
     stopLoop();
     stopAllSound();
+    stopBgKeepAlive();
     run = null;
     show("home");
   });
@@ -2166,6 +2277,22 @@
       if (v === "edit" && !b.hidden) show("edit");
     });
   });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      resumeBgIfNeeded();
+      if (run && !run.paused) {
+        run.lastTick = performance.now();
+        if (!tickIv) loop();
+      }
+    } else if (run && !run.paused) {
+      resumeBgIfNeeded();
+    }
+  });
+  window.addEventListener("pagehide", () => {
+    if (run && !run.paused) resumeBgIfNeeded();
+  });
+  window.addEventListener("pageshow", () => resumeBgIfNeeded());
 
   // Unlock audio on first tap (iOS/Android)
   const unlockOnce = () => unlockAudio();
