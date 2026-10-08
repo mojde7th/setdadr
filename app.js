@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "75";
+  const APP_VER = "76";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=75";
+  const VOICE_Q = "?v=76";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -465,23 +465,24 @@
         comp.ratio.setValueAtTime(4, t0);
         comp.attack.setValueAtTime(0.003, t0);
         comp.release.setValueAtTime(0.18, t0);
+        // نرم‌تر ولی بلند — بدون تیغ تیز بالا و بدون نویز کلیک
         const filter = audioCtx.createBiquadFilter();
-        filter.type = "highshelf";
-        filter.frequency.setValueAtTime(1800, t0);
-        filter.gain.setValueAtTime(6, t0);
+        filter.type = "lowpass";
+        filter.frequency.setValueAtTime(2400, t0);
+        filter.Q.setValueAtTime(0.7, t0);
 
         const notes = [
-          { f: 659.25, at: 0, dur: 0.15, g: 1.15 },
-          { f: 830.61, at: 0.1, dur: 0.15, g: 1.25 },
-          { f: 1046.5, at: 0.2, dur: 0.18, g: 1.35 },
-          { f: 1318.51, at: 0.34, dur: 0.38, g: 1.2 }
+          { f: 523.25, at: 0, dur: 0.22, g: 1.2 },
+          { f: 659.25, at: 0.12, dur: 0.24, g: 1.3 },
+          { f: 783.99, at: 0.26, dur: 0.32, g: 1.35 },
+          { f: 987.77, at: 0.42, dur: 0.4, g: 1.15 }
         ];
 
-        const total = 0.78;
-        const peak = 1.55;
+        const total = 0.92;
+        const peak = 1.5;
         master.gain.setValueAtTime(0.0001, t0);
-        master.gain.exponentialRampToValueAtTime(peak, t0 + 0.02);
-        master.gain.setValueAtTime(peak * 0.85, t0 + total * 0.55);
+        master.gain.exponentialRampToValueAtTime(peak, t0 + 0.04);
+        master.gain.setValueAtTime(peak * 0.92, t0 + total * 0.6);
         master.gain.exponentialRampToValueAtTime(0.0001, t0 + total);
 
         master.connect(filter);
@@ -494,12 +495,12 @@
           const o2 = audioCtx.createOscillator();
           const g = audioCtx.createGain();
           o1.type = "sine";
-          o2.type = "triangle";
+          o2.type = "sine";
           o1.frequency.setValueAtTime(n.f, t0 + n.at);
           o2.frequency.setValueAtTime(n.f * 2.0, t0 + n.at);
           const gt = t0 + n.at;
           g.gain.setValueAtTime(0.0001, gt);
-          g.gain.exponentialRampToValueAtTime(n.g, gt + 0.012);
+          g.gain.exponentialRampToValueAtTime(n.g, gt + 0.025);
           g.gain.exponentialRampToValueAtTime(0.0001, gt + n.dur);
           o1.connect(g);
           o2.connect(g);
@@ -510,26 +511,6 @@
           o2.stop(gt + n.dur + 0.03);
           oscs.push(o1, o2);
         });
-
-        const noiseDur = 0.04;
-        const bufSize = Math.floor(audioCtx.sampleRate * noiseDur);
-        const buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
-        const data = buf.getChannelData(0);
-        for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / bufSize);
-        const src = audioCtx.createBufferSource();
-        const ng = audioCtx.createGain();
-        const nf = audioCtx.createBiquadFilter();
-        nf.type = "bandpass";
-        nf.frequency.setValueAtTime(2200, t0);
-        nf.Q.setValueAtTime(1.2, t0);
-        src.buffer = buf;
-        ng.gain.setValueAtTime(0.35, t0);
-        ng.gain.exponentialRampToValueAtTime(0.0001, t0 + noiseDur);
-        src.connect(nf);
-        nf.connect(ng);
-        ng.connect(master);
-        src.start(t0);
-        src.stop(t0 + noiseDur + 0.01);
 
         activeBeep = { osc: oscs[0], gain: master, oscs };
         if (oscs[0]) {
@@ -1376,6 +1357,20 @@
     "دیوار نشینی": "wall sit"
   };
 
+  // اسم انگلیسی → همان کلیپ آفلاین
+  Object.keys(MOVE_SAY).forEach((enKey) => {
+    const fa = MOVE_SAY[enKey];
+    if (fa && MOVE_CLIP[fa] && !MOVE_CLIP[enKey]) MOVE_CLIP[enKey] = MOVE_CLIP[fa];
+  });
+  Object.keys(MOVE_EN).forEach((fa) => {
+    const en = MOVE_EN[fa];
+    if (en && MOVE_CLIP[fa]) {
+      const k = String(en).toLowerCase();
+      if (!MOVE_CLIP[k]) MOVE_CLIP[k] = MOVE_CLIP[fa];
+      if (!MOVE_CLIP[en]) MOVE_CLIP[en] = MOVE_CLIP[fa];
+    }
+  });
+
   function sayForMove(name) {
     const raw = String(name || "").trim();
     if (!raw) return { text: "", lang: "fa" };
@@ -1514,7 +1509,7 @@
   }
 
   async function speakMoveNameOnly(name, vol) {
-    // ویندوز: صدای فارسی سیستم. گوشی: دیلارا (تونل) / کش / گوگل
+    // انگلیسی معروف: کلیپ آفلاین. تازه/دلخواه: دیلارا (تونل) بعد گوگل بعد سیستم
     const raw = String(name || "").replace(/\s+/g, " ").trim();
     if (!raw) return false;
     const said = sayForMove(raw);
@@ -1524,8 +1519,12 @@
     const hasLatin = /[A-Za-z]/.test(raw);
     const speakText = raw;
     const lang = hasFa || !hasLatin ? "fa" : "en";
+    const keyLow = raw.toLowerCase();
 
-    const clip = MOVE_CLIP[raw] || (said && MOVE_CLIP[said.text]);
+    const clip =
+      MOVE_CLIP[raw] ||
+      MOVE_CLIP[keyLow] ||
+      (said && MOVE_CLIP[said.text]);
     if (clip) {
       const ok = await playVoiceFile(clip, v);
       if (ok) return true;
@@ -1539,35 +1538,35 @@
       if (ok) return true;
     }
 
-    // انگلیسی روی گوشی: اول سیستم
-    if (lang === "en" && hasUsableEnVoice()) {
-      const ok = await speakSynthLang(speakText, v, "en", opts);
-      if (ok) return true;
-    }
-    // فارسی روی ویندوز: اول سیستم
+    // فارسی روی ویندوز: سیستم خوب است
     if (lang === "fa" && hasUsableFaVoice()) {
       const ok = await speakSynthLang(speakText, v, "fa", opts);
       if (ok) return true;
     }
 
-    // دیلارا — هر جمله فارسی/دلخواه (گوشی بدون صدای فارسی سیستم)
-    if (lang === "fa" || hasFa) {
+    // دیلارا برای فارسی و انگلیسی (گوشی)
+    {
       const ok = await playDilaraFa(speakText, v);
       if (ok) return true;
     }
+    // اگر به فارسی نگاشت شده، همان را هم از دیلارا بگیر
+    if (said && said.text && said.text !== speakText) {
+      const ok = await playDilaraFa(said.text, v);
+      if (ok) return true;
+    }
 
-    // گوگل + پروکسی
     {
       const ok = await playGoogleFaAudio(speakText, v, lang);
       if (ok) return true;
     }
 
-    // اگر انگلیسی بود و سیستم نبود، دیلارا هم occasionally انگلیسی می‌خواند
-    if (lang === "en") {
-      const ok = await playDilaraFa(speakText, v);
-      if (ok) return true;
+    if (lang === "en" || hasUsableEnVoice()) {
+      const ok = await speakSynthLang(speakText, v, lang === "fa" ? "fa" : "en", opts);
+      if (ok) {
+        warmFaTts(speakText);
+        return true;
+      }
     }
-
     {
       const ok = await speakSynthLang(speakText, v, lang, opts);
       if (ok) {
@@ -1583,10 +1582,6 @@
         if (ok) return true;
       }
       const mapLang = said.lang === "en" || MOVE_EN[said.text] ? "en" : "fa";
-      if (mapLang === "fa") {
-        const okD = await playDilaraFa(said.text, v);
-        if (okD) return true;
-      }
       const okG = await playGoogleFaAudio(
         mapLang === "en" ? MOVE_EN[said.text] || said.text : said.text,
         v,
