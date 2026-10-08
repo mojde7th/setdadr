@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "91";
+  const APP_VER = "92";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=91";
+  const VOICE_Q = "?v=92";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -50,16 +50,34 @@
   let bgKeepOn = false;
   // سرور دیلارا — هر جمله/کلمه؛ نتیجه در کش گوشی می‌ماند
   const TTS_API_LS = "setdadr-tts-api";
-  function getTtsApiBases() {
-    const out = [];
+  function rememberTtsApi(base) {
+    const u = String(base || "").replace(/\/$/, "");
+    if (!u) return;
     try {
-      const saved = localStorage.getItem(TTS_API_LS);
-      if (saved) out.push(saved.replace(/\/$/, ""));
+      localStorage.setItem(TTS_API_LS, u);
     } catch {}
+  }
+  function forgetTtsApi(base) {
+    const u = String(base || "").replace(/\/$/, "");
+    if (!u) return;
+    try {
+      if (localStorage.getItem(TTS_API_LS) === u) localStorage.removeItem(TTS_API_LS);
+    } catch {}
+  }
+  function getTtsApiBases() {
+    // اول آدرس تازه از tts-endpoint.js — کش قدیمی localStorage را جلو نگذار
+    const out = [];
     if (typeof window !== "undefined" && window.SETDADR_TTS_API) {
       const u = String(window.SETDADR_TTS_API || "").replace(/\/$/, "");
       if (u) out.push(u);
     }
+    try {
+      const saved = localStorage.getItem(TTS_API_LS);
+      if (saved) {
+        const u = saved.replace(/\/$/, "");
+        if (u && out.indexOf(u) === -1) out.push(u);
+      }
+    } catch {}
     try {
       const h = location.hostname;
       if (h === "localhost" || h === "127.0.0.1") out.push("http://127.0.0.1:8787");
@@ -688,7 +706,7 @@
             ws.close();
           } catch {}
           done(chunks.length ? new Blob(chunks, { type: "audio/mpeg" }) : null);
-        }, 8000);
+        }, 5500);
 
         ws.onopen = () => {
           try {
@@ -794,7 +812,28 @@
     const hasFa = /[\u0600-\u06FF]/.test(key);
     const voice = hasFa ? EDGE_TTS_VOICE_FA : EDGE_TTS_VOICE_EN;
 
-    // ۱) اج مستقیم گوشی (بدون لپ‌تاپ)
+    // ۱) سرور دیلارا — فارسی رندوم فقط از اینجا مطمئن است (گوگل‌فا معمولاً ۴۰۰ می‌دهد)
+    const bases = getTtsApiBases();
+    for (let i = 0; i < bases.length; i++) {
+      try {
+        const url = bases[i] + "/tts?t=" + encodeURIComponent(key);
+        const res = await fetchWithTimeout(url, 7000, "no-store");
+        if (!res || !res.ok) {
+          forgetTtsApi(bases[i]);
+          continue;
+        }
+        const blob = await res.blob();
+        if (!blob || blob.size < 80) continue;
+        if (blob.type && blob.type.indexOf("audio") === -1 && blob.size < 500) continue;
+        rememberTtsApi(bases[i]);
+        await saveDynFaToCache(key, blob);
+        return blob;
+      } catch {
+        forgetTtsApi(bases[i]);
+      }
+    }
+
+    // ۲) اج مستقیم گوشی
     try {
       const edgeBlob = await synthesizeEdgeTts(key.slice(0, 160), voice);
       if (edgeBlob && edgeBlob.size > 80) {
@@ -803,32 +842,19 @@
       }
     } catch {}
 
-    // ۲) سرور دیلارا اگر روشن باشد
-    const bases = getTtsApiBases();
-    for (let i = 0; i < bases.length; i++) {
-      try {
-        const url = bases[i] + "/tts?t=" + encodeURIComponent(key);
-        const res = await fetchWithTimeout(url, 4500, "no-store");
-        if (!res || !res.ok) continue;
-        const blob = await res.blob();
-        if (!blob || blob.size < 80) continue;
-        if (blob.type && blob.type.indexOf("audio") === -1 && blob.size < 500) continue;
-        await saveDynFaToCache(key, blob);
-        return blob;
-      } catch {}
-    }
-
-    // ۳) گوگل + پروکسی
-    const urls = faTtsUrls(key.slice(0, 160), hasFa ? "fa" : "en").slice(0, 4);
-    for (let i = 0; i < urls.length; i++) {
-      try {
-        const res = await fetchWithTimeout(urls[i], 4000, "no-store");
-        if (!res || !res.ok) continue;
-        const blob = await res.blob();
-        if (!blob || blob.size < 80) continue;
-        await saveDynFaToCache(key, blob);
-        return blob;
-      } catch {}
+    // ۳) گوگل (انگلیسی؛ فارسی غالباً قطع)
+    if (!hasFa) {
+      const urls = faTtsUrls(key.slice(0, 160), "en").slice(0, 4);
+      for (let i = 0; i < urls.length; i++) {
+        try {
+          const res = await fetchWithTimeout(urls[i], 4000, "no-store");
+          if (!res || !res.ok) continue;
+          const blob = await res.blob();
+          if (!blob || blob.size < 80) continue;
+          await saveDynFaToCache(key, blob);
+          return blob;
+        } catch {}
+      }
     }
     return null;
   }
@@ -1547,19 +1573,26 @@
       if (!base) continue;
       try {
         const url = base + "/tts?t=" + encodeURIComponent(key);
-        const res = await fetchWithTimeout(url, 4500, "no-store");
-        if (!res || !res.ok) continue;
+        const res = await fetchWithTimeout(url, 8000, "no-store");
+        if (!res || !res.ok) {
+          forgetTtsApi(base);
+          continue;
+        }
         const blob = await res.blob();
         if (!blob || blob.size < 80) continue;
+        rememberTtsApi(base);
         await saveDynFaToCache(key, blob);
         return blob;
-      } catch {}
+      } catch {
+        forgetTtsApi(base);
+      }
     }
     return null;
   }
 
   async function playDilaraFa(text, vol) {
     try {
+      unlockAudio();
       const blob = await fetchDilaraOnly(text);
       if (!blob) return false;
       return playBlobFa(blob, vol == null ? 1 : vol);
@@ -1569,19 +1602,45 @@
   }
 
   async function playGoogleQuick(text, vol, lang) {
-    // اول لینک‌های مستقیم/پروکسی به‌صورت پخش HTML — بدون گیر کردن روی سنتز گوشی
+    // گوگل‌فا اغلب ۴۰۰ است — برای فارسی وقت تلف نکن
+    if (lang === "fa") return false;
     const key = String(text || "").trim().slice(0, 160);
     if (!key || soundMuted) return false;
-    const urls = faTtsUrls(key, lang).slice(0, 5);
+    const urls = faTtsUrls(key, lang).slice(0, 3);
     for (let i = 0; i < urls.length; i++) {
       try {
         const a = makeHtmlAudio(urls[i]);
-        const ok = await playHtmlAudioEl(a, vol, 5500);
+        const ok = await playHtmlAudioEl(a, vol, 4500);
         if (ok) {
           warmFaTts(key);
           return true;
         }
       } catch {}
+    }
+    return false;
+  }
+
+  // هر متن فارسی رندوم: دیلارا اول، بعد اج، بعد کش
+  async function speakFaAny(text, vol) {
+    const key = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
+    if (!key || soundMuted) return false;
+    const v = vol == null ? 0.98 : vol;
+    unlockAudio();
+    {
+      const ok = await playCachedFaOnly(key, v);
+      if (ok) return true;
+    }
+    {
+      const ok = await playBakedDynClip(key, v);
+      if (ok) return true;
+    }
+    {
+      const ok = await playDilaraFa(key, v);
+      if (ok) return true;
+    }
+    {
+      const ok = await playEdgeTts(key, v, EDGE_TTS_VOICE_FA);
+      if (ok) return true;
     }
     return false;
   }
@@ -1800,7 +1859,7 @@
       return false;
     }
 
-    // فارسی: کلیپ لیست → آفلاین → اج دیلارا → گوگل → سرور
+    // فارسی رندوم/جمله: کلیپ ثابت، بعد دیلارا (گوگل‌فا قطع است)
     const clip =
       MOVE_CLIP[raw] ||
       MOVE_CLIP[keyLow] ||
@@ -1830,27 +1889,7 @@
       } catch {}
     }
     {
-      const ok = await playBakedDynClip(speakText, v);
-      if (ok) return true;
-    }
-    {
-      const ok = await playCachedFaOnly(speakText, v);
-      if (ok) return true;
-    }
-    {
-      const ok = await playEdgeTts(speakText, v, EDGE_TTS_VOICE_FA);
-      if (ok) return true;
-    }
-    {
-      const ok = await playGoogleQuick(speakText, v, "fa");
-      if (ok) return true;
-    }
-    {
-      const ok = await playDilaraFa(speakText, v);
-      if (ok) return true;
-    }
-    {
-      const ok = await playGoogleFaAudio(speakText, v, "fa");
+      const ok = await speakFaAny(speakText, v);
       if (ok) return true;
     }
     warmFaTts(speakText);
@@ -1862,26 +1901,12 @@
   }
 
   async function speakNextMoveName(name, seq) {
-    const ios = isIOSLike();
-    const opts = ios ? { noCancel: true } : {};
     const nm = String(name || "").replace(/\s+/g, " ").trim();
-    // استراحت ست/حرکت: اول «حرکت بعد» آفلاین، بعد سیستم/گوگل (بدون وابستگی به لپ‌تاپ)
+    // استراحت ست/حرکت: اول «حرکت بعد» آفلاین، بعد دیلارا/اج
     let pref = await playVoiceFile("phrase-next.mp3", 1);
-    if (!pref) pref = await playBakedDynClip("حرکت بعد", 1);
-    if (!pref) pref = await playCachedFaOnly("حرکت بعد", 1);
-    if (!pref) {
-      loadVoices();
-      pref = await speakFaSynthAsync("حرکت بعد", 1, "fa", {
-        ...opts,
-        rate: 1.28,
-        pitch: 1.1
-      });
-    }
-    if (!pref) pref = await playGoogleFaAudio("حرکت بعد", 1, "fa");
-    if (!pref) pref = await playDilaraFa("حرکت بعد", 1);
+    if (!pref) pref = await speakFaAny("حرکت بعد", 1);
     if (seq != null && !announceAlive(seq)) return !!pref;
-    // کمی فاصله تا بعد از mp3، صدای سیستم/گوگل قفل نماند
-    await sleep(100);
+    await sleep(80);
     if (seq != null && !announceAlive(seq)) return false;
     if (!nm) return !!pref;
     return speakMoveNameOnly(nm, 1);
@@ -1892,9 +1917,7 @@
     buzz([55, 30, 90]);
     let ok = await playVoiceFile("cheer-ali.mp3", 0.98);
     if (seq != null && !announceAlive(seq)) return;
-    if (!ok) {
-      await speakFaSynthAsync("عالی", 1, "fa", { rate: 1.2, pitch: 1.2, noCancel: true });
-    }
+    if (!ok) await speakFaAny("عالی", 1);
   }
 
   async function speakPhase(step) {
@@ -1943,7 +1966,7 @@
         tot > 0
           ? faNum(n) + " ثانیه از " + faNum(tot) + " ثانیه رو رفتی"
           : faNum(n) + " ثانیه رو رفتی";
-      await speakFaSynthAsync(phrase, 1, "fa", { rate: 1.22, pitch: 1.2 });
+      await speakFaAny(phrase, 1);
     });
   }
 
@@ -1957,7 +1980,7 @@
         const ok = await playVoiceFile("done-" + n + ".mp3", 0.88);
         if (ok) return;
       }
-      await speakFaSynthAsync(faNum(n) + " ست", 0.95);
+      await speakFaAny(faNum(n) + " ست", 0.95);
     });
   }
 
@@ -2619,6 +2642,24 @@
   paintMuteBtn();
   const verEl = $("#appVer");
   if (verEl) verEl.textContent = "v" + APP_VER;
+  // آدرس دیلارا را از فایل endpoint به کش گوشی بنویس و سلامت را چک کن
+  try {
+    if (window.SETDADR_TTS_API) rememberTtsApi(window.SETDADR_TTS_API);
+  } catch {}
+  (async () => {
+    const bases = getTtsApiBases();
+    for (let i = 0; i < bases.length; i++) {
+      try {
+        const res = await fetchWithTimeout(bases[i] + "/health", 4000, "no-store");
+        if (res && res.ok) {
+          rememberTtsApi(bases[i]);
+          break;
+        }
+      } catch {
+        forgetTtsApi(bases[i]);
+      }
+    }
+  })().catch(() => {});
   renderMoves();
   renderPlans();
   show("home");
