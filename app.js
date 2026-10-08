@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "81";
+  const APP_VER = "82";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=81";
+  const VOICE_Q = "?v=82";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -1462,21 +1462,20 @@
   async function speakSynthLang(text, vol, lang, opts) {
     if (soundMuted || !text) return false;
     unlockAudio();
-    // بعد از پخش mp3، بدون cancel گاهی سیستم ساکت می‌ماند
     try {
       speechSynthesis.cancel();
     } catch {}
-    await sleep(isIOSLike() ? 90 : 40);
+    await sleep(isIOSLike() ? 50 : 25);
     try {
       speechSynthesis.resume();
     } catch {}
-    await waitVoices(isIOSLike() ? 600 : 300);
+    await waitVoices(isIOSLike() ? 280 : 120);
     const o = opts || {};
     return speakFaSynthAsync(text, vol, lang, {
       ...o,
       noCancel: true,
-      rate: o.rate != null ? o.rate : lang === "fa" ? 1.28 : 1.12,
-      pitch: o.pitch != null ? o.pitch : 1.12
+      rate: o.rate != null ? o.rate : lang === "fa" ? 1.32 : 1.38,
+      pitch: o.pitch != null ? o.pitch : 1.1
     });
   }
 
@@ -1596,21 +1595,19 @@
   }
 
   async function speakMachineAny(text, vol) {
-    // آخرین لایهٔ قطعی: ماشینی، حتی برای حروف بی‌ربط
+    // ماشینی سریع: فارسی بی‌ربط → هجی لاتین با صدای انگلیسی گوشی
     const raw = String(text || "").replace(/\s+/g, " ").trim();
     if (!raw) return false;
     const hasFa = /[\u0600-\u06FF]/.test(raw);
     const spoken = hasFa ? romanizeFaMachine(raw) : raw;
     if (!spoken) return false;
-    // اول سیستم انگلیسی (روی تقریباً همه گوشی‌ها هست)
     const ok = await speakSynthLang(spoken, vol == null ? 1 : vol, "en", {
       noCancel: true,
-      rate: 0.95,
-      pitch: 1.05
+      rate: 1.35,
+      pitch: 1.08
     });
     if (ok) return true;
-    // بعد گوگل انگلیسی
-    return playGoogleFaAudio(spoken, vol == null ? 1 : vol, "en");
+    return playGoogleDirect(spoken, vol == null ? 1 : vol, "en");
   }
 
   async function speakMoveNameOnly(name, vol) {
@@ -1641,40 +1638,35 @@
       if (ok) return true;
     }
 
-    // انگلیسی: سریع — سیستم بعد گوگل مستقیم (بدون پروکسی طولانی)
+    // انگلیسی: سریع با نرخ بالا — اول سیستم، گوگل فقط اگر سیستم نبود
     if (isEn) {
-      const okS = await speakSynthLang(speakText, v, "en", { noCancel: true });
+      const okS = await speakSynthLang(speakText, v, "en", {
+        noCancel: true,
+        rate: 1.4
+      });
       if (okS) return true;
-      const okG = await playGoogleDirect(speakText, v, "en");
-      if (okG) return true;
-      return speakMachineAny(speakText, v);
+      return playGoogleDirect(speakText, v, "en");
     }
 
-    // فارسی / مخلوط
-    {
-      const ok = await speakSynthLang(speakText, v, "fa", { noCancel: true });
+    // فارسی خارج از لیست: اگر صدای فارسی سیستم نیست، فوری ماشینی (قبل از گوگل که دیر است)
+    if (said && said.text && said.text !== speakText && MOVE_CLIP[said.text]) {
+      const ok2 = await playVoiceFile(MOVE_CLIP[said.text], v);
+      if (ok2) return true;
+    }
+    if (hasUsableFaVoice()) {
+      const ok = await speakSynthLang(speakText, v, "fa", {
+        noCancel: true,
+        rate: 1.35
+      });
       if (ok) return true;
     }
-    if (said && said.text && said.text !== speakText) {
-      const clip2 = MOVE_CLIP[said.text];
-      if (clip2) {
-        const ok2 = await playVoiceFile(clip2, v);
-        if (ok2) return true;
-      }
-      const ok = await speakSynthLang(said.text, v, "fa", { noCancel: true });
-      if (ok) return true;
-    }
-    {
-      const ok = await playGoogleDirect(speakText, v, "fa");
-      if (ok) return true;
-    }
-    // ماشینی: حروف فارسی → لاتین با صدای انگلیسی گوشی (حتی بی‌ربط)
+    // هر متن فارسی بی‌ربط / ناشناس — هجی ماشینی فوری
     {
       const ok = await speakMachineAny(speakText, v);
       if (ok) return true;
     }
     {
-      const ok = await playDilaraFa(speakText, v);
+      const ok = await playGoogleDirect(speakText, v, "fa");
       if (ok) return true;
     }
     warmFaTts(speakText);
