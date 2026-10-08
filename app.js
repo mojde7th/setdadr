@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "39";
+  const APP_VER = "40";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=39";
+  const VOICE_Q = "?v=40";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -696,8 +696,7 @@
     if (n <= 0) return;
     return queueAnnounce(async () => {
       buzz([55, 30, 90]);
-      await sleep(30);
-      // صدای یکدست هوش مصنوعی — نرم، لطیف، پرانرژی
+      // بلافاصله عالی؛ نیم‌ثانیه بعد مقدار دقیق هدف
       let ok = await playVoiceFile("cheer-ali.mp3", 0.98);
       if (!ok) await speakFaSynthAsync("عالی", 1, "fa", { rate: 1.2, pitch: 1.2 });
       await sleep(500);
@@ -1048,12 +1047,19 @@
     run.prevLeftCeil = cur;
     if (prev == null) return;
 
-    // یک‌بار بعد از حدود دوسوم انجام‌شده (+ اسم حرکت)
+    // دوسوم: زودتر تریگر کن تا وقتی صدا به «رفت» برسد همان ثانیه دقیق باشد
     const midKey = run.i + ":twoThirds";
-    const thirdLeft = Math.ceil(run.phaseDur / 3);
-    if (run.phaseDur >= 12 && !run.announced[midKey] && prev > thirdLeft && cur <= thirdLeft) {
+    const targetLeft = Math.ceil(run.phaseDur / 3);
+    const lead = 2; // جبران تأخیر کلیپ عالی + نیم‌ثانیه
+    const fireLeft = targetLeft + lead;
+    if (
+      run.phaseDur >= 12 &&
+      !run.announced[midKey] &&
+      prev > fireLeft &&
+      cur <= fireLeft
+    ) {
       run.announced[midKey] = true;
-      const done = Math.max(1, Math.round(run.phaseDur - cur));
+      const done = Math.max(1, Math.round(run.phaseDur - targetLeft));
       speakDoneAmount(done);
     }
 
