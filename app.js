@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "126";
+  const APP_VER = "127";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -67,7 +67,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=126";
+  const VOICE_Q = "?v=127";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -751,13 +751,13 @@
       } catch {}
       const a = makeHtmlAudio(makeQuietKeepUrl());
       a.loop = true;
-      a.volume = 0.0001;
+      a.volume = 0.001;
       a.muted = false;
       bgKeepAudio = a;
     } else {
       try {
         bgKeepAudio.muted = false;
-        bgKeepAudio.volume = 0.0001;
+        bgKeepAudio.volume = 0.001;
         bgKeepAudio.loop = true;
       } catch {}
     }
@@ -800,7 +800,7 @@
     if (bgKeepAudio) {
       try {
         bgKeepAudio.muted = false;
-        bgKeepAudio.volume = 0.0001;
+        bgKeepAudio.volume = 0.001;
       } catch {}
       const p = bgKeepAudio.play();
       if (p && typeof p.then === "function") {
@@ -889,9 +889,16 @@
   }
 
   function beepSoftRing(atMs) {
-    // شروع: همان زنگ گرم نسخه ۱۱۰
+    // شروع: زنگ گرم ۱۱۰ — در بکگراند از HTML چسبان
+    forceHaptic("start");
     if (document.hidden || !audioOutputOk()) {
-      setTimeout(() => playHtmlBeep(), atMs || 0);
+      if (!cachedBeepUrl) cachedBeepUrl = makeBeepUrl();
+      if (cachedBeepUrl) {
+        playUrlSticky(cachedBeepUrl, 1).catch(() => {});
+      } else {
+        playHtmlBeep();
+      }
+      return;
     }
     playWarmChime({
       atMs: atMs || 0,
@@ -904,18 +911,28 @@
         { f: 554.37, at: 0.1, dur: 0.36, g: 0.95 }
       ]
     });
-    forceHaptic("start");
   }
 
   function beepMidChime() {}
 
   function beepSoftDouble() {
-    // ۴ث: دو تیک کوتاه زیرتر/تیزتر — با زنگ شروع فرق واضح دارد
+    // ۴ث: دو تیک — بکگراند با HTML چسبان
     forceHaptic("warn");
-    const tick = (at, freq) => {
-      if (document.hidden || !audioOutputOk()) {
-        setTimeout(() => playHtmlWarnBeep(), at);
+    if (document.hidden || !audioOutputOk()) {
+      if (!cachedWarnBeepUrl) cachedWarnBeepUrl = makeWarnBeepUrl();
+      const u = cachedWarnBeepUrl;
+      if (u) {
+        playUrlSticky(u, 1)
+          .then(() => sleep(120))
+          .then(() => playUrlSticky(u, 1))
+          .catch(() => {});
+      } else {
+        playHtmlWarnBeep();
+        setTimeout(() => playHtmlWarnBeep(), 200);
       }
+      return;
+    }
+    const tick = (at, freq) => {
       playWarmChime({
         atMs: at,
         stack: true,
@@ -2293,66 +2310,67 @@
     return a;
   }
 
-  function resetStickySpeakAudio() {
-    try {
-      if (stickySpeakAudio) {
-        try {
-          stickySpeakAudio.onended = null;
-          stickySpeakAudio.onerror = null;
-          stickySpeakAudio.pause();
-        } catch {}
-        liveAudios.delete(stickySpeakAudio);
-      }
-    } catch {}
-    stickySpeakAudio = null;
-    return ensureStickySpeakAudio();
-  }
-
-  async function unlockStickySpeakAudio() {
+  async function armStickySilenceLoop() {
+    if (soundMuted) return false;
     try {
       const a = ensureStickySpeakAudio();
-      // یک پخش بی‌صدای کوتاه روی ژست کاربر تا در بکگراند قفل نماند
+      a.onended = null;
+      a.onerror = null;
+      a.loop = true;
+      a.muted = false;
+      a.volume = 0.0001;
       a.src = VOICE_BASE + "silence.wav" + VOICE_Q;
-      a.volume = 0.001;
-      a.muted = true;
       const p = a.play();
       if (p && typeof p.then === "function") await p.catch(() => {});
-      a.pause();
-      try {
-        a.currentTime = 0;
-      } catch {}
-      a.muted = false;
-      a.volume = 1;
       return true;
     } catch {
       return false;
     }
   }
 
-  async function playUrlSticky(src, vol) {
+  async function unlockStickySpeakAudio() {
+    try {
+      unlockAudio();
+      await armStickySilenceLoop();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // همیشه همان Audio ازقبل‌آنلاک — در بکگراند عنصر جدید play نمی‌شود
+  async function playOnSticky(src, vol) {
     if (!src || soundMuted) return false;
     const gen = soundGen;
     const tok = speakToken;
     if (!soundAlive(gen, tok)) return false;
     startBgKeepAlive();
     unlockAudio();
-    // هر بار عنصر تازه — اعلام دوم/سوم در بکگراند قطع نشود
-    const a = resetStickySpeakAudio();
+    const a = ensureStickySpeakAudio();
     try {
       a.onended = null;
       a.onerror = null;
+      a.loop = false;
       a.muted = false;
-      a.volume = Math.max(0.3, Math.min(1, vol == null ? 1 : vol));
-      a.src = src;
-      try {
-        a.load();
-      } catch {}
+      a.volume = Math.max(0.35, Math.min(1, vol == null ? 1 : vol));
+      if (a.src !== src) {
+        a.src = src;
+        try {
+          a.load();
+        } catch {}
+      } else {
+        try {
+          a.currentTime = 0;
+        } catch {}
+      }
     } catch {}
     return await new Promise((resolve) => {
       let done = false;
       const finish = (ok) => {
         if (done) return;
         done = true;
+        // بعد از اعلام دوباره لوپ سکوت تا قفل بکگراند نشکند
+        armStickySilenceLoop().catch(() => {});
         startBgKeepAlive();
         resolve(!!ok && soundAlive(gen, tok));
       };
@@ -2377,81 +2395,31 @@
         }
         if (!a.paused || (a.currentTime || 0) > 0.02) {
           const left = Math.max(
-            500,
-            Math.min(10000, (isFinite(a.duration) ? a.duration * 1000 : 3000) + 400)
+            600,
+            Math.min(14000, (isFinite(a.duration) ? a.duration * 1000 : 4000) + 500)
           );
           setTimeout(() => finish(true), left);
           return;
         }
         finish(false);
-      }, document.hidden ? 5000 : 2500);
+      }, document.hidden ? 7000 : 3000);
     });
+  }
+
+  async function playUrlSticky(src, vol) {
+    return playOnSticky(src, vol);
   }
 
   async function playBlobSticky(blob, vol) {
     if (!blob || soundMuted) return false;
-    const gen = soundGen;
-    const tok = speakToken;
-    if (!soundAlive(gen, tok)) return false;
-    startBgKeepAlive();
-    unlockAudio();
-    const a = resetStickySpeakAudio();
     const url = URL.createObjectURL(blob);
-    try {
-      a.onended = null;
-      a.onerror = null;
-      a.onplaying = null;
-      a.muted = false;
-      a.volume = Math.max(0.3, Math.min(1, vol == null ? 1 : vol));
-      a.src = url;
+    const ok = await playOnSticky(url, vol);
+    setTimeout(() => {
       try {
-        a.load();
+        URL.revokeObjectURL(url);
       } catch {}
-    } catch {}
-    return await new Promise((resolve) => {
-      let done = false;
-      const finish = (ok) => {
-        if (done) return;
-        done = true;
-        setTimeout(() => {
-          try {
-            URL.revokeObjectURL(url);
-          } catch {}
-        }, 20000);
-        startBgKeepAlive();
-        resolve(!!ok && soundAlive(gen, tok));
-      };
-      a.onended = () => finish(true);
-      a.onerror = () => finish(false);
-      const p = a.play();
-      if (p && typeof p.then === "function") {
-        p.then(() => {
-          if (!soundAlive(gen, tok)) {
-            try {
-              a.pause();
-            } catch {}
-            finish(false);
-          }
-        }).catch(() => finish(false));
-      }
-      const startCap = document.hidden ? 6000 : 3000;
-      setTimeout(() => {
-        if (done) return;
-        if (!soundAlive(gen, tok)) {
-          finish(false);
-          return;
-        }
-        if (!a.paused || (a.currentTime || 0) > 0.02) {
-          const left = Math.max(
-            700,
-            Math.min(14000, (isFinite(a.duration) ? a.duration * 1000 : 5000) + 600)
-          );
-          setTimeout(() => finish(true), left);
-          return;
-        }
-        finish(false);
-      }, startCap);
-    });
+    }, 30000);
+    return ok;
   }
 
   async function speakNameNow(text, vol) {
@@ -3097,10 +3065,18 @@
 
   async function speakCheerOnly(seq) {
     if (seq != null && !announceAlive(seq)) return;
-    // بدون بوق — فقط صدای عالی
-    let ok = await playVoiceFile("cheer-ali.mp3", 0.98);
+    // بدون بوق — فقط عالی (در بکگراند از پخش‌کننده چسبان)
+    let ok = false;
+    if (document.hidden) {
+      ok = await playUrlSticky(VOICE_BASE + "cheer-ali.mp3" + VOICE_Q, 1);
+    } else {
+      ok = await playVoiceFile("cheer-ali.mp3", 0.98);
+    }
     if (seq != null && !announceAlive(seq)) return;
-    if (!ok) await speakFaAny("عالی", 1);
+    if (!ok) {
+      if (document.hidden) ok = await speakNameNow("عالی", 1);
+      else await speakFaAny("عالی", 1);
+    }
   }
 
   async function speakPhase(step) {
@@ -3509,7 +3485,9 @@
     stopAllSound();
     const steps = buildTimeline(p);
     unlockAudio();
-    unlockStickySpeakAudio().catch(() => {});
+    unlockStickySpeakAudio()
+      .then(() => armStickySilenceLoop())
+      .catch(() => {});
     forceHaptic("heavy");
     startBgKeepAlive();
     // صدا را در پس‌زمینه گرم کن؛ شروع را معطل نکن
