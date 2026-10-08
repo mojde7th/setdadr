@@ -623,12 +623,17 @@ input[type="text"], input[type="number"] {
   inset-inline-end: 12px;
   top: 50%;
   transform: translateY(-50%);
-  color: var(--accent);
-  font-size: 18px;
-  font-weight: 900;
-  line-height: 1;
+  color: #fff;
+  line-height: 0;
   pointer-events: none;
-  text-shadow: 0 0 0 currentColor;
+  display: grid;
+  place-items: center;
+  opacity: 0.95;
+}
+.select-chev svg {
+  display: block;
+  color: #fff;
+  stroke: #fff;
 }
 .next-card.is-rest-next {
   border-color: #f0b75a !important;
