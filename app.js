@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "51";
+  const APP_VER = "52";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=51";
+  const VOICE_Q = "?v=52";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -1073,7 +1073,8 @@
     const total = Math.round(run.phaseDur);
     const done = Math.max(1, Math.round((total * 5) / 8));
     const targetLeft = Math.max(1, total - done);
-    const lead = 1;
+    // ۱ تا ۱٫۵ ثانیه زودتر از ثانیه هدف
+    const lead = 3;
     const fireLeft = targetLeft + lead;
     if (
       total >= 12 &&
