@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "86";
+  const APP_VER = "87";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=86";
+  const VOICE_Q = "?v=87";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -57,9 +57,9 @@
       if (saved) out.push(saved.replace(/\/$/, ""));
     } catch {}
     if (typeof window !== "undefined" && window.SETDADR_TTS_API) {
-      out.push(String(window.SETDADR_TTS_API).replace(/\/$/, ""));
+      const u = String(window.SETDADR_TTS_API || "").replace(/\/$/, "");
+      if (u) out.push(u);
     }
-    out.push("https://tension-salaries-mercy-blackberry.trycloudflare.com");
     try {
       const h = location.hostname;
       if (h === "localhost" || h === "127.0.0.1") out.push("http://127.0.0.1:8787");
@@ -1512,12 +1512,14 @@
     if (!key) return null;
     const cached = await loadDynFaFromCache(key);
     if (cached) return cached;
-    // فقط یک تلاش کوتاه — وابسته به لپ‌تاپ نباشد / تمرین را معطل نکند
-    const bases = getTtsApiBases().slice(0, 1);
+    // مثل اسنپ/تپسی: سرور TTS هر جمله را می‌سازد (دیلارا)
+    const bases = getTtsApiBases();
     for (let i = 0; i < bases.length; i++) {
+      const base = bases[i];
+      if (!base) continue;
       try {
-        const url = bases[i] + "/tts?t=" + encodeURIComponent(key);
-        const res = await fetchWithTimeout(url, 2500);
+        const url = base + "/tts?t=" + encodeURIComponent(key);
+        const res = await fetchWithTimeout(url, 14000);
         if (!res || !res.ok) continue;
         const blob = await res.blob();
         if (!blob || blob.size < 80) continue;
@@ -1529,7 +1531,6 @@
   }
 
   async function playDilaraFa(text, vol) {
-    // دیلارا از طریق تونل کلودفلر — روی گوشی ایران معمولاً بهتر از گوگل جواب می‌دهد
     try {
       const blob = await fetchDilaraOnly(text);
       if (!blob) return false;
@@ -1537,6 +1538,29 @@
     } catch {
       return false;
     }
+  }
+
+  async function playStreamElementsEn(text, vol) {
+    // پشتیبان انگلیسی رایگان (مثل خیلی از ویجت‌ها)
+    const key = String(text || "").trim().slice(0, 160);
+    if (!key || soundMuted) return false;
+    const voices = ["Brian", "Amy", "Emma"];
+    for (let i = 0; i < voices.length; i++) {
+      try {
+        const url =
+          "https://api.streamelements.com/kappa/v2/speech?voice=" +
+          voices[i] +
+          "&text=" +
+          encodeURIComponent(key);
+        const a = makeHtmlAudio(url);
+        const ok = await playHtmlAudioEl(a, vol, 8000);
+        if (ok) {
+          warmFaTts(key);
+          return true;
+        }
+      } catch {}
+    }
+    return false;
   }
 
   // آوانویسی ماشینی فارسی → لاتین؛ هر متن بی‌ربط را با صدای انگلیسی گوشی می‌خواند
@@ -1724,7 +1748,7 @@
     const isEn = hasLatin && !hasFa;
     const keyLow = raw.toLowerCase();
 
-    // انگلیسی مربی: همان واژهٔ انگلیسی خوانده شود (نه کلیپ فارسی اسکوات و…)
+    // انگلیسی مربی: عین واژه + سرور دیلارا (روش اپ‌های ایرانی: TTS سروری)
     if (isEn) {
       {
         const ok = await playCachedFaOnly(speakText, v);
@@ -1734,26 +1758,29 @@
         const ok = await playBakedDynClip(speakText, v);
         if (ok) return true;
       }
-      const okS = await speakSynthLang(speakText, v, "en", {
-        noCancel: true,
-        rate: 1.42
-      });
-      if (okS) return true;
-      const okG = await playGoogleDirect(speakText, v, "en");
-      if (okG) return true;
-      // پشتیبان: اگر TTS انگلیسی نبود، کلیپ فارسی نگاشت‌شده
-      const clipFa =
-        (said && MOVE_CLIP[said.text]) ||
-        MOVE_CLIP[keyLow] ||
-        MOVE_CLIP[raw];
-      if (clipFa) {
-        const ok = await playVoiceFile(clipFa, v);
+      {
+        const ok = await playDilaraFa(speakText, v);
+        if (ok) return true;
+      }
+      {
+        const ok = await playStreamElementsEn(speakText, v);
+        if (ok) return true;
+      }
+      {
+        const ok = await speakSynthLang(speakText, v, "en", {
+          noCancel: true,
+          rate: 1.42
+        });
+        if (ok) return true;
+      }
+      {
+        const ok = await playGoogleDirect(speakText, v, "en");
         if (ok) return true;
       }
       return false;
     }
 
-    // فارسی: اول کلیپ لیست، بعد سیستم/گوگل
+    // فارسی: کلیپ لیست، بعد سرور دیلارا (جمله/بی‌ربط)، بعد بقیه
     const clip =
       MOVE_CLIP[raw] ||
       MOVE_CLIP[keyLow] ||
@@ -1790,9 +1817,10 @@
       const ok = await playCachedFaOnly(speakText, v);
       if (ok) return true;
     }
-    if (said && said.text && said.text !== speakText) {
-      const okC = await playCachedFaOnly(said.text, v);
-      if (okC) return true;
+    // مسیر اصلی اپ‌های ایرانی: سرور صدا هر متن را می‌خواند
+    {
+      const ok = await playDilaraFa(speakText, v);
+      if (ok) return true;
     }
     if (hasUsableFaVoice()) {
       const ok = await speakSynthLang(speakText, v, "fa", {
