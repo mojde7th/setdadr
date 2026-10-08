@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "127";
+  const APP_VER = "128";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -606,9 +606,10 @@
   }
 
   function makeBeepUrl() {
+    // زنگ گرم شروع — همان ۴۴۰+۵۵۴، نرم، بدون جاروی تیز
     try {
       const sr = 22050;
-      const sec = 0.32;
+      const sec = 0.62;
       const n = Math.floor(sr * sec);
       const data = new ArrayBuffer(44 + n * 2);
       const view = new DataView(data);
@@ -628,11 +629,22 @@
       view.setUint16(34, 16, true);
       w(36, "data");
       view.setUint32(40, n * 2, true);
+      const tone = (x, f0, at, dur, g) => {
+        const tt = x - at;
+        if (tt < 0 || tt > dur) return 0;
+        const atk = Math.min(1, tt / 0.05);
+        const rel = Math.max(0, 1 - Math.max(0, tt - dur * 0.45) / (dur * 0.55));
+        const env = atk * rel * g;
+        return (
+          Math.sin(2 * Math.PI * f0 * x) * env * 0.55 +
+          Math.sin(2 * Math.PI * f0 * 2 * x) * env * 0.1
+        );
+      };
       for (let i = 0; i < n; i++) {
         const x = i / sr;
-        const env = Math.min(1, x * 35) * Math.max(0, 1 - x / sec);
-        const f = 587 + Math.min(1, x * 4) * 197;
-        const sample = Math.sin(2 * Math.PI * f * x) * 0.55 * env;
+        let sample =
+          tone(x, 440, 0, 0.34, 1.0) + tone(x, 554.37, 0.1, 0.38, 0.9);
+        sample *= 0.72;
         let v = (sample * 32767) | 0;
         if (v > 32767) v = 32767;
         if (v < -32768) v = -32768;
@@ -904,11 +916,11 @@
       atMs: atMs || 0,
       stack: false,
       bright: false,
-      peak: 1.05,
-      total: 0.55,
+      peak: 0.72,
+      total: 0.62,
       notes: [
-        { f: 440, at: 0, dur: 0.32, g: 1.0 },
-        { f: 554.37, at: 0.1, dur: 0.36, g: 0.95 }
+        { f: 440, at: 0, dur: 0.34, g: 0.9 },
+        { f: 554.37, at: 0.1, dur: 0.38, g: 0.82 }
       ]
     });
   }
