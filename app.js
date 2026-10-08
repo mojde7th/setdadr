@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "105";
+  const APP_VER = "106";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -64,7 +64,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=105";
+  const VOICE_Q = "?v=106";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -1815,7 +1815,7 @@
       voiceName || (hasFa ? EDGE_TTS_VOICE_FA : EDGE_TTS_VOICE_EN);
     const url = cloudEdgeUrl(key, voice);
     unlockAudio();
-    // اگر بلاب کش هست با AudioContext بگو (بعد از تأخیر ۲ث روی گوشی پایدارتر است)
+    // اول کش محلی سریع؛ بعد Audio مستقیم (مثل نسخههایی که کار میکرد)
     try {
       const cached = await loadDynFaFromCache(key);
       if (cached) {
@@ -1823,21 +1823,19 @@
         if (ok) return true;
       }
     } catch {}
-    // اول بلاب بگیر و پخش کن (کش برای «خود حرکت» هم می‌ماند)
+    try {
+      const a = makeHtmlAudio(url);
+      const ok = await playHtmlAudioEl(a, vol == null ? 1 : vol, 12000);
+      if (ok) {
+        cacheCloudEdgeBlob(key, voice).catch(() => {});
+        return true;
+      }
+    } catch {}
     try {
       const blob = await cacheCloudEdgeBlob(key, voice);
       if (blob) {
         const ok = await playBlobFa(blob, vol == null ? 1 : vol);
         if (ok) return true;
-      }
-    } catch {}
-    // پخش مستقیم Audio
-    try {
-      const a = makeHtmlAudio(url);
-      const ok = await playHtmlAudioEl(a, vol == null ? 1 : vol, 10000);
-      if (ok) {
-        cacheCloudEdgeBlob(key, voice).catch(() => {});
-        return true;
       }
     } catch {}
     return false;
@@ -2258,46 +2256,15 @@
   }
 
   async function speakNextMoveName(name, seq) {
-    const nm = normSpeakKey(name);
-    // فقط همین اسم بعدی؛ پرایم حرکت قبلی دور ریخته شود
-    if (nm !== primedExpectName) clearPrimedWork();
-    primedExpectName = nm;
-    const prepP = nm ? ensurePrimedFor(nm) : Promise.resolve(false);
-    prepP.catch(() => {});
+    const nm = String(name || "").replace(/\s+/g, " ").trim();
+    // مثل نسخههای قبلی: حرکت بعد، بعد سریع اسم — بدون منتظر ماندن برای پرایم
     let pref = await playVoiceFile("phrase-next.mp3", 1);
     if (!pref) pref = await speakFaAny("حرکت بعد", 1);
     if (seq != null && !announceAlive(seq)) return !!pref;
     if (!nm) return !!pref;
-    await sleep(50);
+    await sleep(60);
     if (seq != null && !announceAlive(seq)) return false;
-    // تا حد امکان قبل از گفتن اسم، بافر را بساز
-    try {
-      await Promise.race([prepP, sleep(1200)]);
-    } catch {}
-    if (seq != null && !announceAlive(seq)) return false;
-    if (primedExpectName !== nm) return false;
-    let said = false;
-    {
-      const ok = await playPrimedWorkName(nm, 1);
-      if (ok) said = true;
-    }
-    if (!said && primedWorkName === nm && primedWorkBlob) {
-      const ok = await playBlobFa(primedWorkBlob, 1);
-      if (ok) {
-        await primeMoveAudio(nm, primedWorkBlob);
-        said = true;
-      }
-    }
-    if (!said) {
-      said = await speakMoveNameOnly(nm, 1);
-    }
-    // بعد از تلفظ در استراحت: حتماً بافر را برای «خود حرکت» آماده کن (منتظر بمان)
-    if (primedExpectName === nm && !(primedWorkName === nm && primedWorkAudioBuffer)) {
-      try {
-        await ensurePrimedFor(nm);
-      } catch {}
-    }
-    return !!said;
+    return speakMoveNameOnly(nm, 1);
   }
 
   async function speakCheerOnly(seq) {
@@ -2317,15 +2284,15 @@
         step.kind === "work" && step.name ? warmFaTts(step.name) : Promise.resolve();
       buzz(step.kind === "work" ? [80, 35, 90] : [55, 30, 70]);
       if (step.kind === "work") {
-        // بوق اول، بعد حدود ۲ ثانیه همان اسم سخت فارسی را دوباره بگو
+        // بوق اول، بعد حدود ۲ ثانیه اسم را ساده بگو (مثل قبل — بدون قفل پرایم)
         startBgKeepAlive();
         beepSoftRing(0);
         const nm = normSpeakKey(step.name);
-        primedExpectName = nm;
-        warmWork.catch(() => {});
-        // در همین ۲ث بافر را آماده نگه دار
-        const prepWork = nm ? ensurePrimedFor(nm) : Promise.resolve(false);
-        prepWork.catch(() => {});
+        if (nm) {
+          primedExpectName = nm;
+          warmWork.catch(() => {});
+          ensurePrimedFor(nm).catch(() => {});
+        }
         const t0 = Date.now();
         while (Date.now() - t0 < 2000) {
           if (!announceAlive(seq)) return;
@@ -2341,46 +2308,7 @@
           if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
         } catch {}
         if (!nm) return;
-        try {
-          await Promise.race([prepWork, sleep(800)]);
-        } catch {}
-        if (!announceAlive(seq)) return;
-        if (!(primedWorkName === nm && primedWorkAudioBuffer)) {
-          try {
-            await ensurePrimedFor(nm);
-          } catch {}
-        }
-        if (!announceAlive(seq)) return;
-        const gen = soundGen;
-        let ok = false;
-        // فقط اگر اسم یکی است — بلاب حرکت قبلی هرگز پخش نشود
-        if (gen === soundGen && announceAlive(seq)) {
-          ok = await playPrimedWorkName(nm, 1);
-        }
-        if (
-          !ok &&
-          gen === soundGen &&
-          announceAlive(seq) &&
-          primedWorkName === nm &&
-          primedWorkBlob
-        ) {
-          ok = await playBlobFa(primedWorkBlob, 1);
-        }
-        if (!ok && gen === soundGen && announceAlive(seq)) {
-          ok = await playCachedFaOnly(nm, 1);
-        }
-        if (!ok && gen === soundGen && announceAlive(seq)) {
-          const blob = await cacheCloudEdgeBlob(nm);
-          if (blob && gen === soundGen && announceAlive(seq) && primedExpectName === nm) {
-            await primeMoveAudio(nm, blob);
-            ok = await playPrimedWorkName(nm, 1);
-            if (!ok) ok = await playBlobFa(blob, 1);
-          }
-        }
-        if (!ok && gen === soundGen && announceAlive(seq)) {
-          ok = await speakMoveName(nm, 1);
-        }
-        // بعد از اعلام این حرکت، پرایم را خالی کن تا به حرکت بعد نشت نکند
+        await speakMoveNameOnly(nm, 1);
         if (primedExpectName === nm) clearPrimedWork();
         return;
       }
