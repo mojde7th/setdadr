@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "112";
+  const APP_VER = "113";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -65,7 +65,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=112";
+  const VOICE_Q = "?v=113";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -605,12 +605,65 @@
   }
 
   let cachedBeepUrl = null;
+  let cachedWarnBeepUrl = null;
+
+  function makeWarnBeepUrl() {
+    try {
+      const sr = 16000;
+      const sec = 0.16;
+      const n = Math.floor(sr * sec);
+      const data = new ArrayBuffer(44 + n * 2);
+      const view = new DataView(data);
+      const w = (o, s) => {
+        for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i));
+      };
+      w(0, "RIFF");
+      view.setUint32(4, 36 + n * 2, true);
+      w(8, "WAVE");
+      w(12, "fmt ");
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true);
+      view.setUint32(24, sr, true);
+      view.setUint32(28, sr * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true);
+      w(36, "data");
+      view.setUint32(40, n * 2, true);
+      for (let i = 0; i < n; i++) {
+        const t0 = i / sr;
+        const env = Math.min(1, t0 * 40) * Math.max(0, 1 - t0 / sec);
+        // بم و کوتاه — هشدار ۴ث
+        const sample = Math.sin(2 * Math.PI * 220 * t0) * 0.7 * env;
+        let v = (sample * 32767) | 0;
+        if (v > 32767) v = 32767;
+        if (v < -32768) v = -32768;
+        view.setInt16(44 + i * 2, v, true);
+      }
+      return URL.createObjectURL(new Blob([data], { type: "audio/wav" }));
+    } catch {
+      return null;
+    }
+  }
+
   function playHtmlBeep() {
     try {
       if (soundMuted) return;
       if (!cachedBeepUrl) cachedBeepUrl = makeBeepUrl();
       if (!cachedBeepUrl) return;
       const a = makeHtmlAudio(cachedBeepUrl);
+      a.volume = 1;
+      const p = a.play();
+      if (p && typeof p.then === "function") p.catch(() => {});
+    } catch {}
+  }
+
+  function playHtmlWarnBeep() {
+    try {
+      if (soundMuted) return;
+      if (!cachedWarnBeepUrl) cachedWarnBeepUrl = makeWarnBeepUrl();
+      if (!cachedWarnBeepUrl) return;
+      const a = makeHtmlAudio(cachedWarnBeepUrl);
       a.volume = 1;
       const p = a.play();
       if (p && typeof p.then === "function") p.catch(() => {});
@@ -774,14 +827,14 @@
       if (!audioCtx) return;
       const start = () => {
         if (gen !== soundGen) return;
-        // همیشه بوق‌های قبلی را بکش تا قاطی نشود
-        stopBeep();
+        // شروع حرکت قبلی را پاک کند؛ تیک‌های هشدار ۴ث روی هم مجازند
+        if (!o.stack) stopBeep();
         if (gen !== soundGen) return;
         const t0 = audioCtx.currentTime + (o.atMs || 0) / 1000;
         const master = audioCtx.createGain();
         const lp = audioCtx.createBiquadFilter();
         lp.type = "lowpass";
-        lp.frequency.setValueAtTime(o.bright ? 1600 : 1200, t0);
+        lp.frequency.setValueAtTime(o.bright ? 2400 : 900, t0);
         lp.Q.setValueAtTime(0.55, t0);
         const peak = o.peak != null ? o.peak : 1.15;
         const total = o.total != null ? o.total : 0.7;
@@ -833,26 +886,44 @@
   }
 
   function beepSoftRing(atMs) {
-    buzzHeavy();
+    // شروع حرکت: یک زنگ بلند بالارونده — با هشدار ۴ث فرق کند
+    buzz([400, 120, 550]);
     if (document.hidden || !audioOutputOk()) {
       setTimeout(() => playHtmlBeep(), atMs || 0);
-      setTimeout(() => playHtmlBeep(), (atMs || 0) + 160);
     }
     playWarmChime({
       atMs: atMs || 0,
       stack: false,
-      peak: 1.05,
-      total: 0.55,
+      bright: true,
+      peak: 1.25,
+      total: 0.7,
       notes: [
-        { f: 440, at: 0, dur: 0.32, g: 1.0 },
-        { f: 554.37, at: 0.1, dur: 0.36, g: 0.95 }
+        { f: 523.25, at: 0, dur: 0.22, g: 0.85 },
+        { f: 659.25, at: 0.12, dur: 0.28, g: 1.05 },
+        { f: 783.99, at: 0.28, dur: 0.4, g: 1.15 }
       ]
     });
   }
 
   function beepSoftDouble() {
-    beepSoftRing(0);
-    setTimeout(() => beepSoftRing(0), 520);
+    // ۴ ثانیه مانده: سه تیک بم کوتاه — شبیه شروع حرکت نباشد
+    buzz([120, 70, 120, 70, 120, 70, 200]);
+    const tick = (at) => {
+      if (document.hidden || !audioOutputOk()) {
+        setTimeout(() => playHtmlWarnBeep(), at);
+      }
+      playWarmChime({
+        atMs: at,
+        stack: true,
+        bright: false,
+        peak: 1.1,
+        total: 0.28,
+        notes: [{ f: 196.0, at: 0, dur: 0.2, g: 1.15 }]
+      });
+    };
+    tick(0);
+    setTimeout(() => tick(0), 280);
+    setTimeout(() => tick(0), 560);
   }
 
   function beepWhite(ms, soft) {
@@ -3068,7 +3139,6 @@
     if (run.phaseDur > 5 && !run.announced[softKey] && prev > 4 && cur <= 4) {
       run.announced[softKey] = true;
       beepSoftDouble();
-      buzzHeavy();
     }
   }
 
