@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "29";
+  const APP_VER = "30";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -32,9 +32,16 @@
   let voicePlayer = null;
   let announceSeq = 0;
   let announceChain = Promise.resolve();
+  const MUTE_LS = "setdadr-mute";
+  let soundMuted = false;
+  try {
+    soundMuted = localStorage.getItem(MUTE_LS) === "1";
+  } catch {
+    soundMuted = false;
+  }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=29";
+  const VOICE_Q = "?v=30";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -128,8 +135,26 @@
 
   function buzz(pattern) {
     try {
-      if (navigator.vibrate) navigator.vibrate(pattern || 40);
+      // ویبره همیشه روشن می‌ماند تا در باشگاه حس شود
+      if (navigator.vibrate) navigator.vibrate(pattern || [70]);
     } catch {}
+  }
+
+  function paintMuteBtn() {
+    const btn = $("#btnMute");
+    if (!btn) return;
+    btn.setAttribute("aria-pressed", soundMuted ? "true" : "false");
+    btn.classList.toggle("is-muted", soundMuted);
+    btn.textContent = soundMuted ? "صدا قطع" : "صدا روشن";
+  }
+
+  function setSoundMuted(on) {
+    soundMuted = !!on;
+    try {
+      localStorage.setItem(MUTE_LS, soundMuted ? "1" : "0");
+    } catch {}
+    if (soundMuted) stopAllSound();
+    paintMuteBtn();
   }
 
   function queueAnnounce(task) {
@@ -182,20 +207,17 @@
     if (!activeBeep) return;
     try {
       const now = audioCtx ? audioCtx.currentTime : 0;
-      activeBeep.gain.gain.cancelScheduledValues(now);
-      activeBeep.gain.gain.setValueAtTime(0, now);
-      activeBeep.osc.stop(now);
-      activeBeep.osc.disconnect();
-      if (activeBeep.osc2) {
-        activeBeep.osc2.stop(now);
-        activeBeep.osc2.disconnect();
+      if (activeBeep.gain) {
+        activeBeep.gain.gain.cancelScheduledValues(now);
+        activeBeep.gain.gain.setValueAtTime(0.0001, now);
       }
-      if (activeBeep.osc3) {
-        activeBeep.osc3.stop(now);
-        activeBeep.osc3.disconnect();
-      }
-      activeBeep.gain.disconnect();
-      if (activeBeep.comp) activeBeep.comp.disconnect();
+      const list = activeBeep.oscs || [activeBeep.osc, activeBeep.osc2, activeBeep.osc3].filter(Boolean);
+      list.forEach((o) => {
+        try {
+          o.stop(now);
+          o.disconnect();
+        } catch {}
+      });
     } catch {}
     activeBeep = null;
   }
@@ -231,54 +253,101 @@
   }
 
   function beepWhite(ms, soft) {
+    if (soundMuted) return;
     try {
       unlockAudio();
       if (!audioCtx) return;
       const play = () => {
         stopBeep();
-        const dur = Math.max(soft ? 0.22 : 0.34, (ms || (soft ? 200 : 300)) / 1000);
         const t0 = audioCtx.currentTime;
         const master = audioCtx.createGain();
+        const comp = audioCtx.createDynamicsCompressor();
+        comp.threshold.setValueAtTime(-18, t0);
+        comp.knee.setValueAtTime(12, t0);
+        comp.ratio.setValueAtTime(4, t0);
+        comp.attack.setValueAtTime(0.003, t0);
+        comp.release.setValueAtTime(0.18, t0);
         const filter = audioCtx.createBiquadFilter();
-        filter.type = "lowpass";
-        filter.frequency.setValueAtTime(soft ? 1800 : 2600, t0);
-        filter.Q.setValueAtTime(0.6, t0);
-        const peak = soft ? 0.18 : 0.55;
-        master.gain.setValueAtTime(0.0001, t0);
-        master.gain.exponentialRampToValueAtTime(peak, t0 + (soft ? 0.04 : 0.025));
-        master.gain.exponentialRampToValueAtTime(peak * 0.55, t0 + dur * 0.4);
-        master.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-        master.connect(filter);
-        filter.connect(audioCtx.destination);
+        filter.type = "highshelf";
+        filter.frequency.setValueAtTime(1800, t0);
+        filter.gain.setValueAtTime(soft ? 2 : 6, t0);
 
-        const o1 = audioCtx.createOscillator();
-        const o2 = audioCtx.createOscillator();
-        const g1 = audioCtx.createGain();
-        const g2 = audioCtx.createGain();
-        o1.type = "sine";
-        o2.type = soft ? "sine" : "triangle";
-        o1.frequency.setValueAtTime(soft ? 587.33 : 659.25, t0);
-        o1.frequency.exponentialRampToValueAtTime(soft ? 493.88 : 523.25, t0 + dur * 0.9);
-        o2.frequency.setValueAtTime(soft ? 880.0 : 987.77, t0);
-        o2.frequency.exponentialRampToValueAtTime(soft ? 698.46 : 783.99, t0 + dur * 0.85);
-        g1.gain.setValueAtTime(0.0001, t0);
-        g1.gain.exponentialRampToValueAtTime(1.0, t0 + 0.03);
-        g1.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-        g2.gain.setValueAtTime(0.0001, t0);
-        g2.gain.exponentialRampToValueAtTime(soft ? 0.18 : 0.28, t0 + 0.04);
-        g2.gain.exponentialRampToValueAtTime(0.0001, t0 + dur * 0.75);
-        o1.connect(g1);
-        o2.connect(g2);
-        g1.connect(master);
-        g2.connect(master);
-        o1.start(t0);
-        o2.start(t0);
-        o1.stop(t0 + dur + 0.04);
-        o2.stop(t0 + dur + 0.04);
-        activeBeep = { osc: o1, gain: master, osc2: o2 };
-        o1.onended = () => {
-          if (activeBeep && activeBeep.osc === o1) activeBeep = null;
-        };
+        // زنگ باشگاهی چندنُته — بلند و مشخص، نه بوق تیز زشت
+        const notes = soft
+          ? [
+              { f: 698.46, at: 0, dur: 0.2, g: 0.55 },
+              { f: 880.0, at: 0.12, dur: 0.28, g: 0.45 }
+            ]
+          : [
+              { f: 659.25, at: 0, dur: 0.15, g: 1.15 },
+              { f: 830.61, at: 0.1, dur: 0.15, g: 1.25 },
+              { f: 1046.5, at: 0.2, dur: 0.18, g: 1.35 },
+              { f: 1318.51, at: 0.34, dur: 0.38, g: 1.2 }
+            ];
+
+        const total = soft ? 0.45 : 0.78;
+        const peak = soft ? 0.7 : 1.55;
+        master.gain.setValueAtTime(0.0001, t0);
+        master.gain.exponentialRampToValueAtTime(peak, t0 + 0.02);
+        master.gain.setValueAtTime(peak * 0.85, t0 + total * 0.55);
+        master.gain.exponentialRampToValueAtTime(0.0001, t0 + total);
+
+        master.connect(filter);
+        filter.connect(comp);
+        comp.connect(audioCtx.destination);
+
+        const oscs = [];
+        notes.forEach((n) => {
+          const o1 = audioCtx.createOscillator();
+          const o2 = audioCtx.createOscillator();
+          const g = audioCtx.createGain();
+          o1.type = "sine";
+          o2.type = "triangle";
+          o1.frequency.setValueAtTime(n.f, t0 + n.at);
+          o2.frequency.setValueAtTime(n.f * 2.0, t0 + n.at);
+          const gt = t0 + n.at;
+          g.gain.setValueAtTime(0.0001, gt);
+          g.gain.exponentialRampToValueAtTime(n.g, gt + 0.012);
+          g.gain.exponentialRampToValueAtTime(0.0001, gt + n.dur);
+          o1.connect(g);
+          o2.connect(g);
+          g.connect(master);
+          o1.start(gt);
+          o2.start(gt);
+          o1.stop(gt + n.dur + 0.03);
+          o2.stop(gt + n.dur + 0.03);
+          oscs.push(o1, o2);
+        });
+
+        // کلیک کوتاه حمله برای شنیده‌شدن وسط سر و صدا
+        if (!soft) {
+          const noiseDur = 0.04;
+          const bufSize = Math.floor(audioCtx.sampleRate * noiseDur);
+          const buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+          const data = buf.getChannelData(0);
+          for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / bufSize);
+          const src = audioCtx.createBufferSource();
+          const ng = audioCtx.createGain();
+          const nf = audioCtx.createBiquadFilter();
+          nf.type = "bandpass";
+          nf.frequency.setValueAtTime(2200, t0);
+          nf.Q.setValueAtTime(1.2, t0);
+          src.buffer = buf;
+          ng.gain.setValueAtTime(0.35, t0);
+          ng.gain.exponentialRampToValueAtTime(0.0001, t0 + noiseDur);
+          src.connect(nf);
+          nf.connect(ng);
+          ng.connect(master);
+          src.start(t0);
+          src.stop(t0 + noiseDur + 0.01);
+        }
+
+        activeBeep = { osc: oscs[0], gain: master, oscs };
+        if (oscs[0]) {
+          oscs[oscs.length - 1].onended = () => {
+            if (activeBeep && activeBeep.gain === master) activeBeep = null;
+          };
+        }
       };
       if (audioCtx.state === "suspended") {
         audioCtx.resume().then(play).catch(play);
@@ -318,6 +387,7 @@
 
   async function playVoiceFile(rel, vol) {
     try {
+      if (soundMuted) return false;
       unlockAudio();
       if (!audioCtx) return false;
       if (audioCtx.state === "suspended") {
@@ -328,7 +398,7 @@
       stopVoiceFile();
       const buf = await loadVoiceBuffer(rel);
       if (!buf) return false;
-      const gain = Math.max(0.05, Math.min(1, vol == null ? 0.85 : vol));
+      const gain = Math.max(0.05, Math.min(1, vol == null ? 0.98 : vol));
       await new Promise((resolve) => {
         let done = false;
         const finish = () => {
@@ -355,7 +425,7 @@
 
   function speakFaSynthAsync(text, vol, lang) {
     return new Promise((resolve) => {
-      if (!window.speechSynthesis || !text) {
+      if (soundMuted || !window.speechSynthesis || !text) {
         resolve(false);
         return;
       }
@@ -380,18 +450,19 @@
           if (useEn) {
             u.voice = enVoice;
             u.lang = enVoice.lang || "en-US";
-            u.rate = 0.95;
-            u.pitch = 1.05;
+            u.rate = 1.05;
+            u.pitch = 1.08;
           } else {
             u.lang = "fa-IR";
             if (faVoice) {
               u.voice = faVoice;
               u.lang = faVoice.lang || "fa-IR";
             }
-            u.rate = 0.98;
-            u.pitch = 1.08;
+            // پرانرژی ولی لطیف
+            u.rate = 1.12;
+            u.pitch = 1.14;
           }
-          u.volume = vol == null ? 0.93 : vol;
+          u.volume = vol == null ? 1 : Math.min(1, vol);
           let finished = false;
           const done = (ok) => {
             if (finished) return;
@@ -573,9 +644,9 @@
 
   async function speakPhase(step) {
     return queueAnnounce(async () => {
-      // اول فاز فقط بوق بلند؛ بدون گفتار
-      buzz(step.kind === "work" ? [55, 35, 55] : [30, 30, 30]);
-      beepWhite(340, false);
+      // اول فاز: زنگ چندنُته بلند + ویبره واضح
+      buzz(step.kind === "work" ? [100, 45, 100, 45, 160] : [70, 35, 70, 35, 90]);
+      beepWhite(400, false);
     });
   }
 
@@ -583,10 +654,10 @@
     const n = Math.round(sec);
     if (n <= 0) return;
     return queueAnnounce(async () => {
-      buzz([28]);
-      await sleep(80);
+      buzz([55, 30, 90]);
+      await sleep(60);
       const phrase = faNum(n) + " ثانیه انجام دادی";
-      await speakFaSynthAsync(phrase, 0.92);
+      await speakFaSynthAsync(phrase, 1);
     });
   }
 
@@ -927,8 +998,8 @@
     const softKey = run.i + ":soft4";
     if (run.phaseDur > 5 && !run.announced[softKey] && prev > 4 && cur <= 4) {
       run.announced[softKey] = true;
-      beepWhite(200, true);
-      buzz([20]);
+      beepWhite(220, true);
+      buzz([90, 40, 120]);
     }
   }
 
@@ -1191,6 +1262,19 @@
   document.body.addEventListener("click", unlockOnce, { once: true });
 
   wireNumSteppers();
+  const muteBtn = $("#btnMute");
+  if (muteBtn) {
+    muteBtn.addEventListener("click", () => {
+      unlockAudio();
+      setSoundMuted(!soundMuted);
+      if (!soundMuted) {
+        // پیش‌نمایش کوتاه زنگ
+        beepWhite(300, false);
+        buzz([80, 40, 100]);
+      }
+    });
+  }
+  paintMuteBtn();
   const verEl = $("#appVer");
   if (verEl) verEl.textContent = "v" + APP_VER;
   renderMoves();

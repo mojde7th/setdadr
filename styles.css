@@ -58,6 +58,22 @@ html, body {
   border: 1px solid var(--line);
   border-radius: 999px;
 }
+.mute-btn {
+  border: 1px solid var(--line);
+  background: var(--bg2);
+  color: var(--txt);
+  border-radius: 12px;
+  padding: 8px 12px;
+  font: 800 13px var(--font);
+  cursor: pointer;
+  min-height: 40px;
+}
+.mute-btn.is-muted {
+  color: #1a1208;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.mute-btn:active { transform: scale(0.98); }
 .tabs { display: flex; gap: 6px; flex-wrap: wrap; }
 .tabs button {
   border: 1px solid var(--line);
