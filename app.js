@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "128";
+  const APP_VER = "129";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -284,8 +284,9 @@
   }
 
   function playHapticThump(level) {
-    // ضربه نرم سینوسی — نه مربع بمب‌مانند
-    const amp = Math.max(0.5, level == null ? 1 : level);
+    // آیفون ویبرهٔ وب ندارد — ضربهٔ صوتی کوتاه به‌جای ویبره
+    const amp = Math.max(0.55, level == null ? 1 : level);
+    const boost = isIOSLike() ? 1.35 : 1;
     try {
       unlockAudio();
       if (!audioCtx) {
@@ -298,18 +299,23 @@
       const hit = (at, freq, dur, g0) => {
         const osc = audioCtx.createOscillator();
         const g = audioCtx.createGain();
+        const lp = audioCtx.createBiquadFilter();
+        lp.type = "lowpass";
+        lp.frequency.setValueAtTime(280, t0 + at);
         osc.type = "sine";
         osc.frequency.setValueAtTime(freq, t0 + at);
         g.gain.setValueAtTime(0.0001, t0 + at);
-        g.gain.exponentialRampToValueAtTime(g0 * amp, t0 + at + 0.01);
+        g.gain.exponentialRampToValueAtTime(g0 * amp * boost, t0 + at + 0.008);
         g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + dur);
         osc.connect(g);
-        g.connect(audioCtx.destination);
+        g.connect(lp);
+        lp.connect(audioCtx.destination);
         osc.start(t0 + at);
         osc.stop(t0 + at + dur + 0.02);
       };
-      hit(0, 95, 0.07, 0.9);
-      hit(0.09, 70, 0.08, 1.0);
+      hit(0, 88, 0.08, 1.0);
+      hit(0.085, 62, 0.1, 1.15);
+      if (isIOSLike()) hit(0.2, 52, 0.09, 0.95);
     } catch {}
   }
 
@@ -1356,10 +1362,7 @@
     try {
       const raw = String(name || "").replace(/\s+/g, " ").trim();
       if (!raw) return;
-      // عین متن کاربر را کش کن (حتی بی‌ربط / چندکلمه‌ای)
       await warmFaTts(raw);
-      const said = sayForMove(raw);
-      if (said && said.text && said.text !== raw) await warmFaTts(said.text);
     } catch {}
   }
 
@@ -1848,9 +1851,7 @@
     jumps: "جامپ",
     جامپ: "جامپ",
     دیوارنشینی: "دیوارنشینی",
-    "دیوار نشینی": "دیوار نشینی",
-    "wall sit": "دیوارنشینی",
-    wallsit: "دیوارنشینی"
+    "دیوار نشینی": "دیوار نشینی"
   };
 
   // کلیپ آفلاین فارسی برای گوشی (آیفون تلفظ فارسی سیستم ندارد)
@@ -1954,47 +1955,15 @@
     "دیوار نشینی": "wall sit"
   };
 
-  // اسم انگلیسی → همان کلیپ آفلاین
-  Object.keys(MOVE_SAY).forEach((enKey) => {
-    const fa = MOVE_SAY[enKey];
-    if (fa && MOVE_CLIP[fa] && !MOVE_CLIP[enKey]) MOVE_CLIP[enKey] = MOVE_CLIP[fa];
-  });
-  Object.keys(MOVE_EN).forEach((fa) => {
-    const en = MOVE_EN[fa];
-    if (en && MOVE_CLIP[fa]) {
-      const k = String(en).toLowerCase();
-      if (!MOVE_CLIP[k]) MOVE_CLIP[k] = MOVE_CLIP[fa];
-      if (!MOVE_CLIP[en]) MOVE_CLIP[en] = MOVE_CLIP[fa];
-    }
-  });
+  // کلیپ آفلاین فقط برای همان متن فارسی که کاربر زده — انگلیسی را به فارسی وصل نکن
 
   function sayForMove(name) {
+    // بدون ترجمه — همان چیزی که کاربر نوشته
     const raw = String(name || "").trim();
     if (!raw) return { text: "", lang: "fa" };
-    const key = normMoveKey(raw);
-    if (MOVE_SAY[key]) return { text: MOVE_SAY[key], lang: "fa" };
-    const compact = key.replace(/\s+/g, "");
-    if (MOVE_SAY[compact]) return { text: MOVE_SAY[compact], lang: "fa" };
-
-    // جایگزینی تک‌واژه‌های انگلیسی داخل عبارت
-    const parts = key.split(" ");
-    let changed = false;
-    const out = parts.map((p) => {
-      if (MOVE_SAY[p]) {
-        changed = true;
-        return MOVE_SAY[p];
-      }
-      return p;
-    });
-    if (changed) {
-      return { text: out.join(" "), lang: "fa" };
-    }
-
     const hasLatin = /[A-Za-z]/.test(raw);
     const hasFa = /[\u0600-\u06FF]/.test(raw);
-    if (hasLatin && !hasFa) {
-      return { text: raw, lang: "en" };
-    }
+    if (hasLatin && !hasFa) return { text: raw, lang: "en" };
     return { text: raw, lang: "fa" };
   }
 
@@ -2444,18 +2413,18 @@
     startBgKeepAlive();
     unlockAudio();
 
-    // کلیپ آماده
+    // کلیپ آماده — فقط اگر همان متن کاربر باشد (لاتین را به فارسی عوض نکن)
     try {
       const keyLow = key.toLowerCase();
-      const said = sayForMove(key);
-      const clip =
-        (typeof MOVE_CLIP !== "undefined" &&
-          (MOVE_CLIP[key] || MOVE_CLIP[keyLow] || (said && MOVE_CLIP[said.text]))) ||
-        null;
-      if (clip) {
-        const ok = await playVoiceFile(clip, v);
-        if (!soundAlive(gen, tok)) return false;
-        if (ok) return true;
+      const hasLatin = /[A-Za-z]/.test(key);
+      const hasFa = /[\u0600-\u06FF]/.test(key);
+      if (!(hasLatin && !hasFa) && typeof MOVE_CLIP !== "undefined") {
+        const clip = MOVE_CLIP[key] || MOVE_CLIP[keyLow] || null;
+        if (clip) {
+          const ok = await playVoiceFile(clip, v);
+          if (!soundAlive(gen, tok)) return false;
+          if (ok) return true;
+        }
       }
     } catch {}
 
