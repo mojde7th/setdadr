@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "68";
+  const APP_VER = "69";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,10 +41,28 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=68";
-  const dynFaAudio = new Map(); // متن فارسی → Audio
-  const dynFaBlob = new Map(); // متن فارسی → Blob کش‌شده
+  const VOICE_Q = "?v=69";
+  const dynFaAudio = new Map(); // متن → Audio
+  const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
+  // سرور دیلارا — هر جمله/کلمه؛ نتیجه در کش گوشی می‌ماند
+  const TTS_API_LS = "setdadr-tts-api";
+  function getTtsApiBases() {
+    const out = [];
+    try {
+      const saved = localStorage.getItem(TTS_API_LS);
+      if (saved) out.push(saved.replace(/\/$/, ""));
+    } catch {}
+    if (typeof window !== "undefined" && window.SETDADR_TTS_API) {
+      out.push(String(window.SETDADR_TTS_API).replace(/\/$/, ""));
+    }
+    out.push("https://tension-salaries-mercy-blackberry.trycloudflare.com");
+    try {
+      const h = location.hostname;
+      if (h === "localhost" || h === "127.0.0.1") out.push("http://127.0.0.1:8787");
+    } catch {}
+    return [...new Set(out.filter(Boolean))];
+  }
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -663,22 +681,37 @@
   }
 
   async function fetchFaTtsBlob(text) {
-    const key = String(text || "").trim().slice(0, 160);
+    const key = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
     if (!key) return null;
     const cached = await loadDynFaFromCache(key);
     if (cached) return cached;
 
-    // ۱) دیلارا از اج (همان صدای کلیپ‌ها) — هر کلمه فارسی
+    // ۱) سرور دیلارا — هر جمله / کلمه بی‌ربط (مسیر اصلی ۱۰۰٪)
+    const bases = getTtsApiBases();
+    for (let i = 0; i < bases.length; i++) {
+      try {
+        const url = bases[i] + "/tts?t=" + encodeURIComponent(key);
+        const res = await fetchWithTimeout(url, 25000);
+        if (!res || !res.ok) continue;
+        const blob = await res.blob();
+        if (!blob || blob.size < 80) continue;
+        if (blob.type && blob.type.indexOf("audio") === -1 && blob.size < 500) continue;
+        await saveDynFaToCache(key, blob);
+        return blob;
+      } catch {}
+    }
+
+    // ۲) اج مرورگر (غالباً روی گوشی قطع است)
     try {
-      const edgeBlob = await synthesizeEdgeFa(key);
+      const edgeBlob = await synthesizeEdgeFa(key.slice(0, 160));
       if (edgeBlob && edgeBlob.size > 80) {
         await saveDynFaToCache(key, edgeBlob);
         return edgeBlob;
       }
     } catch {}
 
-    // ۲) گوگل به‌عنوان پشتیبان
-    const urls = faTtsUrls(key).slice(0, 2);
+    // ۳) گوگل
+    const urls = faTtsUrls(key.slice(0, 160)).slice(0, 2);
     for (let i = 0; i < urls.length; i++) {
       try {
         const res = await fetchWithTimeout(urls[i], 2000);
@@ -693,8 +726,8 @@
   }
 
   async function warmFaTts(text) {
-    const key = String(text || "").trim().slice(0, 160);
-    if (!key || !/[\u0600-\u06FF]/.test(key)) return;
+    const key = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
+    if (!key) return;
     if (typeof MOVE_CLIP !== "undefined" && MOVE_CLIP[key]) return;
     try {
       await fetchFaTtsBlob(key);
@@ -1292,19 +1325,28 @@
       if (ok) return true;
     }
 
-    // ۱b) کلیپ پختهٔ آفلاین برای هر متن (حتی بی‌ربط)
+    // ۱b) کلیپ پختهٔ آفلاین
     {
       const ok = await playBakedDynClip(speakText, v);
       if (ok) return true;
     }
 
-    // ۲) کش آفلاین همین متن
+    // ۲) کش گوشی
     {
       const ok = await playCachedFaOnly(speakText, v);
       if (ok) return true;
     }
 
-    // ۳) تلفظ سیستم — هر متنی؛ بعد از بوق WebAudio کمی صبر
+    // ۳) سرور دیلارا — هر جمله کامل (حتی بی‌ربط) + ذخیره برای آفلاین بعد
+    {
+      const blob = await fetchFaTtsBlob(speakText);
+      if (blob) {
+        const ok = await playBlobFa(blob, v);
+        if (ok) return true;
+      }
+    }
+
+    // ۴) تلفظ سیستم
     try {
       if (window.speechSynthesis) speechSynthesis.resume();
     } catch {}
@@ -1320,11 +1362,7 @@
       if (synthOk) return true;
     }
 
-    // ۴) پشتیبان آنلاین (دیلارا / گوگل) + کش برای دفعه بعد
-    {
-      const ok = await playDynamicFa(speakText, v);
-      if (ok) return true;
-    }
+    // ۵) گوگل
     {
       const ok = await playGoogleFaAudio(speakText, v);
       if (ok) return true;
@@ -1936,19 +1974,21 @@
   });
   $("#btnDoneHome").addEventListener("click", () => show("home"));
 
-  $("#moveForm").addEventListener("submit", (e) => {
+  $("#moveForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const name = ($("#moveName").value || "").trim();
     if (!name) return;
     const work = Math.max(5, Number($("#moveWork").value) || 40);
     state.moves.unshift({ id: uid(), name, work });
     save(state);
-    warmMoveVoice(name);
+    try {
+      await warmMoveVoice(name);
+    } catch {}
     $("#moveName").value = "";
     renderMoves();
   });
 
-  $("#addToSetForm").addEventListener("submit", (e) => {
+  $("#addToSetForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const name = ($("#pickMoveName").value || "").trim();
     if (!name) return;
@@ -1961,7 +2001,9 @@
       renderMoves();
     }
     circuit.push({ id: uid(), name, work });
-    warmMoveVoice(name);
+    try {
+      await warmMoveVoice(name);
+    } catch {}
     $("#pickMoveName").value = "";
     const sel = $("#pickFromLib");
     if (sel) sel.value = "";

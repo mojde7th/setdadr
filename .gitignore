@@ -1,0 +1,6 @@
+﻿tools/cloudflared.exe
+tools/cf_err.txt
+tools/cf_out.txt
+tools/fly/
+tools/flyctl.zip
+voice/api-cache/

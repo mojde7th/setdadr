@@ -1,7 +1,8 @@
-const CACHE = "setdadr-v68";
+const CACHE = "setdadr-v69";
 const ASSETS = [
   "./",
   "./index.html",
+  "./tts-endpoint.js",
   "./app.js",
   "./styles.css",
   "./manifest.webmanifest",
