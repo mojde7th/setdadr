@@ -1,2 +1,2 @@
-// آدرس سرور صدای دیلارا (هر جمله). با tools/start_tts_public.ps1 به‌روز می‌شود.
-window.SETDADR_TTS_API = "https://tension-salaries-mercy-blackberry.trycloudflare.com";
+﻿// Dilara TTS public URL — updated by tools/start_tts_public.ps1
+window.SETDADR_TTS_API = "https://core-macro-current-thomson.trycloudflare.com";

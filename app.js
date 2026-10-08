@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "74";
+  const APP_VER = "75";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=74";
+  const VOICE_Q = "?v=75";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -818,7 +818,7 @@
     for (let i = 0; i < bases.length; i++) {
       try {
         const url = bases[i] + "/tts?t=" + encodeURIComponent(key);
-        const res = await fetchWithTimeout(url, 3500);
+        const res = await fetchWithTimeout(url, 8000);
         if (!res || !res.ok) continue;
         const blob = await res.blob();
         if (!blob || blob.size < 80) continue;
@@ -1482,9 +1482,39 @@
     });
   }
 
+  async function fetchDilaraOnly(text) {
+    const key = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
+    if (!key) return null;
+    const cached = await loadDynFaFromCache(key);
+    if (cached) return cached;
+    const bases = getTtsApiBases();
+    for (let i = 0; i < bases.length; i++) {
+      try {
+        const url = bases[i] + "/tts?t=" + encodeURIComponent(key);
+        const res = await fetchWithTimeout(url, 10000);
+        if (!res || !res.ok) continue;
+        const blob = await res.blob();
+        if (!blob || blob.size < 80) continue;
+        await saveDynFaToCache(key, blob);
+        return blob;
+      } catch {}
+    }
+    return null;
+  }
+
+  async function playDilaraFa(text, vol) {
+    // دیلارا از طریق تونل کلودفلر — روی گوشی ایران معمولاً بهتر از گوگل جواب می‌دهد
+    try {
+      const blob = await fetchDilaraOnly(text);
+      if (!blob) return false;
+      return playBlobFa(blob, vol == null ? 1 : vol);
+    } catch {
+      return false;
+    }
+  }
+
   async function speakMoveNameOnly(name, vol) {
-    // ویندوز: صدای فارسی سیستم دارد → می‌خواند
-    // گوشی: معمولاً فارسی سیستم ندارد → باید گوگل/کلیپ؛ انگلیسی سیستم گوشی معمولاً هست
+    // ویندوز: صدای فارسی سیستم. گوشی: دیلارا (تونل) / کش / گوگل
     const raw = String(name || "").replace(/\s+/g, " ").trim();
     if (!raw) return false;
     const said = sayForMove(raw);
@@ -1509,24 +1539,35 @@
       if (ok) return true;
     }
 
-    // انگلیسی روی گوشی: اول سیستم (تقریباً همیشه هست)
+    // انگلیسی روی گوشی: اول سیستم
     if (lang === "en" && hasUsableEnVoice()) {
       const ok = await speakSynthLang(speakText, v, "en", opts);
       if (ok) return true;
     }
-    // فارسی روی ویندوز/لپ‌تاپ: اول سیستم (دیوارا/نازنین و…)
+    // فارسی روی ویندوز: اول سیستم
     if (lang === "fa" && hasUsableFaVoice()) {
       const ok = await speakSynthLang(speakText, v, "fa", opts);
       if (ok) return true;
     }
 
-    // گوگل + پروکسی — هر جمله/کلمه (فارسی یا انگلیسی)
+    // دیلارا — هر جمله فارسی/دلخواه (گوشی بدون صدای فارسی سیستم)
+    if (lang === "fa" || hasFa) {
+      const ok = await playDilaraFa(speakText, v);
+      if (ok) return true;
+    }
+
+    // گوگل + پروکسی
     {
       const ok = await playGoogleFaAudio(speakText, v, lang);
       if (ok) return true;
     }
 
-    // آخرین تلاش سیستم (حتی اگر تشخیص صدا ضعیف باشد)
+    // اگر انگلیسی بود و سیستم نبود، دیلارا هم occasionally انگلیسی می‌خواند
+    if (lang === "en") {
+      const ok = await playDilaraFa(speakText, v);
+      if (ok) return true;
+    }
+
     {
       const ok = await speakSynthLang(speakText, v, lang, opts);
       if (ok) {
@@ -1542,6 +1583,10 @@
         if (ok) return true;
       }
       const mapLang = said.lang === "en" || MOVE_EN[said.text] ? "en" : "fa";
+      if (mapLang === "fa") {
+        const okD = await playDilaraFa(said.text, v);
+        if (okD) return true;
+      }
       const okG = await playGoogleFaAudio(
         mapLang === "en" ? MOVE_EN[said.text] || said.text : said.text,
         v,
@@ -1568,11 +1613,12 @@
     const ios = isIOSLike();
     const opts = ios ? { noCancel: true } : {};
     const nm = String(name || "").replace(/\s+/g, " ").trim();
-    // آفلاین قطعی: اول کلیپ، بعد dyn پخته، بعد گوگل/پروکسی، بعد سیستم
+    // استراحت ست/حرکت: اول «حرکت بعد» آفلاین قطعی، بعد اسم
     let pref = await playVoiceFile("phrase-next.mp3", 1);
     if (!pref) pref = await playBakedDynClip("حرکت بعد", 1);
     if (!pref) pref = await playCachedFaOnly("حرکت بعد", 1);
-    if (!pref) pref = await playGoogleFaAudio("حرکت بعد", 1);
+    if (!pref) pref = await playDilaraFa("حرکت بعد", 1);
+    if (!pref) pref = await playGoogleFaAudio("حرکت بعد", 1, "fa");
     if (!pref) {
       loadVoices();
       pref = await speakFaSynthAsync("حرکت بعد", 1, "fa", {
@@ -1582,9 +1628,10 @@
       });
     }
     if (seq != null && !announceAlive(seq)) return !!pref;
-    await sleep(80);
+    await sleep(120);
     if (seq != null && !announceAlive(seq)) return false;
     if (!nm) return !!pref;
+    // اسم حرکت بعد (جمله فارسی کاربر هم همین‌جا خوانده می‌شود)
     return speakMoveNameOnly(nm, 1);
   }
 
@@ -1602,18 +1649,22 @@
     return queueAnnounce(async (seq) => {
       if (!announceAlive(seq)) return;
       const ios = isIOSLike();
+      const isRest = step.kind === "rest-set" || step.kind === "rest-move";
       buzz(step.kind === "work" ? [100, 45, 100, 45, 160] : [70, 35, 70, 35, 90]);
-      // همه جا: اول بوق، بعد اسم
       beepWhite(400, false);
-      await sleep(ios ? 550 : 400);
+      await sleep(ios ? 500 : 350);
       if (!announceAlive(seq)) return;
       if (step.kind === "work") {
         if (step.name) await speakMoveName(step.name, 1);
         return;
       }
-      // استراحت بین ست/حرکت: فقط حرکت بعد؛ عالی نه
-      if (!step.nextName) return;
-      await speakNextMoveName(step.nextName, seq);
+      // استراحت بین ست و بین حرکت: حتماً «حرکت بعد» + اسم
+      if (isRest) {
+        const next = step.nextName || "";
+        await speakNextMoveName(next, seq);
+        return;
+      }
+      if (step.nextName) await speakNextMoveName(step.nextName, seq);
     });
   }
 
