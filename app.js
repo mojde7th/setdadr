@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "109";
+  const APP_VER = "110";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -65,7 +65,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=109";
+  const VOICE_Q = "?v=110";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -2298,22 +2298,35 @@
     const nm = normSpeakKey(raw);
     const gen = soundGen;
     const tok = speakToken;
-    if (seq != null && !announceAlive(seq)) return false;
-    if (!soundAlive(gen, tok)) return false;
-    if (nm) {
-      primedExpectName = nm;
-      ensurePrimedFor(nm).catch(() => {});
-    }
+    const alive = () =>
+      soundAlive(gen, tok) && (seq == null || announceAlive(seq));
+    if (!alive()) return false;
+    // پرایم را بعد از اعلام بگذار تا با پخش اسم عجیب قاطی نشود
     let pref = await playVoiceFile("phrase-next.mp3", 1);
-    if (!soundAlive(gen, tok) || (seq != null && !announceAlive(seq))) return false;
+    if (!alive()) return false;
     if (!pref) pref = await speakFaAny("حرکت بعد", 1);
-    if (!soundAlive(gen, tok) || (seq != null && !announceAlive(seq))) return false;
+    if (!alive()) return false;
     if (!nm) return !!pref;
-    await sleep(60);
-    if (!soundAlive(gen, tok) || (seq != null && !announceAlive(seq))) return false;
-    const said = await speakMoveNameOnly(nm, 1);
-    // بعد از گفتن در استراحت، بافر را برای خود حرکت آماده نگه دار
-    if (said && soundAlive(gen, tok) && nm) {
+    await sleep(80);
+    if (!alive()) return false;
+    // اسم عجیب: چند مسیر پشت‌سرهم تا در استراحت ست هم قطع نماند
+    let said = await speakMoveNameOnly(nm, 1);
+    if (!said && alive()) {
+      await sleep(120);
+      if (alive()) said = await speakFaAny(nm, 1);
+    }
+    if (!said && alive()) {
+      await sleep(120);
+      if (alive()) {
+        said = await playCloudEdgeTts(nm, 1, EDGE_TTS_VOICE_FA);
+      }
+    }
+    if (!said && alive()) {
+      await sleep(150);
+      if (alive()) said = await speakFaAny(nm, 1);
+    }
+    if (alive() && nm) {
+      primedExpectName = nm;
       ensurePrimedFor(nm).catch(() => {});
     }
     return !!said;
@@ -2347,6 +2360,20 @@
           warmWork.catch(() => {});
           ensurePrimedFor(nm).catch(() => {});
         }
+        // آخرین حرکت ست: اسم حرکت اول ست بعد را از قبل گرم کن
+        try {
+          if (
+            run &&
+            step.moveIndex === step.moveCount &&
+            step.round < step.rounds
+          ) {
+            const nxt = run.steps[run.i + 1];
+            if (nxt && nxt.kind === "rest-set" && nxt.nextName) {
+              warmFaTts(nxt.nextName).catch(() => {});
+              ensurePrimedFor(nxt.nextName).catch(() => {});
+            }
+          }
+        } catch {}
         const t0 = Date.now();
         while (Date.now() - t0 < 2000) {
           if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
@@ -2381,11 +2408,14 @@
       }
       startBgKeepAlive();
       beepSoftRing(0);
-      await sleep(200);
+      // استراحت ست کمی بیشتر صبر تا صدای حرکت آخر ست نشت نکند، بعد زود اعلام کن
+      const restGap = step.kind === "rest-set" ? 280 : 160;
+      await sleep(restGap);
       if (!announceAlive(seq)) return;
-      // استراحت: «حرکت بعد» + اسم با فاصلهٔ کم
       if (isRest) {
         const next = step.nextName || "";
+        // گرم کردن زودهنگام اسم بعدی (مخصوصاً حرکت اول ست بعد)
+        if (next) warmFaTts(next).catch(() => {});
         await speakNextMoveName(next, seq);
         return;
       }
