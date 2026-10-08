@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "46";
+  const APP_VER = "47";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=46";
+  const VOICE_Q = "?v=47";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -51,6 +51,11 @@
   };
   [5,8,10,12,15,16,18,20,24,25,30,32,35,40,45,50,60,75,80,90,120].forEach((n) => {
     VOICE_FILES.went[n] = true;
+  });
+  VOICE_FILES.wentOf = {};
+  [20,25,30,35,40,45,50,60,75,90,120].forEach((t) => {
+    const d = Math.max(1, Math.round((t * 5) / 8));
+    VOICE_FILES.wentOf[t + ":" + d] = true;
   });
   [5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120,150,180,240,300,600].forEach((n) => {
     VOICE_FILES.phase[n] = true;
@@ -704,8 +709,9 @@
     });
   }
 
-  async function speakDoneAmount(sec) {
+  async function speakDoneAmount(sec, total) {
     const n = Math.round(sec);
+    const tot = Math.round(total || (run && run.phaseDur) || 0);
     if (n <= 0) return;
     return queueAnnounce(async (seq) => {
       if (!announceAlive(seq)) return;
@@ -716,30 +722,24 @@
       if (!announceAlive(seq)) return;
       await sleep(450);
       if (!announceAlive(seq)) return;
+      const ofKey = tot + ":" + n;
+      if (VOICE_FILES.wentOf && VOICE_FILES.wentOf[ofKey]) {
+        ok = await playVoiceFile("went-" + n + "-of-" + tot + ".mp3", 0.98);
+        if (ok) return;
+      }
       if (VOICE_FILES.went[n]) {
         ok = await playVoiceFile("went-" + n + ".mp3", 0.98);
         if (ok) return;
       }
-      // نزدیک‌ترین کلیپ رفت
-      const keys = Object.keys(VOICE_FILES.went).map(Number).sort((a, b) => a - b);
-      let near = keys[0];
-      let best = Infinity;
-      keys.forEach((k) => {
-        const d = Math.abs(k - n);
-        if (d < best) {
-          best = d;
-          near = k;
-        }
-      });
-      if (near != null && best <= 5) {
-        ok = await playVoiceFile("went-" + near + ".mp3", 0.98);
-        if (ok) return;
-      }
-      await speakFaSynthAsync(faNum(n) + " ثانیه رفت", 1, "fa", { rate: 1.22, pitch: 1.2 });
+      const phrase =
+        tot > 0
+          ? faNum(n) + " ثانیه از " + faNum(tot) + " ثانیه رو رفتی"
+          : faNum(n) + " ثانیه رو رفتی";
+      await speakFaSynthAsync(phrase, 1, "fa", { rate: 1.22, pitch: 1.2 });
     });
   }
 
-  async function speakDone(rounds) {
+  async function(rounds) {
     return queueAnnounce(async () => {
       const n = Math.round(rounds);
       buzz([90, 50, 90, 50, 140]);
@@ -1063,21 +1063,21 @@
     run.prevLeftCeil = cur;
     if (prev == null) return;
 
-    // دوسوم: زودتر تریگر کن تا وقتی صدا به «رفت» برسد همان ثانیه دقیق باشد
     const midKey = run.i + ":twoThirds";
-    const targetLeft = Math.ceil(run.phaseDur / 3);
-    // دقیقاً حدود ۱ ثانیه قبل از ثانیه هدف اعلام شود (نه خیلی زود)
+    // مثال ۴۰ث: روی حدود ۱۶ بگوید ۲۵ ثانیه از ۴۰ ثانیه رو رفتی
+    const total = Math.round(run.phaseDur);
+    const done = Math.max(1, Math.round((total * 5) / 8));
+    const targetLeft = Math.max(1, total - done);
     const lead = 1;
     const fireLeft = targetLeft + lead;
     if (
-      run.phaseDur >= 12 &&
+      total >= 12 &&
       !run.announced[midKey] &&
       prev > fireLeft &&
       cur <= fireLeft
     ) {
       run.announced[midKey] = true;
-      const done = Math.max(1, Math.round(run.phaseDur - targetLeft));
-      speakDoneAmount(done);
+      speakDoneAmount(done, total);
     }
 
     // ۴ ثانیه مانده: بوق ملایم
