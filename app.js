@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "57";
+  const APP_VER = "58";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,12 +41,14 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=57";
+  const VOICE_Q = "?v=58";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
     done: {},
     cheer: { ali: true },
+    phrase: { next: true },
+    move: {},
     went: {}
   };
   [5,8,10,12,15,16,18,20,24,25,30,32,35,40,45,50,60,75,80,90,120].forEach((n) => {
@@ -716,6 +718,97 @@
     استراحت: "استراحت"
   };
 
+  // کلیپ آفلاین فارسی برای گوشی (آیفون تلفظ فارسی سیستم ندارد)
+  const MOVE_CLIP = {
+    اسکوات: "move-squat.mp3",
+    "ایر اسکوات": "move-air-squat.mp3",
+    "گبلت اسکوات": "move-goblet-squat.mp3",
+    برپی: "move-burpee.mp3",
+    پلانک: "move-plank.mp3",
+    "شنا سوئدی": "move-pushup.mp3",
+    بارفیکس: "move-pullup.mp3",
+    شنا: "move-swim.mp3",
+    ددلیفت: "move-deadlift.mp3",
+    "ددلیفت رومانیایی": "move-rdl.mp3",
+    "آر دی ال": "move-rdl-short.mp3",
+    لانج: "move-lunge.mp3",
+    "جامپینگ جک": "move-jj.mp3",
+    "مانتین کلایمر": "move-mc.mp3",
+    کرانچ: "move-crunch.mp3",
+    "دراز و نشست": "move-situp.mp3",
+    "هیپ تراست": "move-hip-thrust.mp3",
+    "بریج باسن": "move-glute-bridge.mp3",
+    "وال سیت": "move-wall-sit.mp3",
+    "ساق پا": "move-calf.mp3",
+    "جلو بازو": "move-bicep.mp3",
+    "دیپ پشت بازو": "move-tricep.mp3",
+    "پرس شانه": "move-shoulder.mp3",
+    "پرس سینه": "move-bench.mp3",
+    "نشر جانب": "move-lateral.mp3",
+    "سوئینگ کتل بل": "move-kb-swing.mp3",
+    روئینگ: "move-row.mp3",
+    "روئینگ خم": "move-bent-row.mp3",
+    "زانو بلند": "move-high-knees.mp3",
+    "پاشنه به باسن": "move-butt-kicks.mp3",
+    "پای بالا": "move-leg-raise.mp3",
+    "راشن توییست": "move-russian.mp3",
+    "پرش روی باکس": "move-box-jump.mp3",
+    "اسکوات پرشی": "move-jump-squat.mp3",
+    "اسکوات سومو": "move-sumo.mp3",
+    "پلانک بغل": "move-side-plank.mp3",
+    "هالو هولد": "move-hollow.mp3",
+    "راه رفتن کشاورز": "move-farmer.mp3",
+    "بتل روپ": "move-battle.mp3",
+    طناب: "move-jump-rope.mp3",
+    یوگا: "move-yoga.mp3",
+    کشش: "move-stretch.mp3"
+  };
+
+  const MOVE_EN = {
+    اسکوات: "squat",
+    "ایر اسکوات": "air squat",
+    "گبلت اسکوات": "goblet squat",
+    برپی: "burpee",
+    پلانک: "plank",
+    "شنا سوئدی": "push up",
+    بارفیکس: "pull up",
+    شنا: "swim",
+    ددلیفت: "deadlift",
+    "ددلیفت رومانیایی": "romanian deadlift",
+    "آر دی ال": "R D L",
+    لانج: "lunge",
+    "جامپینگ جک": "jumping jack",
+    "مانتین کلایمر": "mountain climber",
+    کرانچ: "crunch",
+    "دراز و نشست": "sit up",
+    "هیپ تراست": "hip thrust",
+    "بریج باسن": "glute bridge",
+    "وال سیت": "wall sit",
+    "ساق پا": "calf raise",
+    "جلو بازو": "bicep curl",
+    "دیپ پشت بازو": "tricep dip",
+    "پرس شانه": "shoulder press",
+    "پرس سینه": "bench press",
+    "نشر جانب": "lateral raise",
+    "سوئینگ کتل بل": "kettlebell swing",
+    روئینگ: "row",
+    "روئینگ خم": "bent over row",
+    "زانو بلند": "high knees",
+    "پاشنه به باسن": "butt kicks",
+    "پای بالا": "leg raise",
+    "راشن توییست": "russian twist",
+    "پرش روی باکس": "box jump",
+    "اسکوات پرشی": "jump squat",
+    "اسکوات سومو": "sumo squat",
+    "پلانک بغل": "side plank",
+    "هالو هولد": "hollow hold",
+    "راه رفتن کشاورز": "farmer walk",
+    "بتل روپ": "battle rope",
+    طناب: "jump rope",
+    یوگا: "yoga",
+    کشش: "stretch"
+  };
+
   function sayForMove(name) {
     const raw = String(name || "").trim();
     if (!raw) return { text: "", lang: "fa" };
@@ -746,49 +839,56 @@
     return { text: raw, lang: "fa" };
   }
 
-  // همیشه پیشوند فارسی «حرکت بعد»؛ اسم لاتین جدا با انگلیسی
-  function sayForDevice(name, asNext) {
+  async function speakMoveNameOnly(name, vol) {
     const raw = String(name || "").trim();
-    if (!raw) return { text: "", lang: "fa" };
-    const hasLatin = /[A-Za-z]/.test(raw);
-    const hasFa = /[\u0600-\u06FF]/.test(raw);
-    if (asNext) {
-      if (hasLatin && !hasFa) {
-        return { text: raw, lang: "en", prefixFa: "حرکت بعد" };
-      }
-      const said = sayForMove(raw);
-      if (!said.text) return { text: "", lang: "fa" };
-      if (said.lang === "en") {
-        return { text: said.text, lang: "en", prefixFa: "حرکت بعد" };
-      }
-      return { text: "حرکت بعد " + said.text, lang: "fa" };
-    }
-    if (isIOSLike() && hasLatin && !hasFa) {
-      return { text: raw, lang: "en" };
-    }
-    return sayForMove(raw);
-  }
-
-  async function speakMoveName(name, vol) {
-    const said = sayForDevice(name, false);
-    if (!said.text) return false;
-    const synthOpts = isIOSLike() ? { noCancel: true } : {};
-    return speakFaSynthAsync(said.text, vol == null ? 0.95 : vol, said.lang, synthOpts);
-  }
-
-  async function speakNextMoveName(name, seq) {
-    const said = sayForDevice(name, true);
+    if (!raw) return false;
+    const said = sayForMove(raw);
     if (!said.text) return false;
     const ios = isIOSLike();
     const opts = ios ? { noCancel: true } : {};
-    if (said.prefixFa) {
-      await speakFaSynthAsync(said.prefixFa, 1, "fa", opts);
-      if (seq != null && !announceAlive(seq)) return false;
-      await sleep(80);
-      if (seq != null && !announceAlive(seq)) return false;
-      return speakFaSynthAsync(said.text, 1, said.lang, opts);
+    const v = vol == null ? 0.98 : vol;
+
+    // ۱) کلیپ آفلاین فارسی (برای گوشی حیاتی است)
+    const clip = MOVE_CLIP[said.text];
+    if (clip) {
+      const ok = await playVoiceFile(clip, v);
+      if (ok) return true;
     }
-    return speakFaSynthAsync(said.text, 1, said.lang, opts);
+
+    // ۲) اسم لاتین یا معادل انگلیسی روی آیفون
+    const hasLatin = /[A-Za-z]/.test(raw);
+    const hasFa = /[\u0600-\u06FF]/.test(raw);
+    if (hasLatin && !hasFa) {
+      return speakFaSynthAsync(raw, v, "en", opts);
+    }
+    if (ios && MOVE_EN[said.text]) {
+      return speakFaSynthAsync(MOVE_EN[said.text], v, "en", opts);
+    }
+    if (said.lang === "en") {
+      return speakFaSynthAsync(said.text, v, "en", opts);
+    }
+
+    // ۳) تلفظ فارسی سیستم (لپ‌تاپ)
+    return speakFaSynthAsync(said.text, v, "fa", opts);
+  }
+
+  async function speakMoveName(name, vol) {
+    return speakMoveNameOnly(name, vol);
+  }
+
+  async function speakNextMoveName(name, seq) {
+    const ios = isIOSLike();
+    const opts = ios ? { noCancel: true } : {};
+    // حتماً اول «حرکت بعد» از کلیپ، بعد اسم
+    let ok = await playVoiceFile("phrase-next.mp3", 0.98);
+    if (!ok) {
+      await speakFaSynthAsync("حرکت بعد", 1, "fa", opts);
+    }
+    if (seq != null && !announceAlive(seq)) return false;
+    await sleep(220);
+    if (seq != null && !announceAlive(seq)) return false;
+    if (!name) return false;
+    return speakMoveNameOnly(name, 1);
   }
 
   async function speakCheerOnly(seq) {
