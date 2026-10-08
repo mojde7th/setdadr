@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "34";
+  const APP_VER = "35";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=34";
+  const VOICE_Q = "?v=35";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -655,20 +655,28 @@
 
   async function speakPhase(step) {
     return queueAnnounce(async () => {
-      // تمرین: زنگ + اسم حرکت یک‌بار
-      // استراحت: زنگ + «حرکت بعد» + اسم
+      // تمرین: زنگ + بلافاصله اسم
+      // استراحت: زنگ + «حرکت بعد» چسبیده به اسم
       buzz(step.kind === "work" ? [100, 45, 100, 45, 160] : [70, 35, 70, 35, 90]);
       beepWhite(400, false);
-      await sleep(280);
+      // فقط تا شروع شنیده شدن زنگ؛ خالی طولانی نه
+      await sleep(90);
       if (step.kind === "work") {
         if (step.name) await speakMoveName(step.name, 1);
         return;
       }
       const name = step.nextName || "";
       if (!name) return;
-      await speakFaSynthAsync("حرکت بعد", 1);
-      await sleep(35);
-      await speakMoveName(name, 1);
+      const said = sayForMove(name);
+      if (!said.text) return;
+      if (said.lang === "en") {
+        await speakFaSynthAsync("حرکت بعد", 1);
+        await sleep(10);
+        await speakFaSynthAsync(said.text, 1, "en");
+      } else {
+        // یک‌نفس فارسی؛ بدون مکث وسط
+        await speakFaSynthAsync("حرکت بعد " + said.text, 1);
+      }
     });
   }
 
