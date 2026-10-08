@@ -33,10 +33,11 @@ if (-not $url) {
 }
 
 $js = @"
-// آدرس سرور صدای دیلارا (هر جمله). با tools/start_tts_public.ps1 به روز می شود.
+// Ø¢Ø¯Ø±Ø³ Ø³Ø±ÙˆØ± ØµØ¯Ø§ÛŒ Ø¯ÛŒÙ„Ø§Ø±Ø§ (Ù‡Ø± Ø¬Ù…Ù„Ù‡). Ø¨Ø§ tools/start_tts_public.ps1 Ø¨Ù‡ Ø±ÙˆØ² Ù…ÛŒ Ø´ÙˆØ¯.
 window.SETDADR_TTS_API = "$url";
 "@
-Set-Content -Path $endpointJs -Value $js -Encoding UTF8
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText($endpointJs, $js, $utf8NoBom)
 
 Write-Host "TTS public URL: $url"
 Write-Host "Wrote $endpointJs"
