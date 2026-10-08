@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "114";
+  const APP_VER = "115";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -65,7 +65,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=114";
+  const VOICE_Q = "?v=115";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -2071,7 +2071,7 @@
   }
 
   async function playCachedFaOnly(text, vol) {
-    const key = String(text || "").trim().slice(0, 160);
+    const key = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
     if (!key) return false;
     try {
       const blob = await loadDynFaFromCache(key);
@@ -2255,6 +2255,65 @@
     return null;
   }
 
+  async function ensureSpeakBlob(text, maxMs) {
+    const key = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
+    if (!key) return null;
+    try {
+      const hit = await loadDynFaFromCache(key);
+      if (hit) return hit;
+    } catch {}
+    const wait = maxMs != null ? maxMs : document.hidden ? 5000 : 3500;
+    try {
+      return await Promise.race([
+        cacheCloudEdgeBlob(key),
+        sleep(wait).then(() => null)
+      ]);
+    } catch {
+      return null;
+    }
+  }
+
+  // در بکگراند فقط بلاب محلی با HTML — URL مستقیم اغلب پخش نمی‌شود
+  async function playTextBgSafe(text, vol) {
+    const key = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
+    if (!key || soundMuted) return false;
+    const gen = soundGen;
+    const tok = speakToken;
+    if (!soundAlive(gen, tok)) return false;
+    startBgKeepAlive();
+    unlockAudio();
+    let blob = null;
+    try {
+      blob = await loadDynFaFromCache(key);
+    } catch {}
+    if (!blob) {
+      blob = await ensureSpeakBlob(key, document.hidden ? 6000 : 4000);
+    }
+    if (!soundAlive(gen, tok)) return false;
+    if (blob) {
+      const ok = await playBlobFa(blob, vol == null ? 1 : vol);
+      startBgKeepAlive();
+      if (ok) return true;
+    }
+    if (document.hidden) {
+      // یک تلاش نهایی fetch حتی در بکگراند
+      try {
+        blob = await cacheCloudEdgeBlob(key);
+      } catch {}
+      if (!soundAlive(gen, tok)) return false;
+      if (blob) {
+        const ok = await playBlobFa(blob, vol == null ? 1 : vol);
+        startBgKeepAlive();
+        if (ok) return true;
+      }
+      return false;
+    }
+    // پیش‌زمینه: مسیر ابری معمولی
+    const ok2 = await playCloudEdgeTts(key, vol == null ? 1 : vol);
+    startBgKeepAlive();
+    return !!ok2;
+  }
+
   // دیلارای ابری دائمی — بدون لپ‌تاپ (Vercel Edge TTS)
   async function playCloudEdgeTts(text, vol, voiceName) {
     const key = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
@@ -2280,25 +2339,23 @@
         }
       } catch {}
       if (!soundAlive(gen, tok)) return false;
-      // پخش مستقیم URL با HTML (بکگراند هم همین)
-      try {
-        const a = makeHtmlAudio(url);
-        if (!soundAlive(gen, tok)) {
-          try {
-            a.pause();
-          } catch {}
-          return false;
-        }
-        const ok = await playHtmlAudioEl(
-          a,
-          vol == null ? 1 : vol,
-          document.hidden ? 14000 : 10000
-        );
-        if (ok && soundAlive(gen, tok)) {
-          cacheCloudEdgeBlob(key, voice).catch(() => {});
-          return true;
-        }
-      } catch {}
+      // بکگراند: URL مستقیم را رد کن — فقط بلاب
+      if (!document.hidden) {
+        try {
+          const a = makeHtmlAudio(url);
+          if (!soundAlive(gen, tok)) {
+            try {
+              a.pause();
+            } catch {}
+            return false;
+          }
+          const ok = await playHtmlAudioEl(a, vol == null ? 1 : vol, 10000);
+          if (ok && soundAlive(gen, tok)) {
+            cacheCloudEdgeBlob(key, voice).catch(() => {});
+            return true;
+          }
+        } catch {}
+      }
       if (!soundAlive(gen, tok)) return false;
       try {
         const blob = await cacheCloudEdgeBlob(key, voice);
@@ -2345,6 +2402,7 @@
     const tok = speakToken;
     const v = vol == null ? 0.98 : vol;
     unlockAudio();
+    startBgKeepAlive();
     const alive = () => soundAlive(gen, tok);
     if (!alive()) return false;
     {
@@ -2354,6 +2412,11 @@
     }
     {
       const ok = await playBakedDynClip(key, v);
+      if (!alive()) return false;
+      if (ok) return true;
+    }
+    if (document.hidden) {
+      const ok = await playTextBgSafe(key, v);
       if (!alive()) return false;
       if (ok) return true;
     }
@@ -2728,30 +2791,34 @@
     const alive = () =>
       soundAlive(gen, tok) && (seq == null || announceAlive(seq));
     if (!alive()) return false;
-    // پرایم را بعد از اعلام بگذار تا با پخش اسم عجیب قاطی نشود
+    startBgKeepAlive();
+    // همزمان با «حرکت بعد» بلاب اسم را بگیر — حیاتی برای بکگراند
+    const prefetch = nm ? ensureSpeakBlob(nm, document.hidden ? 6000 : 4000) : Promise.resolve(null);
+    prefetch.catch(() => {});
     let pref = await playVoiceFile("phrase-next.mp3", 1);
     if (!alive()) return false;
-    if (!pref) pref = await speakFaAny("حرکت بعد", 1);
+    if (!pref) pref = await playTextBgSafe("حرکت بعد", 1);
     if (!alive()) return false;
     if (!nm) return !!pref;
     await sleep(80);
     if (!alive()) return false;
-    // اسم عجیب: چند مسیر پشت‌سرهم تا در استراحت ست هم قطع نماند
-    let said = await speakMoveNameOnly(nm, 1);
-    if (!said && alive()) {
-      await sleep(120);
-      if (alive()) said = await speakFaAny(nm, 1);
+    let blob = null;
+    try {
+      blob = await prefetch;
+    } catch {}
+    if (!blob) {
+      try {
+        blob = await loadDynFaFromCache(nm);
+      } catch {}
     }
-    if (!said && alive()) {
-      await sleep(120);
-      if (alive()) {
-        said = await playCloudEdgeTts(nm, 1, EDGE_TTS_VOICE_FA);
-      }
+    let said = false;
+    if (blob && alive()) {
+      said = await playBlobFa(blob, 1);
+      startBgKeepAlive();
     }
-    if (!said && alive()) {
-      await sleep(150);
-      if (alive()) said = await speakFaAny(nm, 1);
-    }
+    if (!said && alive()) said = await playTextBgSafe(nm, 1);
+    if (!said && alive()) said = await speakMoveNameOnly(nm, 1);
+    if (!said && alive()) said = await speakFaAny(nm, 1);
     if (alive() && nm) {
       primedExpectName = nm;
       ensurePrimedFor(nm).catch(() => {});
@@ -2801,10 +2868,14 @@
             }
           }
         } catch {}
+        // در ۲ث بلاب اسم را حتماً آماده کن (بکگراند بدون بلاب ساکت می‌ماند)
+        const prepBlob = nm ? ensureSpeakBlob(nm, 2200) : Promise.resolve(null);
+        prepBlob.catch(() => {});
         const t0 = Date.now();
         while (Date.now() - t0 < 2000) {
           if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
           unlockAudio();
+          startBgKeepAlive();
           try {
             if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
           } catch {}
@@ -2812,23 +2883,37 @@
         }
         if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
         unlockAudio();
+        startBgKeepAlive();
         try {
           if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
         } catch {}
         if (!nm) return;
         let ok = false;
-        // اگر همان اسم در استراحت پرایم شده، فوری از بافر بگو
-        if (primedWorkName === nm && primedWorkAudioBuffer) {
+        let blob = null;
+        try {
+          blob = await prepBlob;
+        } catch {}
+        if (!blob && primedWorkName === nm && primedWorkBlob) blob = primedWorkBlob;
+        if (!blob) {
+          try {
+            blob = await loadDynFaFromCache(nm);
+          } catch {}
+        }
+        if (blob && announceAlive(seq) && soundAlive(gen, tok)) {
+          ok = await playBlobFa(blob, 1);
+          startBgKeepAlive();
+        }
+        if (!ok && announceAlive(seq) && soundAlive(gen, tok) && !document.hidden) {
           ok = await playPrimedWorkName(nm, 1);
+        }
+        if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
+          ok = await playTextBgSafe(nm, 1);
         }
         if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
           ok = await speakMoveNameOnly(nm, 1);
         }
         if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
-          await sleep(180);
-          if (announceAlive(seq) && soundAlive(gen, tok)) {
-            ok = await speakFaAny(nm, 1);
-          }
+          ok = await speakFaAny(nm, 1);
         }
         if (primedExpectName === nm) clearPrimedWork();
         return;
@@ -3550,6 +3635,18 @@
       resumeBgIfNeeded();
       if (!tickIv) loop();
       requestWakeLock();
+      try {
+        const st = run.steps[run.i];
+        if (st) {
+          if (st.name) ensureSpeakBlob(normSpeakKey(st.name), 5000).catch(() => {});
+          if (st.nextName) ensureSpeakBlob(normSpeakKey(st.nextName), 5000).catch(() => {});
+        }
+        const nxt = run.steps[run.i + 1];
+        if (nxt) {
+          if (nxt.name) ensureSpeakBlob(normSpeakKey(nxt.name), 5000).catch(() => {});
+          if (nxt.nextName) ensureSpeakBlob(normSpeakKey(nxt.nextName), 5000).catch(() => {});
+        }
+      } catch {}
     }
   });
   window.addEventListener("pagehide", () => {
