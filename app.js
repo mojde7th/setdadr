@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "28";
+  const APP_VER = "29";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -34,7 +34,7 @@
   let announceChain = Promise.resolve();
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=28";
+  const VOICE_Q = "?v=29";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -230,23 +230,23 @@
     }
   }
 
-  function beepWhite(ms) {
+  function beepWhite(ms, soft) {
     try {
       unlockAudio();
       if (!audioCtx) return;
       const play = () => {
         stopBeep();
-        const dur = Math.max(0.32, (ms || 280) / 1000);
+        const dur = Math.max(soft ? 0.22 : 0.34, (ms || (soft ? 200 : 300)) / 1000);
         const t0 = audioCtx.currentTime;
         const master = audioCtx.createGain();
         const filter = audioCtx.createBiquadFilter();
         filter.type = "lowpass";
-        filter.frequency.setValueAtTime(2400, t0);
-        filter.Q.setValueAtTime(0.7, t0);
-        // بوق نرم و قشنگ؛ بدون کمپرسور تیز
+        filter.frequency.setValueAtTime(soft ? 1800 : 2600, t0);
+        filter.Q.setValueAtTime(0.6, t0);
+        const peak = soft ? 0.18 : 0.55;
         master.gain.setValueAtTime(0.0001, t0);
-        master.gain.exponentialRampToValueAtTime(0.38, t0 + 0.03);
-        master.gain.exponentialRampToValueAtTime(0.22, t0 + dur * 0.35);
+        master.gain.exponentialRampToValueAtTime(peak, t0 + (soft ? 0.04 : 0.025));
+        master.gain.exponentialRampToValueAtTime(peak * 0.55, t0 + dur * 0.4);
         master.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
         master.connect(filter);
         filter.connect(audioCtx.destination);
@@ -256,17 +256,16 @@
         const g1 = audioCtx.createGain();
         const g2 = audioCtx.createGain();
         o1.type = "sine";
-        o2.type = "triangle";
-        // دو نت ملایم: می و سی
-        o1.frequency.setValueAtTime(659.25, t0);
-        o1.frequency.exponentialRampToValueAtTime(523.25, t0 + dur * 0.9);
-        o2.frequency.setValueAtTime(987.77, t0);
-        o2.frequency.exponentialRampToValueAtTime(783.99, t0 + dur * 0.85);
+        o2.type = soft ? "sine" : "triangle";
+        o1.frequency.setValueAtTime(soft ? 587.33 : 659.25, t0);
+        o1.frequency.exponentialRampToValueAtTime(soft ? 493.88 : 523.25, t0 + dur * 0.9);
+        o2.frequency.setValueAtTime(soft ? 880.0 : 987.77, t0);
+        o2.frequency.exponentialRampToValueAtTime(soft ? 698.46 : 783.99, t0 + dur * 0.85);
         g1.gain.setValueAtTime(0.0001, t0);
-        g1.gain.exponentialRampToValueAtTime(1.0, t0 + 0.025);
+        g1.gain.exponentialRampToValueAtTime(1.0, t0 + 0.03);
         g1.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
         g2.gain.setValueAtTime(0.0001, t0);
-        g2.gain.exponentialRampToValueAtTime(0.28, t0 + 0.04);
+        g2.gain.exponentialRampToValueAtTime(soft ? 0.18 : 0.28, t0 + 0.04);
         g2.gain.exponentialRampToValueAtTime(0.0001, t0 + dur * 0.75);
         o1.connect(g1);
         o2.connect(g2);
@@ -574,16 +573,20 @@
 
   async function speakPhase(step) {
     return queueAnnounce(async () => {
-      const n = Math.round(step.dur);
+      // اول فاز فقط بوق بلند؛ بدون گفتار
       buzz(step.kind === "work" ? [55, 35, 55] : [30, 30, 30]);
-      beepWhite(280);
-      await sleep(200);
-      await sayTime(n);
-      await sleep(200);
-      const name = step.kind === "work" ? step.name : step.nextName || "";
-      if (name) {
-        await speakMoveName(name, 0.95);
-      }
+      beepWhite(340, false);
+    });
+  }
+
+  async function speakDoneAmount(sec) {
+    const n = Math.round(sec);
+    if (n <= 0) return;
+    return queueAnnounce(async () => {
+      buzz([28]);
+      await sleep(80);
+      const phrase = faNum(n) + " ثانیه انجام دادی";
+      await speakFaSynthAsync(phrase, 0.92);
     });
   }
 
@@ -910,15 +913,23 @@
     const prev = run.prevLeftCeil;
     run.prevLeftCeil = cur;
     if (prev == null) return;
-    // اگر فریم از روی ۲۰/۱۰ بپرد هم اعلام شود
-    const marks = [20, 10];
-    marks.forEach((m) => {
-      const key = run.i + ":" + m;
-      if (run.phaseDur > m && !run.announced[key] && prev > m && cur <= m) {
-        run.announced[key] = true;
-        speakSeconds(m);
-      }
-    });
+
+    // یک‌بار وسط: مقدار انجام‌شده (نه مانده)
+    const midKey = run.i + ":mid";
+    const halfLeft = Math.ceil(run.phaseDur / 2);
+    if (run.phaseDur >= 12 && !run.announced[midKey] && prev > halfLeft && cur <= halfLeft) {
+      run.announced[midKey] = true;
+      const done = Math.max(1, Math.round(run.phaseDur - cur));
+      speakDoneAmount(done);
+    }
+
+    // ۴ ثانیه مانده: بوق ملایم
+    const softKey = run.i + ":soft4";
+    if (run.phaseDur > 5 && !run.announced[softKey] && prev > 4 && cur <= 4) {
+      run.announced[softKey] = true;
+      beepWhite(200, true);
+      buzz([20]);
+    }
   }
 
   function advance() {
