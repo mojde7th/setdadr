@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "37";
+  const APP_VER = "38";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,12 +41,17 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=37";
+  const VOICE_Q = "?v=38";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
-    done: {}
+    done: {},
+    cheer: { ali: true },
+    went: {}
   };
+  [5,8,10,12,15,16,18,20,24,25,30,32,35,40,45,50,60,75,80,90,120].forEach((n) => {
+    VOICE_FILES.went[n] = true;
+  });
   [5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120,150,180,240,300,600].forEach((n) => {
     VOICE_FILES.phase[n] = true;
   });
@@ -494,7 +499,7 @@
           u.onend = () => done(true);
           u.onerror = () => done(false);
           speechSynthesis.speak(u);
-          setTimeout(() => done(true), Math.min(6000, 800 + String(text).length * 180));
+          setTimeout(() => done(true), Math.min(12000, 1600 + String(text).length * 220));
         } catch {
           resolve(false);
         }
@@ -692,19 +697,30 @@
     return queueAnnounce(async () => {
       buzz([55, 30, 90]);
       await sleep(30);
-      const cheerOpts = {
-        rate: 1.35,
-        pitch: 1.32,
-        voice: faVoice || enVoice || null
-      };
-      // اول تشویق کوتاه، بعد مکث، بعد مقدار — بدون کشیدن «انجام دادی»
-      await speakFaSynthAsync("عالی", 1, "fa", cheerOpts);
-      await sleep(220);
-      await speakFaSynthAsync(faNum(n) + " ثانیه رفت", 1, "fa", {
-        rate: 1.32,
-        pitch: 1.3,
-        voice: cheerOpts.voice
+      // صدای یکدست هوش مصنوعی — نرم، لطیف، پرانرژی
+      let ok = await playVoiceFile("cheer-ali.mp3", 0.98);
+      if (!ok) await speakFaSynthAsync("عالی", 1, "fa", { rate: 1.2, pitch: 1.2 });
+      await sleep(500);
+      if (VOICE_FILES.went[n]) {
+        ok = await playVoiceFile("went-" + n + ".mp3", 0.98);
+        if (ok) return;
+      }
+      // نزدیک‌ترین کلیپ رفت
+      const keys = Object.keys(VOICE_FILES.went).map(Number).sort((a, b) => a - b);
+      let near = keys[0];
+      let best = Infinity;
+      keys.forEach((k) => {
+        const d = Math.abs(k - n);
+        if (d < best) {
+          best = d;
+          near = k;
+        }
       });
+      if (near != null && best <= 5) {
+        ok = await playVoiceFile("went-" + near + ".mp3", 0.98);
+        if (ok) return;
+      }
+      await speakFaSynthAsync(faNum(n) + " ثانیه رفت", 1, "fa", { rate: 1.22, pitch: 1.2 });
     });
   }
 

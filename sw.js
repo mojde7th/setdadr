@@ -1,4 +1,4 @@
-const CACHE = "setdadr-v37";
+const CACHE = "setdadr-v38";
 const ASSETS = [
   "./",
   "./index.html",
@@ -55,7 +55,29 @@ const ASSETS = [
   "./voice/phase-80.mp3",
   "./voice/phase-85.mp3",
   "./voice/phase-90.mp3",
-  "./voice/phase-95.mp3"
+  "./voice/phase-95.mp3",
+  "./voice/cheer-ali.mp3",
+  "./voice/went-5.mp3",
+  "./voice/went-8.mp3",
+  "./voice/went-10.mp3",
+  "./voice/went-12.mp3",
+  "./voice/went-15.mp3",
+  "./voice/went-16.mp3",
+  "./voice/went-18.mp3",
+  "./voice/went-20.mp3",
+  "./voice/went-24.mp3",
+  "./voice/went-25.mp3",
+  "./voice/went-30.mp3",
+  "./voice/went-32.mp3",
+  "./voice/went-35.mp3",
+  "./voice/went-40.mp3",
+  "./voice/went-45.mp3",
+  "./voice/went-50.mp3",
+  "./voice/went-60.mp3",
+  "./voice/went-75.mp3",
+  "./voice/went-80.mp3",
+  "./voice/went-90.mp3",
+  "./voice/went-120.mp3"
 ];
 
 self.addEventListener("install", (e) => {
