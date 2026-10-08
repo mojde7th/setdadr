@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "100";
+  const APP_VER = "101";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -45,7 +45,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=100";
+  const VOICE_Q = "?v=101";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -2080,48 +2080,34 @@
 
   async function speakNextMoveName(name, seq) {
     const nm = String(name || "").replace(/\s+/g, " ").trim();
-    // هم‌زمان بلاب اسم را کش کن تا در «خود حرکت» قطعی پخش شود
-    const warmP = nm
-      ? cacheCloudEdgeBlob(nm).then(async (blob) => {
+    // گرم‌کردن در پس‌زمینه — بین «حرکت بعد» و اسم صبر اضافه نگذار
+    if (nm) {
+      cacheCloudEdgeBlob(nm)
+        .then((blob) => {
           if (blob) {
             primedWorkName = nm;
             primedWorkBlob = blob;
-          } else {
-            await warmFaTts(nm);
-            const b2 = await loadDynFaFromCache(nm);
-            if (b2) {
-              primedWorkName = nm;
-              primedWorkBlob = b2;
-            }
           }
         })
-      : Promise.resolve();
+        .catch(() => {});
+    }
     let pref = await playVoiceFile("phrase-next.mp3", 1);
     if (!pref) pref = await speakFaAny("حرکت بعد", 1);
     if (seq != null && !announceAlive(seq)) return !!pref;
-    try {
-      await Promise.race([warmP, sleep(1500)]);
-    } catch {}
-    if (seq != null && !announceAlive(seq)) return false;
     if (!nm) return !!pref;
-    const said = await speakMoveNameOnly(nm, 1);
-    try {
-      const b = await loadDynFaFromCache(nm);
-      if (b) {
-        primedWorkName = nm;
-        primedWorkBlob = b;
-      } else {
-        cacheCloudEdgeBlob(nm)
-          .then((blob) => {
-            if (blob) {
-              primedWorkName = nm;
-              primedWorkBlob = blob;
-            }
-          })
-          .catch(() => {});
-      }
-    } catch {}
-    return said;
+    // فقط یک نفس کوتاه؛ حداکثر فاصله کم
+    await sleep(60);
+    if (seq != null && !announceAlive(seq)) return false;
+    // اگر بلاب آماده است همان را بگو تا تأخیر ابر نیاید
+    if (primedWorkName === nm && primedWorkBlob) {
+      const ok = await playBlobFa(primedWorkBlob, 1);
+      if (ok) return true;
+    }
+    {
+      const cached = await playCachedFaOnly(nm, 1);
+      if (cached) return true;
+    }
+    return speakMoveNameOnly(nm, 1);
   }
 
   async function speakCheerOnly(seq) {
