@@ -135,38 +135,49 @@ html, body {
 }
 .add-set-form {
   display: grid;
-  gap: 6px;
-  margin-bottom: 10px;
+  gap: 10px;
+  margin-bottom: 12px;
 }
 .field-block {
   display: grid;
-  gap: 3px;
+  gap: 6px;
   margin: 0;
 }
 .field-k {
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 900;
   color: var(--muted);
+}
+/* فقط طول افقی کوتاه؛ ارتفاع راحت */
+.add-set-form .field-block:has(#pickFromLib),
+.add-set-form .field-block:has(#pickMoveName) {
+  justify-items: stretch;
+  max-width: min(72vw, 260px);
+}
+.add-set-form .select-wrap {
+  width: 100%;
+  max-width: min(72vw, 260px);
 }
 .add-set-form select,
 .add-set-form input[type="text"] {
   width: 100%;
-  min-height: 28px;
-  height: 28px;
-  border-radius: 8px;
+  max-width: min(72vw, 260px);
+  min-height: 44px;
+  height: 44px;
+  border-radius: 12px;
   border: 1px solid var(--line);
   background: var(--bg2, #17130e);
   color: inherit;
   font: inherit;
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 700;
-  padding: 2px 8px;
+  padding: 8px 12px;
   box-sizing: border-box;
-  line-height: 1.2;
+  line-height: 1.3;
 }
 .add-set-form input[type="text"]::placeholder {
-  font-size: 10px;
-  opacity: 0.5;
+  font-size: 13px;
+  opacity: 0.55;
 }
 .num-step.with-unit {
   grid-template-columns: 44px 1fr 44px auto;
@@ -608,33 +619,35 @@ input[type="text"], input[type="number"] {
 .pick-select,
 #pickFromLib.pick-select {
   width: 100%;
-  min-height: 28px !important;
-  height: 28px !important;
-  border-radius: 8px !important;
+  max-width: min(72vw, 260px) !important;
+  min-height: 44px !important;
+  height: 44px !important;
+  border-radius: 12px !important;
   border: 1px solid var(--line) !important;
   background: var(--bg2, #17130e) !important;
   color: inherit !important;
   font: inherit !important;
-  font-size: 11px !important;
+  font-size: 14px !important;
   font-weight: 700 !important;
-  padding: 2px 28px 2px 8px !important;
+  padding: 8px 36px 8px 12px !important;
   box-sizing: border-box;
   appearance: none;
   -webkit-appearance: none;
   cursor: pointer;
-  line-height: 1.2;
+  line-height: 1.3;
 }
 #pickMoveName {
-  font-size: 11px !important;
+  font-size: 14px !important;
   font-weight: 700 !important;
-  min-height: 28px !important;
-  height: 28px !important;
-  padding: 2px 8px !important;
-  border-radius: 8px !important;
+  max-width: min(72vw, 260px) !important;
+  min-height: 44px !important;
+  height: 44px !important;
+  padding: 8px 12px !important;
+  border-radius: 12px !important;
 }
 #pickMoveName::placeholder {
-  font-size: 10px !important;
-  opacity: 0.5;
+  font-size: 13px !important;
+  opacity: 0.55;
 }
 .pick-select:focus {
   outline: none;
@@ -643,7 +656,7 @@ input[type="text"], input[type="number"] {
 }
 .select-chev {
   position: absolute;
-  inset-inline-end: 8px;
+  inset-inline-end: 12px;
   top: 50%;
   transform: translateY(-50%);
   color: #fff;
@@ -655,8 +668,8 @@ input[type="text"], input[type="number"] {
 }
 .select-chev svg {
   display: block;
-  width: 12px;
-  height: 12px;
+  width: 16px;
+  height: 16px;
   color: #fff;
   stroke: #fff;
 }
