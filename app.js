@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "61";
+  const APP_VER = "62";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=61";
+  const VOICE_Q = "?v=62";
   const dynFaAudio = new Map(); // متن فارسی → Audio
   const dynFaBlob = new Map(); // متن فارسی → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -489,15 +489,30 @@
     } catch {}
   }
 
+  function fetchWithTimeout(url, ms) {
+    const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timer = setTimeout(() => {
+      try {
+        if (ctrl) ctrl.abort();
+      } catch {}
+    }, ms || 1800);
+    return fetch(url, {
+      cache: "force-cache",
+      credentials: "omit",
+      signal: ctrl ? ctrl.signal : undefined
+    }).finally(() => clearTimeout(timer));
+  }
+
   async function fetchFaTtsBlob(text) {
     const key = String(text || "").trim().slice(0, 160);
     if (!key) return null;
     const cached = await loadDynFaFromCache(key);
     if (cached) return cached;
-    const urls = faTtsUrls(key);
+    // فقط دو آدرس مستقیم؛ پروکسی‌ها شروع را قفل می‌کردند
+    const urls = faTtsUrls(key).slice(0, 2);
     for (let i = 0; i < urls.length; i++) {
       try {
-        const res = await fetch(urls[i], { cache: "force-cache", credentials: "omit" });
+        const res = await fetchWithTimeout(urls[i], 2000);
         if (!res || !res.ok) continue;
         const blob = await res.blob();
         if (!blob || blob.size < 80) continue;
@@ -511,10 +526,10 @@
   async function warmFaTts(text) {
     const key = String(text || "").trim().slice(0, 160);
     if (!key || !/[\u0600-\u06FF]/.test(key)) return;
+    if (typeof MOVE_CLIP !== "undefined" && MOVE_CLIP[key]) return;
     try {
-      if (MOVE_CLIP && MOVE_CLIP[key]) return;
+      await fetchFaTtsBlob(key);
     } catch {}
-    await fetchFaTtsBlob(key);
   }
 
   async function warmMoveVoice(name) {
@@ -1404,7 +1419,7 @@
     return steps;
   }
 
-  async function startRun(id) {
+  function startRun(id) {
     const p = state.plans.find((x) => x.id === id);
     if (!p || !p.circuit.length) return;
     // دوبار زدن شروع = زوم صدا؛ قفل کوتاه + قطع قبلی
@@ -1412,14 +1427,16 @@
     startLock = true;
     setTimeout(() => {
       startLock = false;
-    }, 1200);
+    }, 700);
     stopLoop();
     stopAllSound();
     const steps = buildTimeline(p);
     unlockAudio();
-    // قبل از شروع، صدای فارسی هر حرکت را بکش تا وسط تمرین گیر نکند
+    // صدا را در پس‌زمینه گرم کن؛ شروع را معطل نکن
     try {
-      await Promise.all(p.circuit.map((c) => warmMoveVoice(c.name)));
+      p.circuit.forEach((c) => {
+        warmMoveVoice(c.name);
+      });
     } catch {}
     run = {
       planId: p.id,
