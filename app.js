@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "107";
+  const APP_VER = "108";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -64,7 +64,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=107";
+  const VOICE_Q = "?v=108";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -292,6 +292,10 @@
 
   function announceAlive(seq) {
     return seq === announceSeq;
+  }
+
+  function soundAlive(gen, tok) {
+    return gen === soundGen && tok === speakToken;
   }
 
   function queueAnnounce(task) {
@@ -1178,10 +1182,14 @@
   async function playVoiceFile(rel, vol) {
     try {
       if (soundMuted) return false;
+      const gen = soundGen;
+      const tok = speakToken;
+      if (!soundAlive(gen, tok)) return false;
       unlockAudio();
       // گوشی: اول HTML Audio (قطعی‌تر از WebAudio روی اندروید/آیفون)
       {
         const htmlOk = await playVoiceFileHtml(rel, vol);
+        if (!soundAlive(gen, tok)) return false;
         if (htmlOk) return true;
       }
       if (!audioCtx) return false;
@@ -1190,10 +1198,10 @@
           await audioCtx.resume();
         } catch {}
       }
+      if (!soundAlive(gen, tok)) return false;
       stopVoiceFile();
-      const gen = soundGen;
       const buf = await loadVoiceBuffer(rel);
-      if (!buf || gen !== soundGen) return false;
+      if (!buf || !soundAlive(gen, tok)) return false;
       const gain = Math.max(0.05, Math.min(1, vol == null ? 0.98 : vol));
       await new Promise((resolve) => {
         let done = false;
@@ -1811,44 +1819,56 @@
   async function playCloudEdgeTts(text, vol, voiceName) {
     const key = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
     if (!key || soundMuted) return false;
+    const gen = soundGen;
+    const tok = speakToken;
+    if (!soundAlive(gen, tok)) return false;
     const hasFa = /[\u0600-\u06FF]/.test(key);
     const voice =
       voiceName || (hasFa ? EDGE_TTS_VOICE_FA : EDGE_TTS_VOICE_EN);
     const url = cloudEdgeUrl(key, voice);
     unlockAudio();
-    startBgKeepAlive();
 
     const tryOnce = async () => {
-      // ۱) کش محلی با HTML
+      if (!soundAlive(gen, tok)) return false;
       try {
         const cached = await loadDynFaFromCache(key);
+        if (!soundAlive(gen, tok)) return false;
         if (cached) {
           const ok = await playBlobFa(cached, vol == null ? 1 : vol);
-          if (ok) return true;
+          if (ok && soundAlive(gen, tok)) return true;
         }
       } catch {}
-      // ۲) پخش مستقیم URL — سریع، بدون منتظر fetch
+      if (!soundAlive(gen, tok)) return false;
       try {
         const a = makeHtmlAudio(url);
+        if (!soundAlive(gen, tok)) {
+          try {
+            a.pause();
+          } catch {}
+          return false;
+        }
         const ok = await playHtmlAudioEl(a, vol == null ? 1 : vol, 10000);
-        if (ok) {
+        if (ok && soundAlive(gen, tok)) {
           cacheCloudEdgeBlob(key, voice).catch(() => {});
           return true;
         }
       } catch {}
-      // ۳) fetch بلاب
+      if (!soundAlive(gen, tok)) return false;
       try {
         const blob = await cacheCloudEdgeBlob(key, voice);
+        if (!soundAlive(gen, tok)) return false;
         if (blob) {
           const ok = await playBlobFa(blob, vol == null ? 1 : vol);
-          if (ok) return true;
+          if (ok && soundAlive(gen, tok)) return true;
         }
       } catch {}
       return false;
     };
 
     if (await tryOnce()) return true;
-    await sleep(120);
+    if (!soundAlive(gen, tok)) return false;
+    await sleep(100);
+    if (!soundAlive(gen, tok)) return false;
     return tryOnce();
   }
 
@@ -1875,33 +1895,42 @@
   async function speakFaAny(text, vol) {
     const key = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
     if (!key || soundMuted) return false;
+    const gen = soundGen;
+    const tok = speakToken;
     const v = vol == null ? 0.98 : vol;
     unlockAudio();
+    const alive = () => soundAlive(gen, tok);
+    if (!alive()) return false;
     {
       const ok = await playCachedFaOnly(key, v);
+      if (!alive()) return false;
       if (ok) return true;
     }
     {
       const ok = await playBakedDynClip(key, v);
+      if (!alive()) return false;
       if (ok) return true;
     }
     {
       const ok = await playCloudEdgeTts(key, v, EDGE_TTS_VOICE_FA);
+      if (!alive()) return false;
       if (ok) return true;
     }
     {
       const ok = await playEdgeTts(key, v, EDGE_TTS_VOICE_FA);
+      if (!alive()) return false;
       if (ok) return true;
     }
     {
       const ok = await playDilaraFa(key, v);
+      if (!alive()) return false;
       if (ok) return true;
     }
-    // آخرین راه: آوانویسی لاتین با گوگل انگلیسی (سکوت نماند)
     {
       const roman = romanizeFaMachine(key);
       if (roman) {
         const ok = await playGoogleQuick(roman, v, "en");
+        if (!alive()) return false;
         if (ok) return true;
       }
     }
@@ -2085,6 +2114,10 @@
   async function speakMoveNameOnly(name, vol) {
     const raw = String(name || "").replace(/\s+/g, " ").trim();
     if (!raw) return false;
+    const gen = soundGen;
+    const tok = speakToken;
+    const alive = () => soundAlive(gen, tok);
+    if (!alive()) return false;
     const said = sayForMove(raw);
     const v = vol == null ? 0.98 : vol;
     const hasFa = /[\u0600-\u06FF]/.test(raw);
@@ -2093,79 +2126,50 @@
     const isEn = hasLatin && !hasFa;
     const keyLow = raw.toLowerCase();
 
-    // انگلیسی مربی: آفلاین → ابر دائمی → گوگل → اج
     if (isEn) {
       {
         const ok = await playCachedFaOnly(speakText, v);
+        if (!alive()) return false;
         if (ok) return true;
       }
       {
         const ok = await playBakedDynClip(speakText, v);
+        if (!alive()) return false;
         if (ok) return true;
       }
       {
         const ok = await playCloudEdgeTts(speakText, v, EDGE_TTS_VOICE_EN);
+        if (!alive()) return false;
         if (ok) return true;
       }
       {
         const ok = await playGoogleQuick(speakText, v, "en");
+        if (!alive()) return false;
         if (ok) return true;
       }
       {
         const ok = await playEdgeTts(speakText, v, EDGE_TTS_VOICE_EN);
+        if (!alive()) return false;
         if (ok) return true;
       }
       return false;
     }
 
-    // فارسی رندوم/جمله: کلیپ ثابت، بعد دیلارا (گوگل‌فا قطع است)
     const clip =
       MOVE_CLIP[raw] ||
       MOVE_CLIP[keyLow] ||
       (said && MOVE_CLIP[said.text]);
     if (clip) {
       const ok = await playVoiceFile(clip, v);
+      if (!alive()) return false;
       if (ok) return true;
-      try {
-        unlockAudio();
-        const buf = await loadVoiceBuffer(clip);
-        if (buf && audioCtx) {
-          const gen = soundGen;
-          stopVoiceFile();
-          if (gen !== soundGen) return false;
-          await new Promise((resolve) => {
-            const src = audioCtx.createBufferSource();
-            const g = audioCtx.createGain();
-            g.gain.value = v;
-            src.buffer = buf;
-            src.connect(g);
-            g.connect(audioCtx.destination);
-            liveSources.add(src);
-            voicePlayer = src;
-            src.onended = () => {
-              liveSources.delete(src);
-              resolve();
-            };
-            src.start();
-            setTimeout(() => {
-              if (gen !== soundGen) {
-                try {
-                  src.stop();
-                } catch {}
-                liveSources.delete(src);
-              }
-              resolve();
-            }, Math.min(5000, (buf.duration + 0.3) * 1000));
-          });
-          return gen === soundGen;
-        }
-      } catch {}
     }
     {
       const ok = await speakFaAny(speakText, v);
+      if (!alive()) return false;
       if (ok) return true;
     }
-    warmFaTts(speakText);
+    if (alive()) warmFaTts(speakText);
     return false;
   }
 
@@ -2268,13 +2272,17 @@
 
   async function speakNextMoveName(name, seq) {
     const nm = String(name || "").replace(/\s+/g, " ").trim();
-    // مثل نسخههای قبلی: حرکت بعد، بعد سریع اسم — بدون منتظر ماندن برای پرایم
+    const gen = soundGen;
+    const tok = speakToken;
+    if (seq != null && !announceAlive(seq)) return false;
+    if (!soundAlive(gen, tok)) return false;
     let pref = await playVoiceFile("phrase-next.mp3", 1);
+    if (!soundAlive(gen, tok) || (seq != null && !announceAlive(seq))) return false;
     if (!pref) pref = await speakFaAny("حرکت بعد", 1);
-    if (seq != null && !announceAlive(seq)) return !!pref;
+    if (!soundAlive(gen, tok) || (seq != null && !announceAlive(seq))) return false;
     if (!nm) return !!pref;
     await sleep(60);
-    if (seq != null && !announceAlive(seq)) return false;
+    if (!soundAlive(gen, tok) || (seq != null && !announceAlive(seq))) return false;
     return speakMoveNameOnly(nm, 1);
   }
 
@@ -2754,10 +2762,14 @@
     const mySeq = announceSeq;
     setTimeout(() => {
       if (!run || soundGen !== myGen || announceSeq !== mySeq) return;
+      // هر صدای دیررس اعلام قبلی را دوباره بکش، بعد اعلام جدید
+      killAllHtmlAudio();
+      killAllSources();
+      stopVoiceFile();
       unlockAudio();
       startBgKeepAlive();
       speakPhase(step);
-    }, 40);
+    }, 120);
     loop();
   }
 
@@ -2982,8 +2994,10 @@
   $("#btnSkip").addEventListener("click", () => {
     if (!run) return;
     unlockAudio();
-    // اول همه‌چیز را بکش؛ بعد برو فاز بعد
+    // قطع سخت فوری؛ advance دوباره قطع می‌کند و اعلام جدید می‌گذارد
     stopAllSound();
+    killAllHtmlAudio();
+    killAllSources();
     run.skipped = (run.skipped || 0) + 1;
     advance();
   });
