@@ -135,21 +135,18 @@ html, body {
 }
 .add-set-form {
   display: grid;
-  gap: 12px;
+  gap: 8px;
   margin-bottom: 12px;
 }
 .field-block {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   margin: 0;
 }
 .field-k {
   font-size: 11px;
   font-weight: 900;
   color: var(--muted);
-}
-.add-set-form {
-  gap: 8px;
 }
 .add-set-form select,
 .add-set-form input[type="text"] {
