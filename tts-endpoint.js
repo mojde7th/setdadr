@@ -1,3 +1,2 @@
-﻿// Public Dilara TTS (same idea as Iranian apps: server reads any sentence).
-// Updated by tools/start_tts_public.ps1 — keep PC on, or host tools/tts_api.py on Liara.
-window.SETDADR_TTS_API = "https://oakland-citizen-meters-european.trycloudflare.com";
+﻿// Ø¢Ø¯Ø±Ø³ Ø³Ø±ÙˆØ± ØµØ¯Ø§ÛŒ Ø¯ÛŒÙ„Ø§Ø±Ø§ (Ù‡Ø± Ø¬Ù…Ù„Ù‡). Ø¨Ø§ tools/start_tts_public.ps1 Ø¨Ù‡ Ø±ÙˆØ² Ù…ÛŒ Ø´ÙˆØ¯.
+window.SETDADR_TTS_API = "https://honolulu-entry-apache-node.trycloudflare.com";

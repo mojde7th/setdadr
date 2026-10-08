@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "87";
+  const APP_VER = "88";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=87";
+  const VOICE_Q = "?v=88";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -591,7 +591,7 @@
     } catch {}
   }
 
-  function fetchWithTimeout(url, ms) {
+  function fetchWithTimeout(url, ms, cacheMode) {
     const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
     const timer = setTimeout(() => {
       try {
@@ -599,15 +599,17 @@
       } catch {}
     }, ms || 1800);
     return fetch(url, {
-      cache: "force-cache",
+      cache: cacheMode || "no-store",
       credentials: "omit",
       signal: ctrl ? ctrl.signal : undefined
     }).finally(() => clearTimeout(timer));
   }
 
-  // صدای دیلارا مثل کلیپ‌ها — برای هر متن فارسی دلخواه
+  // اج‌تی‌تی‌اس مستقیم از گوشی (بدون لپ‌تاپ) — فارسی دیلارا / انگلیسی جنی
   const EDGE_TTS_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
-  const EDGE_TTS_VOICE = "fa-IR-DilaraNeural";
+  const EDGE_TTS_VOICE_FA = "fa-IR-DilaraNeural";
+  const EDGE_TTS_VOICE_EN = "en-US-JennyNeural";
+  const EDGE_TTS_VOICE = EDGE_TTS_VOICE_FA;
   const EDGE_TTS_CHROME = "143.0.3650.75";
   let edgeTtsSkew = 0;
 
@@ -650,9 +652,11 @@
       .replace(/'/g, "&apos;");
   }
 
-  function synthesizeEdgeFa(text) {
+  function synthesizeEdgeTts(text, voiceName) {
     const key = String(text || "").trim().slice(0, 160);
     if (!key) return Promise.resolve(null);
+    const voice = voiceName || EDGE_TTS_VOICE_FA;
+    const langXml = /^en/i.test(voice) ? "en-US" : "fa-IR";
     return new Promise(async (resolve) => {
       let settled = false;
       const done = (blob) => {
@@ -681,7 +685,7 @@
             ws.close();
           } catch {}
           done(chunks.length ? new Blob(chunks, { type: "audio/mpeg" }) : null);
-        }, 12000);
+        }, 8000);
 
         ws.onopen = () => {
           try {
@@ -693,11 +697,13 @@
                 '{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"true"},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}\r\n'
             );
             const ssml =
-              "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='fa-IR'>" +
-              "<voice name='" +
-              EDGE_TTS_VOICE +
+              "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='" +
+              langXml +
               "'>" +
-              "<prosody pitch='+0Hz' rate='+5%' volume='+0%'>" +
+              "<voice name='" +
+              voice +
+              "'>" +
+              "<prosody pitch='+0Hz' rate='+8%' volume='+0%'>" +
               escapeSsml(key) +
               "</prosody></voice></speak>";
             ws.send(
@@ -761,18 +767,45 @@
     });
   }
 
+  function synthesizeEdgeFa(text) {
+    return synthesizeEdgeTts(text, EDGE_TTS_VOICE_FA);
+  }
+
+  async function playEdgeTts(text, vol, voiceName) {
+    try {
+      const blob = await synthesizeEdgeTts(text, voiceName);
+      if (!blob || blob.size < 80) return false;
+      await saveDynFaToCache(String(text || "").trim(), blob);
+      return playBlobFa(blob, vol == null ? 1 : vol);
+    } catch {
+      return false;
+    }
+  }
+
   async function fetchFaTtsBlob(text) {
     const key = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
     if (!key) return null;
     const cached = await loadDynFaFromCache(key);
     if (cached) return cached;
 
-    // ۱) سرور دیلارا — هر جمله / کلمه بی‌ربط (مسیر اصلی ۱۰۰٪)
+    const hasFa = /[\u0600-\u06FF]/.test(key);
+    const voice = hasFa ? EDGE_TTS_VOICE_FA : EDGE_TTS_VOICE_EN;
+
+    // ۱) اج مستقیم گوشی (بدون لپ‌تاپ)
+    try {
+      const edgeBlob = await synthesizeEdgeTts(key.slice(0, 160), voice);
+      if (edgeBlob && edgeBlob.size > 80) {
+        await saveDynFaToCache(key, edgeBlob);
+        return edgeBlob;
+      }
+    } catch {}
+
+    // ۲) سرور دیلارا اگر روشن باشد
     const bases = getTtsApiBases();
     for (let i = 0; i < bases.length; i++) {
       try {
         const url = bases[i] + "/tts?t=" + encodeURIComponent(key);
-        const res = await fetchWithTimeout(url, 8000);
+        const res = await fetchWithTimeout(url, 4500, "no-store");
         if (!res || !res.ok) continue;
         const blob = await res.blob();
         if (!blob || blob.size < 80) continue;
@@ -782,20 +815,11 @@
       } catch {}
     }
 
-    // ۲) اج مرورگر (غالباً روی گوشی قطع است)
-    try {
-      const edgeBlob = await synthesizeEdgeFa(key.slice(0, 160));
-      if (edgeBlob && edgeBlob.size > 80) {
-        await saveDynFaToCache(key, edgeBlob);
-        return edgeBlob;
-      }
-    } catch {}
-
-    // ۳) گوگل
-    const urls = faTtsUrls(key.slice(0, 160)).slice(0, 2);
+    // ۳) گوگل + پروکسی
+    const urls = faTtsUrls(key.slice(0, 160), hasFa ? "fa" : "en").slice(0, 4);
     for (let i = 0; i < urls.length; i++) {
       try {
-        const res = await fetchWithTimeout(urls[i], 2000);
+        const res = await fetchWithTimeout(urls[i], 4000, "no-store");
         if (!res || !res.ok) continue;
         const blob = await res.blob();
         if (!blob || blob.size < 80) continue;
@@ -1090,7 +1114,8 @@
             clearInterval(poke);
             if (finished) return;
             if (resumeIv) clearInterval(resumeIv);
-            done(started || speechSynthesis.speaking || speechSynthesis.pending);
+            // فقط اگر واقعاً شروع شده — speaking خالی روی گوشی را موفق نگیر
+            done(!!started);
           }, Math.min(14000, 2200 + String(text).length * 200));
         } catch {
           resolve(false);
@@ -1519,7 +1544,7 @@
       if (!base) continue;
       try {
         const url = base + "/tts?t=" + encodeURIComponent(key);
-        const res = await fetchWithTimeout(url, 14000);
+        const res = await fetchWithTimeout(url, 4500, "no-store");
         if (!res || !res.ok) continue;
         const blob = await res.blob();
         if (!blob || blob.size < 80) continue;
@@ -1540,20 +1565,15 @@
     }
   }
 
-  async function playStreamElementsEn(text, vol) {
-    // پشتیبان انگلیسی رایگان (مثل خیلی از ویجت‌ها)
+  async function playGoogleQuick(text, vol, lang) {
+    // اول لینک‌های مستقیم/پروکسی به‌صورت پخش HTML — بدون گیر کردن روی سنتز گوشی
     const key = String(text || "").trim().slice(0, 160);
     if (!key || soundMuted) return false;
-    const voices = ["Brian", "Amy", "Emma"];
-    for (let i = 0; i < voices.length; i++) {
+    const urls = faTtsUrls(key, lang).slice(0, 5);
+    for (let i = 0; i < urls.length; i++) {
       try {
-        const url =
-          "https://api.streamelements.com/kappa/v2/speech?voice=" +
-          voices[i] +
-          "&text=" +
-          encodeURIComponent(key);
-        const a = makeHtmlAudio(url);
-        const ok = await playHtmlAudioEl(a, vol, 8000);
+        const a = makeHtmlAudio(urls[i]);
+        const ok = await playHtmlAudioEl(a, vol, 5500);
         if (ok) {
           warmFaTts(key);
           return true;
@@ -1748,7 +1768,7 @@
     const isEn = hasLatin && !hasFa;
     const keyLow = raw.toLowerCase();
 
-    // انگلیسی مربی: عین واژه + سرور دیلارا (روش اپ‌های ایرانی: TTS سروری)
+    // انگلیسی مربی: کلیپ آفلاین → گوگل/پروکسی → اج جنی → سرور (سنتز گوشی حذف؛ سکوت جعلی می‌داد)
     if (isEn) {
       {
         const ok = await playCachedFaOnly(speakText, v);
@@ -1759,28 +1779,25 @@
         if (ok) return true;
       }
       {
+        const ok = await playGoogleQuick(speakText, v, "en");
+        if (ok) return true;
+      }
+      {
+        const ok = await playEdgeTts(speakText, v, EDGE_TTS_VOICE_EN);
+        if (ok) return true;
+      }
+      {
         const ok = await playDilaraFa(speakText, v);
         if (ok) return true;
       }
       {
-        const ok = await playStreamElementsEn(speakText, v);
-        if (ok) return true;
-      }
-      {
-        const ok = await speakSynthLang(speakText, v, "en", {
-          noCancel: true,
-          rate: 1.42
-        });
-        if (ok) return true;
-      }
-      {
-        const ok = await playGoogleDirect(speakText, v, "en");
+        const ok = await playGoogleFaAudio(speakText, v, "en");
         if (ok) return true;
       }
       return false;
     }
 
-    // فارسی: کلیپ لیست، بعد سرور دیلارا (جمله/بی‌ربط)، بعد بقیه
+    // فارسی: کلیپ لیست → آفلاین → اج دیلارا → گوگل → سرور
     const clip =
       MOVE_CLIP[raw] ||
       MOVE_CLIP[keyLow] ||
@@ -1817,24 +1834,20 @@
       const ok = await playCachedFaOnly(speakText, v);
       if (ok) return true;
     }
-    // مسیر اصلی اپ‌های ایرانی: سرور صدا هر متن را می‌خواند
+    {
+      const ok = await playEdgeTts(speakText, v, EDGE_TTS_VOICE_FA);
+      if (ok) return true;
+    }
+    {
+      const ok = await playGoogleQuick(speakText, v, "fa");
+      if (ok) return true;
+    }
     {
       const ok = await playDilaraFa(speakText, v);
       if (ok) return true;
     }
-    if (hasUsableFaVoice()) {
-      const ok = await speakSynthLang(speakText, v, "fa", {
-        noCancel: true,
-        rate: 1.35
-      });
-      if (ok) return true;
-    }
     {
-      const ok = await playGoogleDirect(speakText, v, "fa");
-      if (ok) return true;
-    }
-    {
-      const ok = await speakMachineAny(speakText, v);
+      const ok = await playGoogleFaAudio(speakText, v, "fa");
       if (ok) return true;
     }
     warmFaTts(speakText);

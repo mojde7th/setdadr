@@ -1,0 +1,5 @@
+{
+  "platform": "docker",
+  "port": 8787,
+  "app": "setdadr-tts"
+}

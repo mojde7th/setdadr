@@ -1,4 +1,4 @@
-const CACHE = "setdadr-v87";
+const CACHE = "setdadr-v88";
 const ASSETS = [
   "./",
   "./index.html",
@@ -58,15 +58,38 @@ const ASSETS = [
   "./voice/phase-90.mp3",
   "./voice/phase-95.mp3",
   "./voice/cheer-ali.mp3",
+  "./voice/dyn/0211c960f65410c4.mp3",
   "./voice/dyn/06e61ea6eed1702d.mp3",
   "./voice/dyn/0c1ac9c9ef30833d.mp3",
+  "./voice/dyn/10e7523e1415a3e7.mp3",
+  "./voice/dyn/11b6815edebc0300.mp3",
+  "./voice/dyn/214170079efde281.mp3",
   "./voice/dyn/26dbcf0da8bac190.mp3",
+  "./voice/dyn/2fa4f95b81a4c0a2.mp3",
+  "./voice/dyn/43564d3cda152851.mp3",
+  "./voice/dyn/575955b662b62138.mp3",
+  "./voice/dyn/584ca2d71c32b33b.mp3",
+  "./voice/dyn/5ae8a327caf450b4.mp3",
+  "./voice/dyn/5cf7ff791d693ee5.mp3",
+  "./voice/dyn/6a87c09459170d72.mp3",
+  "./voice/dyn/6c9c735fbbc8a9f6.mp3",
+  "./voice/dyn/6e79483b6ade7003.mp3",
+  "./voice/dyn/abd4db93f183679f.mp3",
+  "./voice/dyn/b6ba8e4cfb22905f.mp3",
+  "./voice/dyn/b75256b9e0047691.mp3",
+  "./voice/dyn/b7c60dbe12ae9067.mp3",
+  "./voice/dyn/bf3245ade528b7a3.mp3",
+  "./voice/dyn/c985d5cbf5e0e5bf.mp3",
+  "./voice/dyn/d6aef3fae7615ac3.mp3",
+  "./voice/dyn/e0f4c3a57632a158.mp3",
   "./voice/dyn/e1009c2c8bd05248.mp3",
+  "./voice/dyn/e8cdc05b346aa0d4.mp3",
+  "./voice/dyn/f7402b537632cb30.mp3",
   "./voice/dyn/f754be895d799ee2.mp3",
   "./voice/dyn/f838ecdbb858f272.mp3",
+  "./voice/dyn/f844f4d4f48025a1.mp3",
   "./voice/phrase-next.mp3",
   "./voice/silence.wav",
-  "./voice/dyn/214170079efde281.mp3",
   "./voice/move-air-squat.mp3",
   "./voice/move-battle.mp3",
   "./voice/move-bench.mp3",
@@ -172,7 +195,7 @@ self.addEventListener("fetch", (e) => {
   const isCSS = path.endsWith(".css");
   const isNav = e.request.mode === "navigate" || path.endsWith("/") || path.endsWith(".html");
 
-  // شل اپ: اول شبکه؛ فقط کش نسخهٔ فعلی (بدون ignoreSearch تا فایل قدیمی ۶۹ برنگردد)
+  // Ø´Ù„ Ø§Ù¾: Ø§ÙˆÙ„ Ø´Ø¨Ú©Ù‡Ø› ÙÙ‚Ø· Ú©Ø´ Ù†Ø³Ø®Ù‡Ù” ÙØ¹Ù„ÛŒ (Ø¨Ø¯ÙˆÙ† ignoreSearch ØªØ§ ÙØ§ÛŒÙ„ Ù‚Ø¯ÛŒÙ…ÛŒ Û¶Û¹ Ø¨Ø±Ù†Ú¯Ø±Ø¯Ø¯)
   if (isNav || isJS || isCSS) {
     e.respondWith(
       fetch(e.request, { cache: "no-store" })
@@ -211,3 +234,4 @@ self.addEventListener("fetch", (e) => {
     )
   );
 });
+

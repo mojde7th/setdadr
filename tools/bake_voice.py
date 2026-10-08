@@ -6,6 +6,7 @@ Usage:
 """
 import asyncio
 import hashlib
+import re
 import sys
 from pathlib import Path
 
@@ -13,7 +14,8 @@ import edge_tts
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "voice" / "dyn"
-VOICE = "fa-IR-DilaraNeural"
+VOICE_FA = "fa-IR-DilaraNeural"
+VOICE_EN = "en-US-JennyNeural"
 
 
 def key_for(text: str) -> str:
@@ -21,12 +23,19 @@ def key_for(text: str) -> str:
     return hashlib.sha1(t.encode("utf-8")).hexdigest()[:16]
 
 
+def pick_voice(text: str) -> str:
+    if re.search(r"[\u0600-\u06FF]", text):
+        return VOICE_FA
+    return VOICE_EN
+
+
 async def bake(text: str) -> Path:
     t = " ".join(text.split())
     OUT.mkdir(parents=True, exist_ok=True)
     path = OUT / (key_for(t) + ".mp3")
-    await edge_tts.Communicate(t, VOICE, rate="+8%").save(str(path))
-    print(path.name, repr(t), path.stat().st_size)
+    voice = pick_voice(t)
+    await edge_tts.Communicate(t, voice, rate="+8%").save(str(path))
+    print(path.name, repr(t), voice, path.stat().st_size)
     return path
 
 
