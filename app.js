@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "110";
+  const APP_VER = "111";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -65,13 +65,16 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=110";
+  const VOICE_Q = "?v=111";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
   let tickIv = 0;
   let bgKeepAudio = null;
   let bgKeepOn = false;
+  let bgWatchIv = 0;
+  let bgCtxKeep = null;
+  let wakeLockSentinel = null;
   // سرور دیلارا ابری دائمی (بدون لپ‌تاپ) + اختیاری تونل محلی
   const TTS_API_LS = "setdadr-tts-api";
   const CLOUD_EDGE_TTS = "https://edge-tts.vercel.app/api/tts";
@@ -261,9 +264,14 @@
 
   function buzz(pattern) {
     try {
-      // ویبره جدا از قطع‌صدا — در باشگاه حس شود
+      // ویبره جدا از قطع‌صدا — حتی در بکگراند هم باید بماند
       if (!navigator.vibrate) return;
-      const p = pattern && pattern.length ? pattern : [90, 45, 110];
+      let p = pattern && pattern.length ? pattern : [90, 45, 110];
+      // وقتی صفحه مخفی است الگوی قوی‌تر تا حس شود
+      if (document.hidden) {
+        p = p.map((n) => (n > 0 ? Math.max(n, 120) : n));
+        if (p.length < 5) p = p.concat([60, 140, 60, 160]);
+      }
       navigator.vibrate(0);
       navigator.vibrate(p);
     } catch {}
@@ -461,11 +469,129 @@
           artist: "ست‌یار",
           album: "تمرین"
         });
+        // سیستم‌عامل با pause مدیا جلسه را نکشد
+        const reassert = () => {
+          if (run && !run.paused && !soundMuted) startBgKeepAlive();
+        };
+        try {
+          navigator.mediaSession.setActionHandler("play", reassert);
+        } catch {}
+        try {
+          navigator.mediaSession.setActionHandler("pause", reassert);
+        } catch {}
+        try {
+          navigator.mediaSession.setActionHandler("stop", reassert);
+        } catch {}
       }
     } catch {}
   }
 
-  function startBgKeepAlive() {
+  function startCtxKeepAlive() {
+    if (soundMuted || !audioCtx) return;
+    try {
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      if (bgCtxKeep) return;
+      const osc = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      // خیلی آرام؛ فقط برای زنده نگه داشتن AudioContext در بکگراند
+      g.gain.value = 0.00035;
+      osc.frequency.value = 48;
+      osc.type = "sine";
+      osc.connect(g);
+      g.connect(audioCtx.destination);
+      osc.start();
+      bgCtxKeep = { osc, g };
+    } catch {}
+  }
+
+  function stopCtxKeepAlive() {
+    if (!bgCtxKeep) return;
+    try {
+      bgCtxKeep.osc.stop();
+      bgCtxKeep.osc.disconnect();
+      bgCtxKeep.g.disconnect();
+    } catch {}
+    bgCtxKeep = null;
+  }
+
+  async function requestWakeLock() {
+    try {
+      if (!("wakeLock" in navigator)) return;
+      if (wakeLockSentinel) return;
+      wakeLockSentinel = await navigator.wakeLock.request("screen");
+      try {
+        wakeLockSentinel.addEventListener("release", () => {
+          wakeLockSentinel = null;
+        });
+      } catch {}
+    } catch {
+      wakeLockSentinel = null;
+    }
+  }
+
+  async function releaseWakeLock() {
+    try {
+      if (wakeLockSentinel) await wakeLockSentinel.release();
+    } catch {}
+    wakeLockSentinel = null;
+  }
+
+  function startBgWatch() {
+    if (bgWatchIv) return;
+    bgWatchIv = setInterval(() => {
+      if (!run || run.paused || soundMuted) return;
+      resumeBgIfNeeded();
+      startCtxKeepAlive();
+      requestWakeLock();
+    }, 3500);
+  }
+
+  function stopBgWatch() {
+    if (bgWatchIv) clearInterval(bgWatchIv);
+    bgWatchIv = 0;
+  }
+
+  function makeQuietKeepUrl() {
+    // سکوت مطلق را اندروید/آیفون می‌کشند؛ موج خیلی آروم نگه می‌دارد
+    try {
+      const sr = 16000;
+      const sec = 2;
+      const n = sr * sec;
+      const data = new ArrayBuffer(44 + n * 2);
+      const view = new DataView(data);
+      const w = (o, s) => {
+        for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i));
+      };
+      w(0, "RIFF");
+      view.setUint32(4, 36 + n * 2, true);
+      w(8, "WAVE");
+      w(12, "fmt ");
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true);
+      view.setUint32(24, sr, true);
+      view.setUint32(28, sr * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true);
+      w(36, "data");
+      view.setUint32(40, n * 2, true);
+      for (let i = 0; i < n; i++) {
+        const t = i / sr;
+        // دامنه خیلی کم؛ تقریباً نشنیده
+        const sample = Math.sin(2 * Math.PI * 55 * t) * 0.012;
+        let v = (sample * 32767) | 0;
+        if (v > 32767) v = 32767;
+        if (v < -32768) v = -32768;
+        view.setInt16(44 + i * 2, v, true);
+      }
+      const blob = new Blob([data], { type: "audio/wav" });
+      return URL.createObjectURL(blob);
+    } catch {
+      return VOICE_BASE + "silence.wav" + VOICE_Q;
+    }
+  }
+
+    function startBgKeepAlive() {
     if (soundMuted) return;
     bgKeepOn = true;
     unlockAudio();
@@ -476,18 +602,31 @@
     if (bgKeepAudio) {
       try {
         if (!bgKeepAudio.src && !bgKeepAudio.currentSrc) dead = true;
+        if (bgKeepAudio.paused) dead = dead || false;
       } catch {
         dead = true;
       }
     }
     if (!bgKeepAudio || dead) {
       try {
-        if (bgKeepAudio) liveAudios.delete(bgKeepAudio);
+        if (bgKeepAudio) {
+          liveAudios.delete(bgKeepAudio);
+          try {
+            bgKeepAudio.pause();
+          } catch {}
+        }
       } catch {}
-      const a = makeHtmlAudio(VOICE_BASE + "silence.wav" + VOICE_Q);
+      const a = makeHtmlAudio(makeQuietKeepUrl());
       a.loop = true;
-      a.volume = 0.001;
+      a.volume = 0.045;
+      a.muted = false;
       bgKeepAudio = a;
+    } else {
+      try {
+        bgKeepAudio.muted = false;
+        bgKeepAudio.volume = 0.045;
+        bgKeepAudio.loop = true;
+      } catch {}
     }
     const p = bgKeepAudio.play();
     if (p && typeof p.then === "function") {
@@ -495,11 +634,17 @@
         bgKeepAudio = null;
       });
     }
+    startCtxKeepAlive();
     setMediaPlaying(true, (run && run.title) || "ست‌یار");
+    startBgWatch();
+    requestWakeLock();
   }
 
   function stopBgKeepAlive() {
     bgKeepOn = false;
+    stopBgWatch();
+    stopCtxKeepAlive();
+    releaseWakeLock();
     setMediaPlaying(false);
     if (!bgKeepAudio) return;
     try {
@@ -513,21 +658,34 @@
   }
 
   function resumeBgIfNeeded() {
-    if (!run || run.paused || soundMuted || !bgKeepOn) return;
+    if (!run || run.paused || soundMuted) return;
+    bgKeepOn = true;
     unlockAudio();
     try {
       if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
     } catch {}
     if (bgKeepAudio) {
+      try {
+        bgKeepAudio.muted = false;
+        bgKeepAudio.volume = 0.045;
+      } catch {}
       const p = bgKeepAudio.play();
-      if (p && typeof p.then === "function") p.catch(() => {});
+      if (p && typeof p.then === "function") {
+        p.catch(() => {
+          bgKeepAudio = null;
+          startBgKeepAlive();
+        });
+      }
     } else {
       startBgKeepAlive();
     }
+    startCtxKeepAlive();
     try {
       if (window.speechSynthesis) speechSynthesis.resume();
     } catch {}
     setMediaPlaying(true, (run && run.title) || "ست‌یار");
+    startBgWatch();
+    requestWakeLock();
   }
 
   // زنگ گرم باشگاهی — بم، نرم، بدون تیغ؛ برای ساعت‌ها تکرار آزار ندهد
@@ -3112,15 +3270,28 @@
       if (run && !run.paused) {
         run.lastTick = performance.now();
         if (!tickIv) loop();
+        requestWakeLock();
       }
     } else if (run && !run.paused) {
+      // رفت تو اپ دیگر — صدا و تایمر و ویبره باید زنده بمانند
+      unlockAudio();
+      startBgKeepAlive();
       resumeBgIfNeeded();
+      if (!tickIv) loop();
+      requestWakeLock();
     }
   });
   window.addEventListener("pagehide", () => {
-    if (run && !run.paused) resumeBgIfNeeded();
+    if (run && !run.paused) {
+      startBgKeepAlive();
+      resumeBgIfNeeded();
+    }
   });
   window.addEventListener("pageshow", () => resumeBgIfNeeded());
+  document.addEventListener("freeze", () => {
+    if (run && !run.paused) startBgKeepAlive();
+  });
+  document.addEventListener("resume", () => resumeBgIfNeeded());
 
   // Unlock audio on first tap (iOS/Android)
   const unlockOnce = () => unlockAudio();
