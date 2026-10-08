@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "120";
+  const APP_VER = "121";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -67,7 +67,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=120";
+  const VOICE_Q = "?v=121";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -921,8 +921,7 @@
   }
 
   function beepSoftRing(atMs) {
-    // شروع حرکت: زنگ نرم و تمیز — بدون تیزی و بدون گرفتگی
-    buzz([180, 60, 220]);
+    // شروع: زنگ نرم شبیه نوتیف آیفون — ویبره بعد از زنگ تا قاطی نشود
     if (document.hidden || !audioOutputOk()) {
       setTimeout(() => playHtmlBeep(), atMs || 0);
     }
@@ -930,33 +929,31 @@
       atMs: atMs || 0,
       stack: false,
       bright: true,
-      peak: 0.85,
-      total: 0.55,
+      peak: 0.62,
+      total: 0.48,
       notes: [
-        { f: 587.33, at: 0, dur: 0.2, g: 0.55 },
-        { f: 783.99, at: 0.14, dur: 0.32, g: 0.7 }
+        { f: 1046.5, at: 0, dur: 0.28, g: 0.42 },
+        { f: 1318.5, at: 0.07, dur: 0.36, g: 0.36 }
       ]
     });
+    setTimeout(() => fireVibrate([90, 40, 110]), 280);
   }
 
   function beepMidChime() {
-    // وسط فاز: یک دینگ نرم جدا از شروع و ۴ث
-    buzz([140, 50, 160]);
-    if (document.hidden || !audioOutputOk()) {
-      playHtmlBeep();
-    }
+    // وسط: یک تیک نرم جدا
+    if (document.hidden || !audioOutputOk()) playHtmlBeep();
     playWarmChime({
       stack: false,
       bright: true,
-      peak: 0.7,
-      total: 0.35,
-      notes: [{ f: 698.46, at: 0, dur: 0.22, g: 0.6 }]
+      peak: 0.5,
+      total: 0.28,
+      notes: [{ f: 880.0, at: 0, dur: 0.16, g: 0.4 }]
     });
+    setTimeout(() => fireVibrate([70, 30, 90]), 180);
   }
 
   function beepSoftDouble() {
-    // ۴ ثانیه: سه تیک شفاف و کوتاه — بم گرفته نیست
-    buzz([100, 50, 100, 50, 100, 50, 160]);
+    // ۴ث: دو تیک کوتاه شفاف (نه بم گرفته)
     const tick = (at) => {
       if (document.hidden || !audioOutputOk()) {
         setTimeout(() => playHtmlWarnBeep(), at);
@@ -965,14 +962,14 @@
         atMs: at,
         stack: true,
         bright: true,
-        peak: 0.75,
-        total: 0.16,
-        notes: [{ f: 987.77, at: 0, dur: 0.1, g: 0.65 }]
+        peak: 0.55,
+        total: 0.14,
+        notes: [{ f: 1174.7, at: 0, dur: 0.09, g: 0.45 }]
       });
     };
     tick(0);
-    setTimeout(() => tick(0), 220);
-    setTimeout(() => tick(0), 440);
+    setTimeout(() => tick(0), 200);
+    setTimeout(() => fireVibrate([60, 40, 60, 40, 80]), 420);
   }
 
   function beepWhite(ms, soft) {
@@ -2930,28 +2927,26 @@
       soundAlive(gen, tok) && (seq == null || announceAlive(seq));
     if (!alive()) return false;
     startBgKeepAlive();
-    // فقط کش را گرم کن — پخش همزمان mute نکن (با phrase قاطی می‌شد)
+    // گرم‌کردن کش بدون مسدود کردن اعلام
     if (nm) {
       primedExpectName = nm;
-      ensureSpeakBlob(nm, 5000).catch(() => {});
-      primeHtmlSpeak(nm).catch(() => {});
+      cacheCloudEdgeBlob(nm).catch(() => {});
     }
     let pref = await playVoiceFile("phrase-next.mp3", 1);
     if (!alive()) return false;
-    if (!pref) pref = await speakNameNow("حرکت بعد", 1);
+    if (!pref) pref = await speakFaAny("حرکت بعد", 1);
     if (!alive()) return false;
     if (!nm) return !!pref;
-    await sleep(120);
+    await sleep(90);
     if (!alive()) return false;
-    // اسم حرکت بعد — مسیر ساده و قطعی
-    let said = await speakNameNow(nm, 1);
-    if (!said && alive()) {
-      await sleep(200);
-      if (alive()) said = await speakNameNow(nm, 1);
-    }
-    if (!said && alive()) said = await speakMoveNameOnly(nm, 1);
+    // مسیر قبلی که داخل اپ اسم را می‌گفت
+    let said = await speakMoveNameOnly(nm, 1);
     if (!said && alive()) said = await speakFaAny(nm, 1);
-    if (alive() && nm) ensurePrimedFor(nm).catch(() => {});
+    if (!said && alive()) said = await playCloudEdgeTts(nm, 1);
+    if (alive() && nm) {
+      cacheCloudEdgeBlob(nm).catch(() => {});
+      ensurePrimedFor(nm).catch(() => {});
+    }
     return !!said;
   }
 
@@ -2970,9 +2965,8 @@
       // برای کار: اسم را زود گرم کن
       const warmWork =
         step.kind === "work" && step.name ? warmFaTts(step.name) : Promise.resolve();
-      buzzHeavy();
       if (step.kind === "work") {
-        // بوق، ~۲ث، بعد همان اسمی که در استراحت گفته شد را دوباره بگو
+        // بوق تمیز اول؛ ویبره با تأخیر داخل خود بوق
         startBgKeepAlive();
         beepSoftRing(0);
         const nm = normSpeakKey(step.name);
@@ -2997,14 +2991,8 @@
             }
           }
         } catch {}
-        // در ۲ث کش اسم را پر کن
-        const prep = nm
-          ? Promise.all([
-              ensureSpeakBlob(nm, 2200),
-              primeHtmlSpeak(nm).catch(() => false)
-            ])
-          : Promise.resolve();
-        prep.catch(() => {});
+        // در ۲ث کش را گرم کن؛ اعلام با مسیر قبلی
+        if (nm) cacheCloudEdgeBlob(nm).catch(() => {});
         const t0 = Date.now();
         while (Date.now() - t0 < 2000) {
           if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
@@ -3022,21 +3010,16 @@
           if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
         } catch {}
         if (!nm) return;
-        try {
-          await prep;
-        } catch {}
-        let ok = false;
-        if (announceAlive(seq) && soundAlive(gen, tok)) {
+        let ok = await speakMoveNameOnly(nm, 1);
+        if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
+          ok = await speakFaAny(nm, 1);
+        }
+        if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
+          ok = await playCloudEdgeTts(nm, 1);
+        }
+        // بکگراند: اگر هنوز نگفت از بلاب کش
+        if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
           ok = await speakNameNow(nm, 1);
-        }
-        if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
-          await sleep(200);
-          if (announceAlive(seq) && soundAlive(gen, tok)) {
-            ok = await speakNameNow(nm, 1);
-          }
-        }
-        if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
-          ok = await speakMoveNameOnly(nm, 1);
         }
         if (primedExpectName === nm) clearPrimedWork();
         return;
@@ -3044,19 +3027,16 @@
       startBgKeepAlive();
       const nextEarly = isRest ? step.nextName || "" : "";
       if (nextEarly) {
-        ensureSpeakBlob(normSpeakKey(nextEarly), 5000).catch(() => {});
-        primeHtmlSpeak(normSpeakKey(nextEarly)).catch(() => {});
+        cacheCloudEdgeBlob(normSpeakKey(nextEarly)).catch(() => {});
+        warmFaTts(nextEarly).catch(() => {});
       }
       beepSoftRing(0);
-      const restGap = step.kind === "rest-set" ? 220 : 140;
+      const restGap = step.kind === "rest-set" ? 200 : 120;
       await sleep(restGap);
       if (!announceAlive(seq)) return;
       if (isRest) {
         const next = step.nextName || "";
-        if (next) {
-          warmFaTts(next).catch(() => {});
-          await ensureSpeakBlob(normSpeakKey(next), 3000).catch(() => {});
-        }
+        if (next) warmFaTts(next).catch(() => {});
         await speakNextMoveName(next, seq);
         return;
       }
