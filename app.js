@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "33";
+  const APP_VER = "34";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=33";
+  const VOICE_Q = "?v=34";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -433,7 +433,7 @@
     }
   }
 
-  function speakFaSynthAsync(text, vol, lang) {
+  function speakFaSynthAsync(text, vol, lang, opts) {
     return new Promise((resolve) => {
       if (soundMuted || !window.speechSynthesis || !text) {
         resolve(false);
@@ -457,11 +457,12 @@
         try {
           const u = new SpeechSynthesisUtterance(String(text));
           const useEn = lang === "en" && enVoice;
+          const o = opts || {};
           if (useEn) {
             u.voice = enVoice;
             u.lang = enVoice.lang || "en-US";
-            u.rate = 1.12;
-            u.pitch = 1.15;
+            u.rate = o.rate != null ? o.rate : 1.12;
+            u.pitch = o.pitch != null ? o.pitch : 1.15;
           } else {
             u.lang = "fa-IR";
             if (faVoice) {
@@ -469,8 +470,8 @@
               u.lang = faVoice.lang || "fa-IR";
             }
             // ورزشی، پرانرژی، نه کند و غمگین
-            u.rate = 1.22;
-            u.pitch = 1.22;
+            u.rate = o.rate != null ? o.rate : 1.22;
+            u.pitch = o.pitch != null ? o.pitch : 1.22;
           }
           u.volume = vol == null ? 1 : Math.min(1, vol);
           let finished = false;
@@ -666,7 +667,7 @@
       const name = step.nextName || "";
       if (!name) return;
       await speakFaSynthAsync("حرکت بعد", 1);
-      await sleep(120);
+      await sleep(35);
       await speakMoveName(name, 1);
     });
   }
@@ -676,10 +677,10 @@
     if (n <= 0) return;
     return queueAnnounce(async () => {
       buzz([55, 30, 90]);
-      await sleep(50);
-      // فقط مقدار انجام‌شده؛ اسم را دوباره نگو
-      const phrase = faNum(n) + " ثانیه انجام دادی";
-      await speakFaSynthAsync(phrase, 1);
+      await sleep(40);
+      // تشویقی و پرانرژی — فقط مقدار انجام‌شده
+      const phrase = "عالی، " + faNum(n) + " ثانیه انجام دادی";
+      await speakFaSynthAsync(phrase, 1, "fa", { rate: 1.28, pitch: 1.28 });
     });
   }
 
