@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "54";
+  const APP_VER = "55";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=54";
+  const VOICE_Q = "?v=55";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -804,21 +804,9 @@
       if (!announceAlive(seq)) return;
       const ios = isIOSLike();
       buzz(step.kind === "work" ? [100, 45, 100, 45, 160] : [70, 35, 70, 35, 90]);
-      // روی آیفون اول حرف بزن بعد زنگ؛ وگرنه تلفظ قطع می‌شود
-      if (ios) {
-        await sleep(120);
-        if (!announceAlive(seq)) return;
-        if (step.kind === "work") {
-          if (step.name) await speakMoveName(step.name, 1);
-        } else if (step.nextName) {
-          await speakNextMoveName(step.nextName, seq);
-        }
-        if (!announceAlive(seq)) return;
-        beepWhite(400, false);
-        return;
-      }
+      // همه جا: اول بوق، بعد اسم
       beepWhite(400, false);
-      await sleep(400);
+      await sleep(ios ? 550 : 400);
       if (!announceAlive(seq)) return;
       if (step.kind === "work") {
         if (step.name) await speakMoveName(step.name, 1);
