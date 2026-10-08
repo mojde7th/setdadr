@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "101";
+  const APP_VER = "102";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -34,6 +34,8 @@
   let announceChain = Promise.resolve();
   let soundGen = 0;
   const liveAudios = new Set();
+  const liveSources = new Set();
+  const activeBeeps = [];
   let primedWorkName = "";
   let primedWorkBlob = null;
   const MUTE_LS = "setdadr-mute";
@@ -45,7 +47,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=101";
+  const VOICE_Q = "?v=102";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -328,21 +330,30 @@
   }
 
   function stopBeep() {
-    if (!activeBeep) return;
-    try {
-      const now = audioCtx ? audioCtx.currentTime : 0;
-      if (activeBeep.gain) {
-        activeBeep.gain.gain.cancelScheduledValues(now);
-        activeBeep.gain.gain.setValueAtTime(0.0001, now);
-      }
-      const list = activeBeep.oscs || [activeBeep.osc, activeBeep.osc2, activeBeep.osc3].filter(Boolean);
-      list.forEach((o) => {
-        try {
-          o.stop(now);
-          o.disconnect();
-        } catch {}
-      });
-    } catch {}
+    const now = audioCtx ? audioCtx.currentTime : 0;
+    const all = activeBeeps.slice();
+    if (activeBeep && all.indexOf(activeBeep) === -1) all.push(activeBeep);
+    all.forEach((entry) => {
+      try {
+        if (entry && entry.gain) {
+          entry.gain.gain.cancelScheduledValues(now);
+          entry.gain.gain.setValueAtTime(0.0001, now);
+          try {
+            entry.gain.disconnect();
+          } catch {}
+        }
+        const list =
+          (entry && entry.oscs) ||
+          (entry ? [entry.osc, entry.osc2, entry.osc3].filter(Boolean) : []);
+        list.forEach((o) => {
+          try {
+            o.stop(now);
+            o.disconnect();
+          } catch {}
+        });
+      } catch {}
+    });
+    activeBeeps.length = 0;
     activeBeep = null;
   }
 
@@ -379,6 +390,17 @@
     liveAudios.clear();
   }
 
+  function killAllSources() {
+    liveSources.forEach((src) => {
+      try {
+        src.onended = null;
+        src.stop();
+        src.disconnect();
+      } catch {}
+    });
+    liveSources.clear();
+  }
+
   function stopAllSound() {
     // نسل صدا را عوض کن تا هر پخش/اعلام قبلی بی‌اثر شود
     soundGen += 1;
@@ -388,6 +410,7 @@
     stopBeep();
     stopVoiceFile();
     killAllHtmlAudio();
+    killAllSources();
     if (window.speechSynthesis) {
       try {
         speechSynthesis.cancel();
@@ -464,11 +487,15 @@
   function playWarmChime(opts) {
     if (soundMuted) return;
     const o = opts || {};
+    const gen = soundGen;
     try {
       unlockAudio();
       if (!audioCtx) return;
       const start = () => {
-        if (!o.stack) stopBeep();
+        if (gen !== soundGen) return;
+        // همیشه بوق‌های قبلی را بکش تا قاطی نشود
+        stopBeep();
+        if (gen !== soundGen) return;
         const t0 = audioCtx.currentTime + (o.atMs || 0) / 1000;
         const master = audioCtx.createGain();
         const lp = audioCtx.createBiquadFilter();
@@ -502,7 +529,6 @@
           g1.gain.setValueAtTime(0.0001, gt);
           g1.gain.exponentialRampToValueAtTime(n.g * 0.7, gt + 0.05);
           g1.gain.exponentialRampToValueAtTime(0.0001, gt + n.dur);
-          // هارمونیک دوم خیلی ملایم — تیز نشود
           g2.gain.setValueAtTime(0.0001, gt);
           g2.gain.exponentialRampToValueAtTime(n.g * 0.12, gt + 0.06);
           g2.gain.exponentialRampToValueAtTime(0.0001, gt + n.dur);
@@ -516,7 +542,9 @@
           o2.stop(gt + n.dur + 0.03);
           oscs.push(o1, o2);
         });
-        activeBeep = { osc: oscs[0], gain: master, oscs };
+        const entry = { osc: oscs[0], gain: master, oscs };
+        activeBeep = entry;
+        activeBeeps.push(entry);
       };
       if (audioCtx.state === "suspended") audioCtx.resume().then(start).catch(start);
       else start();
@@ -526,7 +554,7 @@
   function beepSoftRing(atMs) {
     playWarmChime({
       atMs: atMs || 0,
-      stack: true,
+      stack: false,
       peak: 1.05,
       total: 0.55,
       notes: [
@@ -1055,13 +1083,23 @@
             src.buffer = buf;
             src.connect(g);
             g.connect(audioCtx.destination);
+            liveSources.add(src);
             voicePlayer = src;
-            src.onended = finish;
+            const drop = () => {
+              try {
+                liveSources.delete(src);
+              } catch {}
+              finish();
+            };
+            src.onended = drop;
             src.start();
             setTimeout(() => {
               if (gen !== soundGen) {
                 try {
                   src.stop();
+                } catch {}
+                try {
+                  liveSources.delete(src);
                 } catch {}
               }
               finish();
@@ -1135,8 +1173,9 @@
         } catch {}
       }
       stopVoiceFile();
+      const gen = soundGen;
       const buf = await loadVoiceBuffer(rel);
-      if (!buf) return false;
+      if (!buf || gen !== soundGen) return false;
       const gain = Math.max(0.05, Math.min(1, vol == null ? 0.98 : vol));
       await new Promise((resolve) => {
         let done = false;
@@ -1145,18 +1184,34 @@
           done = true;
           resolve();
         };
+        if (gen !== soundGen) {
+          finish();
+          return;
+        }
         const src = audioCtx.createBufferSource();
         const g = audioCtx.createGain();
         g.gain.value = gain;
         src.buffer = buf;
         src.connect(g);
         g.connect(audioCtx.destination);
+        liveSources.add(src);
         voicePlayer = src;
-        src.onended = finish;
+        src.onended = () => {
+          liveSources.delete(src);
+          finish();
+        };
         src.start();
-        setTimeout(finish, Math.min(8000, (buf.duration + 0.4) * 1000));
+        setTimeout(() => {
+          if (gen !== soundGen) {
+            try {
+              src.stop();
+            } catch {}
+            liveSources.delete(src);
+          }
+          finish();
+        }, Math.min(8000, (buf.duration + 0.4) * 1000));
       });
-      return true;
+      return gen === soundGen;
     } catch {
       return false;
     }
@@ -2049,7 +2104,9 @@
         unlockAudio();
         const buf = await loadVoiceBuffer(clip);
         if (buf && audioCtx) {
+          const gen = soundGen;
           stopVoiceFile();
+          if (gen !== soundGen) return false;
           await new Promise((resolve) => {
             const src = audioCtx.createBufferSource();
             const g = audioCtx.createGain();
@@ -2057,12 +2114,24 @@
             src.buffer = buf;
             src.connect(g);
             g.connect(audioCtx.destination);
+            liveSources.add(src);
             voicePlayer = src;
-            src.onended = resolve;
+            src.onended = () => {
+              liveSources.delete(src);
+              resolve();
+            };
             src.start();
-            setTimeout(resolve, Math.min(5000, (buf.duration + 0.3) * 1000));
+            setTimeout(() => {
+              if (gen !== soundGen) {
+                try {
+                  src.stop();
+                } catch {}
+                liveSources.delete(src);
+              }
+              resolve();
+            }, Math.min(5000, (buf.duration + 0.3) * 1000));
           });
-          return true;
+          return gen === soundGen;
         }
       } catch {}
     }
@@ -2614,7 +2683,13 @@
     run.prevLeftCeil = Math.ceil(step.dur);
     run.lastTick = performance.now();
     paintRun(false);
-    speakPhase(step);
+    // یک تیک صبر تا قطع صدای قبلی کامل بنشیند، بعد اعلام جدید
+    const myGen = soundGen;
+    const mySeq = announceSeq;
+    setTimeout(() => {
+      if (!run || soundGen !== myGen || announceSeq !== mySeq) return;
+      speakPhase(step);
+    }, 40);
     loop();
   }
 
@@ -2838,8 +2913,9 @@
 
   $("#btnSkip").addEventListener("click", () => {
     if (!run) return;
-    // لمس کاربر = آنلاک؛ advance خودش همه صدای قبلی را می‌کشد
     unlockAudio();
+    // اول همه‌چیز را بکش؛ بعد برو فاز بعد
+    stopAllSound();
     run.skipped = (run.skipped || 0) + 1;
     advance();
   });
