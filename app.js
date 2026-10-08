@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "123";
+  const APP_VER = "124";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -67,7 +67,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=123";
+  const VOICE_Q = "?v=124";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -320,18 +320,23 @@
   // اجباری — گیر ندهد؛ ویبره API + ضربه اسپیکر
   function forceHaptic(kind) {
     const patterns = {
-      start: [220, 70, 280],
-      warn: [90, 45, 90, 45, 120, 45, 160],
-      mid: [140, 50, 160],
-      heavy: [320, 90, 420, 90, 550]
+      start: [180, 60, 220],
+      warn: [80, 40, 80, 40, 100, 40, 140],
+      mid: [120, 50, 140],
+      heavy: [300, 80, 400, 80, 500]
     };
     const p = patterns[kind] || patterns.heavy;
     fireVibrate(p);
-    playHapticThump(kind === "heavy" ? 1.45 : 1.2);
-    setTimeout(() => {
-      fireVibrate(p);
-      playHapticThump(1.05);
-    }, 360);
+    // ضربهٔ اسپیکر فقط برای heavy — روی بوق‌ها صدای بمب ندهد
+    if (kind === "heavy") {
+      playHapticThump(1.3);
+      setTimeout(() => {
+        fireVibrate(p);
+        playHapticThump(1.0);
+      }, 360);
+    } else {
+      setTimeout(() => fireVibrate(p), 300);
+    }
   }
 
   function buzz(pattern) {
@@ -617,6 +622,25 @@
       resumeBgIfNeeded();
       startCtxKeepAlive();
       requestWakeLock();
+      // پخش‌کنندهٔ چسبان را زنده نگه دار
+      try {
+        const a = stickySpeakAudio;
+        if (a && a.paused) {
+          a.muted = true;
+          a.volume = 0.001;
+          if (!a.src) a.src = VOICE_BASE + "silence.wav" + VOICE_Q;
+          const p = a.play();
+          if (p && typeof p.then === "function") {
+            p.then(() => {
+              try {
+                a.pause();
+                a.muted = false;
+                a.volume = 1;
+              } catch {}
+            }).catch(() => {});
+          }
+        }
+      } catch {}
     }, 3500);
   }
 
@@ -928,7 +952,7 @@
   }
 
   function beepSoftRing(atMs) {
-    // شروع حرکت: یک زنگ بلند بالارونده — مشخصاً «برو»
+    // شروع: یک زنگ شیشه‌ای نرم و بلند — «شروع»
     if (document.hidden || !audioOutputOk()) {
       setTimeout(() => playHtmlBeep(), atMs || 0);
     }
@@ -936,40 +960,36 @@
       atMs: atMs || 0,
       stack: false,
       bright: true,
-      peak: 0.72,
-      total: 0.7,
+      peak: 0.58,
+      total: 0.65,
       notes: [
-        { f: 523.25, at: 0, dur: 0.22, g: 0.45 },
-        { f: 659.25, at: 0.12, dur: 0.28, g: 0.55 },
-        { f: 880.0, at: 0.28, dur: 0.4, g: 0.65 }
+        { f: 783.99, at: 0, dur: 0.35, g: 0.4 },
+        { f: 1046.5, at: 0.1, dur: 0.45, g: 0.48 }
       ]
     });
-    setTimeout(() => forceHaptic("start"), 250);
+    setTimeout(() => forceHaptic("start"), 280);
   }
 
-  function beepMidChime() {
-    // دیگر برای عالی صدا نمی‌زند؛ نگه داشته شده اگر جایی لازم شد
-  }
+  function beepMidChime() {}
 
   function beepSoftDouble() {
-    // ۴ ثانیه مانده: سه ضربه کوتاه بم — با زنگ شروع قاطی نمی‌شود
-    const tick = (at) => {
+    // ۴ث مانده: دو تیک کوتاه بلورین — کاملاً جدا از زنگ شروع (نه بمب)
+    const tick = (at, freq) => {
       if (document.hidden || !audioOutputOk()) {
         setTimeout(() => playHtmlWarnBeep(), at);
       }
       playWarmChime({
         atMs: at,
         stack: true,
-        bright: false,
-        peak: 0.8,
-        total: 0.18,
-        notes: [{ f: 220.0, at: 0, dur: 0.12, g: 0.75 }]
+        bright: true,
+        peak: 0.5,
+        total: 0.15,
+        notes: [{ f: freq, at: 0, dur: 0.1, g: 0.42 }]
       });
     };
-    tick(0);
-    setTimeout(() => tick(0), 240);
-    setTimeout(() => tick(0), 480);
-    setTimeout(() => forceHaptic("warn"), 300);
+    tick(0, 1318.5);
+    setTimeout(() => tick(0, 1568.0), 190);
+    setTimeout(() => forceHaptic("warn"), 260);
   }
 
   function beepWhite(ms, soft) {
@@ -2357,6 +2377,64 @@
     }
   }
 
+  async function playUrlSticky(src, vol) {
+    if (!src || soundMuted) return false;
+    const gen = soundGen;
+    const tok = speakToken;
+    if (!soundAlive(gen, tok)) return false;
+    startBgKeepAlive();
+    unlockAudio();
+    const a = ensureStickySpeakAudio();
+    try {
+      a.onended = null;
+      a.onerror = null;
+      a.muted = false;
+      a.volume = Math.max(0.3, Math.min(1, vol == null ? 1 : vol));
+      a.src = src;
+      try {
+        a.load();
+      } catch {}
+    } catch {}
+    return await new Promise((resolve) => {
+      let done = false;
+      const finish = (ok) => {
+        if (done) return;
+        done = true;
+        startBgKeepAlive();
+        resolve(!!ok && soundAlive(gen, tok));
+      };
+      a.onended = () => finish(true);
+      a.onerror = () => finish(false);
+      const p = a.play();
+      if (p && typeof p.then === "function") {
+        p.then(() => {
+          if (!soundAlive(gen, tok)) {
+            try {
+              a.pause();
+            } catch {}
+            finish(false);
+          }
+        }).catch(() => finish(false));
+      }
+      setTimeout(() => {
+        if (done) return;
+        if (!soundAlive(gen, tok)) {
+          finish(false);
+          return;
+        }
+        if (!a.paused || (a.currentTime || 0) > 0.02) {
+          const left = Math.max(
+            500,
+            Math.min(10000, (isFinite(a.duration) ? a.duration * 1000 : 3000) + 400)
+          );
+          setTimeout(() => finish(true), left);
+          return;
+        }
+        finish(false);
+      }, document.hidden ? 5000 : 2500);
+    });
+  }
+
   async function playBlobSticky(blob, vol) {
     if (!blob || soundMuted) return false;
     const gen = soundGen;
@@ -3017,11 +3095,36 @@
       soundAlive(gen, tok) && (seq == null || announceAlive(seq));
     if (!alive()) return false;
     startBgKeepAlive();
-    // گرم‌کردن کش بدون مسدود کردن اعلام
     if (nm) {
       primedExpectName = nm;
       cacheCloudEdgeBlob(nm).catch(() => {});
     }
+
+    // بکگراند: فقط مسیر چسبان (فایل محلی + بلاب کش)
+    if (document.hidden) {
+      let pref = await playUrlSticky(VOICE_BASE + "phrase-next.mp3" + VOICE_Q, 1);
+      if (!alive()) return false;
+      if (!pref) pref = await speakNameNow("حرکت بعد", 1);
+      if (!alive()) return false;
+      if (!nm) return !!pref;
+      await sleep(100);
+      if (!alive()) return false;
+      let blob = null;
+      try {
+        blob = await loadDynFaFromCache(nm);
+      } catch {}
+      if (!blob) {
+        try {
+          blob = await cacheCloudEdgeBlob(nm);
+        } catch {}
+      }
+      if (!alive()) return false;
+      let said = false;
+      if (blob) said = await playBlobSticky(blob, 1);
+      if (!said && alive()) said = await speakNameNow(nm, 1);
+      return !!said;
+    }
+
     let pref = await playVoiceFile("phrase-next.mp3", 1);
     if (!alive()) return false;
     if (!pref) pref = await speakFaAny("حرکت بعد", 1);
@@ -3029,15 +3132,9 @@
     if (!nm) return !!pref;
     await sleep(90);
     if (!alive()) return false;
-    let said = false;
-    if (document.hidden) {
-      // بکگراند: اول بلاب چسبان
-      said = await speakNameNow(nm, 1);
-    }
-    if (!said && alive()) said = await speakMoveNameOnly(nm, 1);
+    let said = await speakMoveNameOnly(nm, 1);
     if (!said && alive()) said = await speakFaAny(nm, 1);
     if (!said && alive()) said = await playCloudEdgeTts(nm, 1);
-    if (!said && alive()) said = await speakNameNow(nm, 1);
     if (alive() && nm) {
       cacheCloudEdgeBlob(nm).catch(() => {});
       ensurePrimedFor(nm).catch(() => {});
@@ -3107,19 +3204,29 @@
         if (!nm) return;
         let ok = false;
         if (document.hidden) {
-          ok = await speakNameNow(nm, 1);
-        }
-        if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
+          let blob = null;
+          try {
+            blob = await loadDynFaFromCache(nm);
+          } catch {}
+          if (!blob) {
+            try {
+              blob = await cacheCloudEdgeBlob(nm);
+            } catch {}
+          }
+          if (blob && announceAlive(seq) && soundAlive(gen, tok)) {
+            ok = await playBlobSticky(blob, 1);
+          }
+          if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
+            ok = await speakNameNow(nm, 1);
+          }
+        } else {
           ok = await speakMoveNameOnly(nm, 1);
-        }
-        if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
-          ok = await speakFaAny(nm, 1);
-        }
-        if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
-          ok = await playCloudEdgeTts(nm, 1);
-        }
-        if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
-          ok = await speakNameNow(nm, 1);
+          if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
+            ok = await speakFaAny(nm, 1);
+          }
+          if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
+            ok = await playCloudEdgeTts(nm, 1);
+          }
         }
         if (primedExpectName === nm) clearPrimedWork();
         return;
