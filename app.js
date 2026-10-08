@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "121";
+  const APP_VER = "122";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -67,13 +67,14 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=121";
+  const VOICE_Q = "?v=122";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
   let tickIv = 0;
   let bgKeepAudio = null;
   let bgKeepOn = false;
+  let stickySpeakAudio = null;
   let bgWatchIv = 0;
   let bgCtxKeep = null;
   let wakeLockSentinel = null;
@@ -275,18 +276,15 @@
   function fireVibrate(pattern) {
     if (!canVibrateApi()) return false;
     try {
-      const p = pattern && pattern.length ? pattern : [240, 80, 320];
       navigator.vibrate(0);
-      const ok = navigator.vibrate(p);
-      return ok !== false;
+      return navigator.vibrate(pattern && pattern.length ? pattern : [250, 80, 300]) !== false;
     } catch {
       return false;
     }
   }
 
-  // ضربه بدنی از اسپیکر — همیشه، چون خیلی گوشی‌ها vibrate وب ندارند
   function playHapticThump(level) {
-    const amp = Math.max(0.5, level == null ? 1 : level);
+    const amp = Math.max(0.7, level == null ? 1.2 : level);
     try {
       unlockAudio();
       if (!audioCtx) {
@@ -295,17 +293,17 @@
       }
       if (!audioCtx) return;
       if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
-      const t0 = audioCtx.currentTime;
-      const burst = (at, freq, dur, gain) => {
+      const t0 = audioCtx.currentTime + 0.001;
+      const hit = (at, freq, dur, g0) => {
         const osc = audioCtx.createOscillator();
         const g = audioCtx.createGain();
         const lp = audioCtx.createBiquadFilter();
         lp.type = "lowpass";
-        lp.frequency.value = 220;
+        lp.frequency.value = 200;
         osc.type = "square";
         osc.frequency.setValueAtTime(freq, t0 + at);
         g.gain.setValueAtTime(0.0001, t0 + at);
-        g.gain.exponentialRampToValueAtTime(gain * amp, t0 + at + 0.008);
+        g.gain.exponentialRampToValueAtTime(g0 * amp, t0 + at + 0.006);
         g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + dur);
         osc.connect(g);
         g.connect(lp);
@@ -313,33 +311,40 @@
         osc.start(t0 + at);
         osc.stop(t0 + at + dur + 0.02);
       };
-      burst(0, 70, 0.11, 1.2);
-      burst(0.12, 55, 0.13, 1.35);
-      burst(0.28, 48, 0.16, 1.15);
+      hit(0, 72, 0.1, 1.35);
+      hit(0.11, 52, 0.12, 1.45);
+      hit(0.26, 40, 0.15, 1.2);
     } catch {}
   }
 
-  function buzz(pattern) {
-    // ویبره سخت‌افزاری + همیشه ضربه صوتی
-    const p = pattern && pattern.length ? pattern : [220, 70, 280, 70, 360];
+  // اجباری — گیر ندهد؛ ویبره API + ضربه اسپیکر
+  function forceHaptic(kind) {
+    const patterns = {
+      start: [220, 70, 280],
+      warn: [90, 45, 90, 45, 120, 45, 160],
+      mid: [140, 50, 160],
+      heavy: [320, 90, 420, 90, 550]
+    };
+    const p = patterns[kind] || patterns.heavy;
     fireVibrate(p);
-    playHapticThump(1.15);
+    playHapticThump(kind === "heavy" ? 1.45 : 1.2);
     setTimeout(() => {
-      try {
-        fireVibrate([280, 60, 400]);
-        playHapticThump(0.95);
-      } catch {}
+      fireVibrate(p);
+      playHapticThump(1.05);
+    }, 360);
+  }
+
+  function buzz(pattern) {
+    fireVibrate(pattern && pattern.length ? pattern : [220, 70, 280, 70, 360]);
+    playHapticThump(1.2);
+    setTimeout(() => {
+      fireVibrate([260, 60, 360]);
+      playHapticThump(1.0);
     }, 380);
   }
 
   function buzzHeavy() {
-    fireVibrate([300, 80, 400, 80, 500, 100, 650]);
-    playHapticThump(1.35);
-    setTimeout(() => playHapticThump(1.2), 140);
-    setTimeout(() => {
-      fireVibrate([450, 80, 600]);
-      playHapticThump(1.25);
-    }, 400);
+    forceHaptic("heavy");
   }
 
   function paintMuteBtn() {
@@ -475,6 +480,7 @@
     const keep = bgKeepAudio;
     liveAudios.forEach((a) => {
       if (keep && a === keep) return;
+      if (stickySpeakAudio && a === stickySpeakAudio) return;
       if (primedSpeakAudios.has(a)) return;
       try {
         a.onended = null;
@@ -494,6 +500,7 @@
     });
     liveAudios.clear();
     if (keep) liveAudios.add(keep);
+    if (stickySpeakAudio) liveAudios.add(stickySpeakAudio);
     primedSpeakAudios.forEach((a) => liveAudios.add(a));
   }
 
@@ -921,7 +928,7 @@
   }
 
   function beepSoftRing(atMs) {
-    // شروع: زنگ نرم شبیه نوتیف آیفون — ویبره بعد از زنگ تا قاطی نشود
+    // شروع: زنگ نرم آیفونی + هپتیک اجباری
     if (document.hidden || !audioOutputOk()) {
       setTimeout(() => playHtmlBeep(), atMs || 0);
     }
@@ -936,11 +943,10 @@
         { f: 1318.5, at: 0.07, dur: 0.36, g: 0.36 }
       ]
     });
-    setTimeout(() => fireVibrate([90, 40, 110]), 280);
+    setTimeout(() => forceHaptic("start"), 200);
   }
 
   function beepMidChime() {
-    // وسط: یک تیک نرم جدا
     if (document.hidden || !audioOutputOk()) playHtmlBeep();
     playWarmChime({
       stack: false,
@@ -949,11 +955,10 @@
       total: 0.28,
       notes: [{ f: 880.0, at: 0, dur: 0.16, g: 0.4 }]
     });
-    setTimeout(() => fireVibrate([70, 30, 90]), 180);
+    setTimeout(() => forceHaptic("mid"), 120);
   }
 
   function beepSoftDouble() {
-    // ۴ث: دو تیک کوتاه شفاف (نه بم گرفته)
     const tick = (at) => {
       if (document.hidden || !audioOutputOk()) {
         setTimeout(() => playHtmlWarnBeep(), at);
@@ -969,7 +974,7 @@
     };
     tick(0);
     setTimeout(() => tick(0), 200);
-    setTimeout(() => fireVibrate([60, 40, 60, 40, 80]), 420);
+    setTimeout(() => forceHaptic("warn"), 280);
   }
 
   function beepWhite(ms, soft) {
@@ -2324,6 +2329,105 @@
   }
 
   // پخش قطعی اسم: کلیپ ثابت → بلاب تازه → ابر
+  function ensureStickySpeakAudio() {
+    if (stickySpeakAudio) return stickySpeakAudio;
+    const a = new Audio();
+    a.playsInline = true;
+    a.setAttribute("playsinline", "");
+    a.setAttribute("webkit-playsinline", "");
+    a.preload = "auto";
+    stickySpeakAudio = a;
+    liveAudios.add(a);
+    return a;
+  }
+
+  async function unlockStickySpeakAudio() {
+    try {
+      const a = ensureStickySpeakAudio();
+      // یک پخش بی‌صدای کوتاه روی ژست کاربر تا در بکگراند قفل نماند
+      a.src = VOICE_BASE + "silence.wav" + VOICE_Q;
+      a.volume = 0.001;
+      a.muted = true;
+      const p = a.play();
+      if (p && typeof p.then === "function") await p.catch(() => {});
+      a.pause();
+      try {
+        a.currentTime = 0;
+      } catch {}
+      a.muted = false;
+      a.volume = 1;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function playBlobSticky(blob, vol) {
+    if (!blob || soundMuted) return false;
+    const gen = soundGen;
+    const tok = speakToken;
+    if (!soundAlive(gen, tok)) return false;
+    startBgKeepAlive();
+    unlockAudio();
+    const a = ensureStickySpeakAudio();
+    const url = URL.createObjectURL(blob);
+    try {
+      a.onended = null;
+      a.onerror = null;
+      a.onplaying = null;
+      a.muted = false;
+      a.volume = Math.max(0.3, Math.min(1, vol == null ? 1 : vol));
+      a.src = url;
+      try {
+        a.load();
+      } catch {}
+    } catch {}
+    return await new Promise((resolve) => {
+      let done = false;
+      const finish = (ok) => {
+        if (done) return;
+        done = true;
+        setTimeout(() => {
+          try {
+            URL.revokeObjectURL(url);
+          } catch {}
+        }, 20000);
+        startBgKeepAlive();
+        resolve(!!ok && soundAlive(gen, tok));
+      };
+      a.onended = () => finish(true);
+      a.onerror = () => finish(false);
+      const p = a.play();
+      if (p && typeof p.then === "function") {
+        p.then(() => {
+          if (!soundAlive(gen, tok)) {
+            try {
+              a.pause();
+            } catch {}
+            finish(false);
+          }
+        }).catch(() => finish(false));
+      }
+      const startCap = document.hidden ? 6000 : 3000;
+      setTimeout(() => {
+        if (done) return;
+        if (!soundAlive(gen, tok)) {
+          finish(false);
+          return;
+        }
+        if (!a.paused || (a.currentTime || 0) > 0.02) {
+          const left = Math.max(
+            700,
+            Math.min(14000, (isFinite(a.duration) ? a.duration * 1000 : 5000) + 600)
+          );
+          setTimeout(() => finish(true), left);
+          return;
+        }
+        finish(false);
+      }, startCap);
+    });
+  }
+
   async function speakNameNow(text, vol) {
     const key = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
     if (!key || soundMuted) return false;
@@ -2364,37 +2468,28 @@
     if (!soundAlive(gen, tok)) return false;
 
     if (blob) {
-      // همیشه Audio تازه از بلاب — پایدارتر از عنصر پازشده
-      try {
-        const url = URL.createObjectURL(blob);
-        const a = makeHtmlAudio(url);
-        a.preload = "auto";
-        const ok = await playHtmlAudioEl(a, v, document.hidden ? 14000 : 10000);
-        setTimeout(() => {
-          try {
-            URL.revokeObjectURL(url);
-          } catch {}
-        }, 30000);
-        startBgKeepAlive();
+      // عنصر چسبان — در بکگراند خیلی مطمئن‌تر از Audio جدید
+      {
+        const ok = await playBlobSticky(blob, v);
         if (ok) return true;
-      } catch {}
+      }
       if (!soundAlive(gen, tok)) return false;
-      try {
-        const ok2 = await playBlobFa(blob, v);
-        startBgKeepAlive();
-        if (ok2) return true;
-      } catch {}
+      if (!document.hidden) {
+        try {
+          const ok2 = await playBlobFa(blob, v);
+          startBgKeepAlive();
+          if (ok2) return true;
+        } catch {}
+      }
     }
 
     if (!soundAlive(gen, tok)) return false;
     if (document.hidden) {
-      // بکگراند: یک fetch دیگر
       try {
         blob = await cacheCloudEdgeBlob(key);
       } catch {}
       if (blob && soundAlive(gen, tok)) {
-        const ok = await playBlobFa(blob, v);
-        startBgKeepAlive();
+        const ok = await playBlobSticky(blob, v);
         if (ok) return true;
       }
       return false;
@@ -2939,10 +3034,15 @@
     if (!nm) return !!pref;
     await sleep(90);
     if (!alive()) return false;
-    // مسیر قبلی که داخل اپ اسم را می‌گفت
-    let said = await speakMoveNameOnly(nm, 1);
+    let said = false;
+    if (document.hidden) {
+      // بکگراند: اول بلاب چسبان
+      said = await speakNameNow(nm, 1);
+    }
+    if (!said && alive()) said = await speakMoveNameOnly(nm, 1);
     if (!said && alive()) said = await speakFaAny(nm, 1);
     if (!said && alive()) said = await playCloudEdgeTts(nm, 1);
+    if (!said && alive()) said = await speakNameNow(nm, 1);
     if (alive() && nm) {
       cacheCloudEdgeBlob(nm).catch(() => {});
       ensurePrimedFor(nm).catch(() => {});
@@ -3010,14 +3110,19 @@
           if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
         } catch {}
         if (!nm) return;
-        let ok = await speakMoveNameOnly(nm, 1);
+        let ok = false;
+        if (document.hidden) {
+          ok = await speakNameNow(nm, 1);
+        }
+        if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
+          ok = await speakMoveNameOnly(nm, 1);
+        }
         if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
           ok = await speakFaAny(nm, 1);
         }
         if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
           ok = await playCloudEdgeTts(nm, 1);
         }
-        // بکگراند: اگر هنوز نگفت از بلاب کش
         if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
           ok = await speakNameNow(nm, 1);
         }
@@ -3349,9 +3454,8 @@
     stopAllSound();
     const steps = buildTimeline(p);
     unlockAudio();
-    // ویبره را روی ژست کاربر مسلح کن (اندروید)
-    fireVibrate([80, 40, 120]);
-    playHapticThump(0.9);
+    unlockStickySpeakAudio().catch(() => {});
+    forceHaptic("heavy");
     startBgKeepAlive();
     // صدا را در پس‌زمینه گرم کن؛ شروع را معطل نکن
     try {
@@ -3746,15 +3850,22 @@
       if (!tickIv) loop();
       requestWakeLock();
       try {
+        unlockStickySpeakAudio().catch(() => {});
+        const warm = (n) => {
+          if (!n) return;
+          const k = normSpeakKey(n);
+          cacheCloudEdgeBlob(k).catch(() => {});
+          ensureSpeakBlob(k, 6000).catch(() => {});
+        };
         const st = run.steps[run.i];
         if (st) {
-          if (st.name) primeHtmlSpeak(normSpeakKey(st.name)).catch(() => {});
-          if (st.nextName) primeHtmlSpeak(normSpeakKey(st.nextName)).catch(() => {});
+          warm(st.name);
+          warm(st.nextName);
         }
         const nxt = run.steps[run.i + 1];
         if (nxt) {
-          if (nxt.name) primeHtmlSpeak(normSpeakKey(nxt.name)).catch(() => {});
-          if (nxt.nextName) primeHtmlSpeak(normSpeakKey(nxt.nextName)).catch(() => {});
+          warm(nxt.name);
+          warm(nxt.nextName);
         }
       } catch {}
     }
