@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "31";
+  const APP_VER = "32";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=31";
+  const VOICE_Q = "?v=32";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -654,9 +654,14 @@
 
   async function speakPhase(step) {
     return queueAnnounce(async () => {
-      // اول فاز: زنگ چندنُته بلند + ویبره واضح
+      // اول فاز: زنگ بلند، بعد اسم حرکت (در استراحت: حرکت بعدی)
       buzz(step.kind === "work" ? [100, 45, 100, 45, 160] : [70, 35, 70, 35, 90]);
       beepWhite(400, false);
+      await sleep(280);
+      const name = step.kind === "work" ? step.name : step.nextName || "";
+      if (name) {
+        await speakMoveName(name, 1);
+      }
     });
   }
 
