@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "97";
+  const APP_VER = "98";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=97";
+  const VOICE_Q = "?v=98";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -1637,6 +1637,29 @@
     }
   }
 
+  async function cacheCloudEdgeBlob(text, voiceName) {
+    const key = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
+    if (!key) return null;
+    const cached = await loadDynFaFromCache(key);
+    if (cached) return cached;
+    const hasFa = /[\u0600-\u06FF]/.test(key);
+    const voice =
+      voiceName || (hasFa ? EDGE_TTS_VOICE_FA : EDGE_TTS_VOICE_EN);
+    const url = cloudEdgeUrl(key, voice);
+    const tries = [url, "https://corsproxy.io/?" + encodeURIComponent(url)];
+    for (let i = 0; i < tries.length; i++) {
+      try {
+        const res = await fetchWithTimeout(tries[i], 7000, "no-store");
+        if (!res || !res.ok) continue;
+        const blob = await res.blob();
+        if (!blob || blob.size < 80) continue;
+        await saveDynFaToCache(key, blob);
+        return blob;
+      } catch {}
+    }
+    return null;
+  }
+
   // دیلارای ابری دائمی — بدون لپ‌تاپ (Vercel Edge TTS)
   async function playCloudEdgeTts(text, vol, voiceName) {
     const key = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
@@ -1646,42 +1669,29 @@
       voiceName || (hasFa ? EDGE_TTS_VOICE_FA : EDGE_TTS_VOICE_EN);
     const url = cloudEdgeUrl(key, voice);
     unlockAudio();
-    // اول پخش مستقیم Audio — fetch را جلو نگذار (گاهی ۱۲ث سکوت می‌ساخت)
+    // اگر بلاب کش هست با AudioContext بگو (بعد از تأخیر ۲ث روی گوشی پایدارتر است)
+    try {
+      const cached = await loadDynFaFromCache(key);
+      if (cached) {
+        const ok = await playBlobFa(cached, vol == null ? 1 : vol);
+        if (ok) return true;
+      }
+    } catch {}
+    // اول بلاب بگیر و پخش کن (کش برای «خود حرکت» هم می‌ماند)
+    try {
+      const blob = await cacheCloudEdgeBlob(key, voice);
+      if (blob) {
+        const ok = await playBlobFa(blob, vol == null ? 1 : vol);
+        if (ok) return true;
+      }
+    } catch {}
+    // پخش مستقیم Audio
     try {
       const a = makeHtmlAudio(url);
       const ok = await playHtmlAudioEl(a, vol == null ? 1 : vol, 10000);
       if (ok) {
-        fetchWithTimeout(url, 8000, "no-store")
-          .then(async (res) => {
-            if (!res || !res.ok) return;
-            const blob = await res.blob();
-            if (blob && blob.size > 80) await saveDynFaToCache(key, blob);
-          })
-          .catch(() => {});
+        cacheCloudEdgeBlob(key, voice).catch(() => {});
         return true;
-      }
-    } catch {}
-    // اگر Audio نرفت: fetch کوتاه + پروکسی
-    try {
-      const res = await fetchWithTimeout(url, 5000, "no-store");
-      if (res && res.ok) {
-        const blob = await res.blob();
-        if (blob && blob.size > 80) {
-          await saveDynFaToCache(key, blob);
-          const ok = await playBlobFa(blob, vol == null ? 1 : vol);
-          if (ok) return true;
-        }
-      }
-    } catch {}
-    try {
-      const proxied = "https://corsproxy.io/?" + encodeURIComponent(url);
-      const res = await fetchWithTimeout(proxied, 6000, "no-store");
-      if (res && res.ok) {
-        const blob = await res.blob();
-        if (blob && blob.size > 80) {
-          await saveDynFaToCache(key, blob);
-          return playBlobFa(blob, vol == null ? 1 : vol);
-        }
       }
     } catch {}
     return false;
@@ -1996,17 +2006,22 @@
 
   async function speakNextMoveName(name, seq) {
     const nm = String(name || "").replace(/\s+/g, " ").trim();
-    // هم‌زمان با «حرکت بعد»، اسم را گرم کن تا فاصله نیفتد
-    const warmP = nm ? warmFaTts(nm) : Promise.resolve();
+    // هم‌زمان بلاب اسم را کش کن تا در «خود حرکت» بعد از ۲ث قطع نشود
+    const warmP = nm
+      ? Promise.all([warmFaTts(nm), cacheCloudEdgeBlob(nm)]).then(() => {})
+      : Promise.resolve();
     let pref = await playVoiceFile("phrase-next.mp3", 1);
     if (!pref) pref = await speakFaAny("حرکت بعد", 1);
     if (seq != null && !announceAlive(seq)) return !!pref;
     try {
-      await Promise.race([warmP, sleep(400)]);
+      await Promise.race([warmP, sleep(1200)]);
     } catch {}
     if (seq != null && !announceAlive(seq)) return false;
     if (!nm) return !!pref;
-    return speakMoveNameOnly(nm, 1);
+    const said = await speakMoveNameOnly(nm, 1);
+    // اگر فقط با لینک پخش شد، باز هم بلاب را برای فاز کار بکش
+    if (nm) cacheCloudEdgeBlob(nm).catch(() => {});
+    return said;
   }
 
   async function speakCheerOnly(seq) {
@@ -2026,12 +2041,34 @@
         step.kind === "work" && step.name ? warmFaTts(step.name) : Promise.resolve();
       buzz(step.kind === "work" ? [80, 35, 90] : [55, 30, 70]);
       if (step.kind === "work") {
-        // بوق اول، بعد حدود ۲ ثانیه اسم حرکت
+        // بوق اول، بعد حدود ۲ ثانیه اسم — صدا را زنده نگه دار تا گوشی پخش را قفل نکند
+        startBgKeepAlive();
         beepSoftRing(0);
         warmWork.catch(() => {});
-        await sleep(2000);
+        if (step.name) cacheCloudEdgeBlob(step.name).catch(() => {});
+        const t0 = Date.now();
+        while (Date.now() - t0 < 2000) {
+          if (!announceAlive(seq)) return;
+          unlockAudio();
+          try {
+            if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
+          } catch {}
+          await sleep(250);
+        }
         if (!announceAlive(seq)) return;
-        if (step.name) await speakMoveName(step.name, 1);
+        unlockAudio();
+        try {
+          if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
+        } catch {}
+        if (!step.name) return;
+        // اول کش/بلاب (AudioContext)، بعد بقیه — دوبار تلاش
+        let ok = await playCachedFaOnly(step.name, 1);
+        if (!ok) ok = await speakMoveName(step.name, 1);
+        if (!ok) {
+          unlockAudio();
+          await sleep(80);
+          await speakMoveName(step.name, 1);
+        }
         return;
       }
       beepSoftRing(0);
