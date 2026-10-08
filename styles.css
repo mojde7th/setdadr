@@ -180,6 +180,7 @@ html, body {
   gap: 4px;
   align-items: stretch;
   min-width: 0;
+  direction: ltr; /* چپ + ، راست − */
 }
 .num-step input[type="number"] {
   text-align: center;
