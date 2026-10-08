@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "83";
+  const APP_VER = "84";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=83";
+  const VOICE_Q = "?v=84";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -1156,6 +1156,10 @@
   const MOVE_SAY = {
     squat: "اسکوات",
     squats: "اسکوات",
+    scout: "اسکوات",
+    scaut: "اسکوات",
+    sqaut: "اسکوات",
+    squatt: "اسکوات",
     "air squat": "ایر اسکوات",
     "goblet squat": "گبلت اسکوات",
     اسکوات: "اسکوات",
@@ -1692,9 +1696,7 @@
   }
 
   async function speakMachineAny(text, vol) {
-    // اول صدای خود اپ (قطعی)، بعد سیستم/گوگل اگر بود
-    const okApp = await speakAppSpell(text, vol);
-    if (okApp) return true;
+    // صدای واقعی: هجی لاتین با TTS — بوق آهنگین فقط اگر TTS نبود
     const raw = String(text || "").replace(/\s+/g, " ").trim();
     if (!raw) return false;
     const hasFa = /[\u0600-\u06FF]/.test(raw);
@@ -1706,7 +1708,9 @@
       pitch: 1.08
     });
     if (ok) return true;
-    return playGoogleDirect(spoken, vol == null ? 1 : vol, "en");
+    const okG = await playGoogleDirect(spoken, vol == null ? 1 : vol, "en");
+    if (okG) return true;
+    return false;
   }
 
   async function speakMoveNameOnly(name, vol) {
@@ -1719,8 +1723,8 @@
     const speakText = raw;
     const isEn = hasLatin && !hasFa;
     const keyLow = raw.toLowerCase();
-    const mobile = isMobileLike();
 
+    // ۱) کلیپ آفلاین — انگلیسی رایج (اسکوات/scout و…) و فارسی لیست
     const clip =
       MOVE_CLIP[raw] ||
       MOVE_CLIP[keyLow] ||
@@ -1728,6 +1732,27 @@
     if (clip) {
       const ok = await playVoiceFile(clip, v);
       if (ok) return true;
+      // اگر HTML شکست، یک‌بار دیگر با مسیر وب‌آودیو
+      try {
+        unlockAudio();
+        const buf = await loadVoiceBuffer(clip);
+        if (buf && audioCtx) {
+          stopVoiceFile();
+          await new Promise((resolve) => {
+            const src = audioCtx.createBufferSource();
+            const g = audioCtx.createGain();
+            g.gain.value = v;
+            src.buffer = buf;
+            src.connect(g);
+            g.connect(audioCtx.destination);
+            voicePlayer = src;
+            src.onended = resolve;
+            src.start();
+            setTimeout(resolve, Math.min(5000, (buf.duration + 0.3) * 1000));
+          });
+          return true;
+        }
+      } catch {}
     }
     {
       const ok = await playBakedDynClip(speakText, v);
@@ -1737,17 +1762,12 @@
       const ok = await playCachedFaOnly(speakText, v);
       if (ok) return true;
     }
-    if (said && said.text && said.text !== speakText && MOVE_CLIP[said.text]) {
-      const ok2 = await playVoiceFile(MOVE_CLIP[said.text], v);
-      if (ok2) return true;
+    if (said && said.text && said.text !== speakText) {
+      const okC = await playCachedFaOnly(said.text, v);
+      if (okC) return true;
     }
 
-    // گوشی: سیستم/گوگل اغلب سکوت مطلق — صدای خود اپ فوری
-    if (mobile) {
-      return speakAppSpell(speakText, v);
-    }
-
-    // دسکتاپ: سیستم بعد گوگل بعد صدای اپ
+    // ۲) انگلیسی: سیستم بعد گوگل — واقعی، نه بوق
     if (isEn) {
       const okS = await speakSynthLang(speakText, v, "en", {
         noCancel: true,
@@ -1756,13 +1776,28 @@
       if (okS) return true;
       const okG = await playGoogleDirect(speakText, v, "en");
       if (okG) return true;
-      return speakAppSpell(speakText, v);
+      // اگر به فارسی نگاشت شده بود ولی کلیپ بالا شکست
+      if (said && said.text && MOVE_EN[said.text]) {
+        const en2 = MOVE_EN[said.text];
+        const ok2 = await speakSynthLang(en2, v, "en", {
+          noCancel: true,
+          rate: 1.4
+        });
+        if (ok2) return true;
+      }
+      return false;
     }
+
+    // ۳) فارسی: سیستم / گوگل / هجی لاتین با صدای انگلیسی واقعی
     if (hasUsableFaVoice()) {
       const ok = await speakSynthLang(speakText, v, "fa", {
         noCancel: true,
         rate: 1.35
       });
+      if (ok) return true;
+    }
+    {
+      const ok = await playGoogleDirect(speakText, v, "fa");
       if (ok) return true;
     }
     {
