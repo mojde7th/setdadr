@@ -1,4 +1,4 @@
-const CACHE = "setdadr-v96";
+const CACHE = "setdadr-v97";
 const ASSETS = [
   "./",
   "./index.html",
@@ -195,7 +195,7 @@ self.addEventListener("fetch", (e) => {
   const isCSS = path.endsWith(".css");
   const isNav = e.request.mode === "navigate" || path.endsWith("/") || path.endsWith(".html");
 
-  // Ø´Ù„ Ø§Ù¾: Ø§ÙˆÙ„ Ø´Ø¨Ú©Ù‡Ø› ÙÙ‚Ø· Ú©Ø´ Ù†Ø³Ø®Ù‡Ù” ÙØ¹Ù„ÛŒ (Ø¨Ø¯ÙˆÙ† ignoreSearch ØªØ§ ÙØ§ÛŒÙ„ Ù‚Ø¯ÛŒÙ…ÛŒ Û¶Û¹ Ø¨Ø±Ù†Ú¯Ø±Ø¯Ø¯)
+  // Ã˜Â´Ã™â€ž Ã˜Â§Ã™Â¾: Ã˜Â§Ã™Ë†Ã™â€ž Ã˜Â´Ã˜Â¨ÃšÂ©Ã™â€¡Ã˜â€º Ã™ÂÃ™â€šÃ˜Â· ÃšÂ©Ã˜Â´ Ã™â€ Ã˜Â³Ã˜Â®Ã™â€¡Ã™â€ Ã™ÂÃ˜Â¹Ã™â€žÃ›Å’ (Ã˜Â¨Ã˜Â¯Ã™Ë†Ã™â€  ignoreSearch Ã˜ÂªÃ˜Â§ Ã™ÂÃ˜Â§Ã›Å’Ã™â€ž Ã™â€šÃ˜Â¯Ã›Å’Ã™â€¦Ã›Å’ Ã›Â¶Ã›Â¹ Ã˜Â¨Ã˜Â±Ã™â€ ÃšÂ¯Ã˜Â±Ã˜Â¯Ã˜Â¯)
   if (isNav || isJS || isCSS) {
     e.respondWith(
       fetch(e.request, { cache: "no-store" })

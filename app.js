@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "96";
+  const APP_VER = "97";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=96";
+  const VOICE_Q = "?v=97";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -2026,19 +2026,16 @@
         step.kind === "work" && step.name ? warmFaTts(step.name) : Promise.resolve();
       buzz(step.kind === "work" ? [80, 35, 90] : [55, 30, 70]);
       if (step.kind === "work") {
-        // بوق کوتاه‌تر + فاصلهٔ کم تا اسم حرکت حتماً شنیده شود
+        // بوق اول، بعد حدود ۲ ثانیه اسم حرکت
         beepSoftRing(0);
-        await sleep(90);
-        if (!announceAlive(seq)) return;
-        try {
-          await Promise.race([warmWork, sleep(250)]);
-        } catch {}
+        warmWork.catch(() => {});
+        await sleep(2000);
         if (!announceAlive(seq)) return;
         if (step.name) await speakMoveName(step.name, 1);
         return;
       }
       beepSoftRing(0);
-      await sleep(70);
+      await sleep(200);
       if (!announceAlive(seq)) return;
       // استراحت: «حرکت بعد» + اسم با فاصلهٔ کم
       if (isRest) {

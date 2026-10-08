@@ -6,79 +6,79 @@
   <meta name="theme-color" content="#12100c"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-  <meta name="apple-mobile-web-app-title" content="ست‌یار"/>
-  <title>ست‌یار</title>
+  <meta name="apple-mobile-web-app-title" content="Ø³Øªâ€ŒÛŒØ§Ø±"/>
+  <title>Ø³Øªâ€ŒÛŒØ§Ø±</title>
   <link rel="manifest" href="manifest.webmanifest"/>
   <link rel="icon" href="icon.svg" type="image/svg+xml"/>
   <link rel="apple-touch-icon" href="icon-180.png"/>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@500;700;800;900&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet"/>
-  <link rel="stylesheet" href="styles.css?v=96"/>
+  <link rel="stylesheet" href="styles.css?v=97"/>
 </head>
 <body>
   <div id="app">
     <header class="top" id="topBar">
-      <div class="brand">ست<span>‌یار</span></div>
-      <button type="button" class="mute-btn" id="btnMute" aria-pressed="false" aria-label="قطع و وصل صدا"><span class="mute-ico" aria-hidden="true"><svg class="ico-on" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg><svg class="ico-off" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg></span></button>
-      <div class="app-ver" id="appVer">v96</div>
+      <div class="brand">Ø³Øª<span>â€ŒÛŒØ§Ø±</span></div>
+      <button type="button" class="mute-btn" id="btnMute" aria-pressed="false" aria-label="Ù‚Ø·Ø¹ Ùˆ ÙˆØµÙ„ ØµØ¯Ø§"><span class="mute-ico" aria-hidden="true"><svg class="ico-on" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg><svg class="ico-off" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg></span></button>
+      <div class="app-ver" id="appVer">v97</div>
       <nav class="tabs" id="navTabs">
-        <button type="button" data-view="home" class="on">ست‌ها</button>
-        <button type="button" data-view="moves">حرکت‌ها</button>
-        <button type="button" data-view="edit" id="tabEdit" hidden>ویرایش</button>
+        <button type="button" data-view="home" class="on">Ø³Øªâ€ŒÙ‡Ø§</button>
+        <button type="button" data-view="moves">Ø­Ø±Ú©Øªâ€ŒÙ‡Ø§</button>
+        <button type="button" data-view="edit" id="tabEdit" hidden>ÙˆÛŒØ±Ø§ÛŒØ´</button>
       </nav>
     </header>
 
     <main>
       <section id="view-home" class="view on">
         <div class="home-head">
-          <button type="button" class="btn-hero" id="btnNewPlan">ست تازه</button>
+          <button type="button" class="btn-hero" id="btnNewPlan">Ø³Øª ØªØ§Ø²Ù‡</button>
         </div>
         <ul id="planList" class="list"></ul>
-        <p id="planEmpty" class="empty">خالی</p>
+        <p id="planEmpty" class="empty">Ø®Ø§Ù„ÛŒ</p>
       </section>
 
       <section id="view-moves" class="view">
         <form id="moveForm" class="row-form">
-          <input id="moveName" type="text" required maxlength="60" placeholder="نام حرکت" autocomplete="off" autocorrect="off" spellcheck="false"/>
+          <input id="moveName" type="text" required maxlength="60" placeholder="Ù†Ø§Ù… Ø­Ø±Ú©Øª" autocomplete="off" autocorrect="off" spellcheck="false"/>
           <div class="num-step with-unit" data-for="moveWork">
-            <button type="button" class="num-btn" data-dir="-1" aria-label="کم">−</button>
-            <input id="moveWork" type="number" min="5" max="600" step="5" value="40" inputmode="numeric" aria-label="ثانیه کار"/>
-            <button type="button" class="num-btn" data-dir="1" aria-label="زیاد">+</button>
-            <span class="unit-lbl">ثانیه</span>
+            <button type="button" class="num-btn" data-dir="-1" aria-label="Ú©Ù…">âˆ’</button>
+            <input id="moveWork" type="number" min="5" max="600" step="5" value="40" inputmode="numeric" aria-label="Ø«Ø§Ù†ÛŒÙ‡ Ú©Ø§Ø±"/>
+            <button type="button" class="num-btn" data-dir="1" aria-label="Ø²ÛŒØ§Ø¯">+</button>
+            <span class="unit-lbl">Ø«Ø§Ù†ÛŒÙ‡</span>
           </div>
-          <button type="submit" class="btn primary sm">افزودن</button>
+          <button type="submit" class="btn primary sm">Ø§ÙØ²ÙˆØ¯Ù†</button>
         </form>
         <ul id="moveLib" class="list"></ul>
-        <p id="moveEmpty" class="empty">خالی</p>
+        <p id="moveEmpty" class="empty">Ø®Ø§Ù„ÛŒ</p>
       </section>
 
       <section id="view-edit" class="view">
         <div class="panel">
           <div class="grid2">
-            <label>تعداد ست
+            <label>ØªØ¹Ø¯Ø§Ø¯ Ø³Øª
               <div class="num-step with-unit" data-for="planRounds">
-                <button type="button" class="num-btn" data-dir="-1" aria-label="کم">−</button>
+                <button type="button" class="num-btn" data-dir="-1" aria-label="Ú©Ù…">âˆ’</button>
             <input id="planRounds" type="number" min="1" max="30" step="1" value="4" inputmode="numeric"/>
-            <button type="button" class="num-btn" data-dir="1" aria-label="زیاد">+</button>
-                <span class="unit-lbl">ست</span>
+            <button type="button" class="num-btn" data-dir="1" aria-label="Ø²ÛŒØ§Ø¯">+</button>
+                <span class="unit-lbl">Ø³Øª</span>
               </div>
             </label>
-            <label>استراحت بین ست
+            <label>Ø§Ø³ØªØ±Ø§Ø­Øª Ø¨ÛŒÙ† Ø³Øª
               <div class="num-step with-unit" data-for="planRestSet">
-                <button type="button" class="num-btn" data-dir="-1" aria-label="کم">−</button>
+                <button type="button" class="num-btn" data-dir="-1" aria-label="Ú©Ù…">âˆ’</button>
             <input id="planRestSet" type="number" min="0" max="600" step="5" value="40" inputmode="numeric"/>
-            <button type="button" class="num-btn" data-dir="1" aria-label="زیاد">+</button>
-                <span class="unit-lbl">ثانیه</span>
+            <button type="button" class="num-btn" data-dir="1" aria-label="Ø²ÛŒØ§Ø¯">+</button>
+                <span class="unit-lbl">Ø«Ø§Ù†ÛŒÙ‡</span>
               </div>
             </label>
           </div>
-          <label class="rest-lbl">استراحت بین حرکت داخل ست
+          <label class="rest-lbl">Ø§Ø³ØªØ±Ø§Ø­Øª Ø¨ÛŒÙ† Ø­Ø±Ú©Øª Ø¯Ø§Ø®Ù„ Ø³Øª
             <div class="num-step with-unit" data-for="planRestMove">
-              <button type="button" class="num-btn" data-dir="-1" aria-label="کم">−</button>
+              <button type="button" class="num-btn" data-dir="-1" aria-label="Ú©Ù…">âˆ’</button>
             <input id="planRestMove" type="number" min="0" max="300" step="5" value="10" inputmode="numeric"/>
-            <button type="button" class="num-btn" data-dir="1" aria-label="زیاد">+</button>
-              <span class="unit-lbl">ثانیه</span>
+            <button type="button" class="num-btn" data-dir="1" aria-label="Ø²ÛŒØ§Ø¯">+</button>
+              <span class="unit-lbl">Ø«Ø§Ù†ÛŒÙ‡</span>
             </div>
           </label>
         </div>
@@ -86,10 +86,10 @@
         <div class="panel">
           <form id="addToSetForm" class="add-set-form">
             <label class="field-block">
-              <span class="field-k">حرکت ذخیره‌شده</span>
+              <span class="field-k">Ø­Ø±Ú©Øª Ø°Ø®ÛŒØ±Ù‡â€ŒØ´Ø¯Ù‡</span>
               <div class="select-wrap">
-                <select id="pickFromLib" class="pick-select" aria-label="حرکت ذخیره‌شده">
-                  <option value="">انتخاب کن</option>
+                <select id="pickFromLib" class="pick-select" aria-label="Ø­Ø±Ú©Øª Ø°Ø®ÛŒØ±Ù‡â€ŒØ´Ø¯Ù‡">
+                  <option value="">Ø§Ù†ØªØ®Ø§Ø¨ Ú©Ù†</option>
                 </select>
                 <span class="select-chev" aria-hidden="true">
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
@@ -97,26 +97,26 @@
               </div>
             </label>
             <label class="field-block">
-              <span class="field-k">نام حرکت</span>
-              <input id="pickMoveName" type="text" required maxlength="60" placeholder="مثلاً اسکوات" autocomplete="off" autocorrect="off" spellcheck="false"/>
+              <span class="field-k">Ù†Ø§Ù… Ø­Ø±Ú©Øª</span>
+              <input id="pickMoveName" type="text" required maxlength="60" placeholder="Ù…Ø«Ù„Ø§Ù‹ Ø§Ø³Ú©ÙˆØ§Øª" autocomplete="off" autocorrect="off" spellcheck="false"/>
             </label>
             <label class="field-block">
-              <span class="field-k">زمان این حرکت</span>
+              <span class="field-k">Ø²Ù…Ø§Ù† Ø§ÛŒÙ† Ø­Ø±Ú©Øª</span>
               <div class="num-step with-unit" data-for="pickWork">
-                <button type="button" class="num-btn" data-dir="-1" aria-label="کم">−</button>
+                <button type="button" class="num-btn" data-dir="-1" aria-label="Ú©Ù…">âˆ’</button>
             <input id="pickWork" type="number" min="5" max="600" step="5" value="40" inputmode="numeric"/>
-            <button type="button" class="num-btn" data-dir="1" aria-label="زیاد">+</button>
-                <span class="unit-lbl">ثانیه</span>
+            <button type="button" class="num-btn" data-dir="1" aria-label="Ø²ÛŒØ§Ø¯">+</button>
+                <span class="unit-lbl">Ø«Ø§Ù†ÛŒÙ‡</span>
               </div>
             </label>
-            <button type="submit" class="btn primary sm" id="btnAddToSet">افزودن به این ست</button>
+            <button type="submit" class="btn primary sm" id="btnAddToSet">Ø§ÙØ²ÙˆØ¯Ù† Ø¨Ù‡ Ø§ÛŒÙ† Ø³Øª</button>
           </form>
           <ol id="circuitList" class="seq"></ol>
         </div>
 
         <div class="actions">
-          <button type="button" class="btn primary block" id="btnSavePlan">ذخیره</button>
-          <button type="button" class="btn ghost block" id="btnCancelEdit">برگشت</button>
+          <button type="button" class="btn primary block" id="btnSavePlan">Ø°Ø®ÛŒØ±Ù‡</button>
+          <button type="button" class="btn ghost block" id="btnCancelEdit">Ø¨Ø±Ú¯Ø´Øª</button>
         </div>
       </section>
 
@@ -124,51 +124,51 @@
         <div class="run-stage" id="runStage">
           <div class="progress-box" id="progressBox">
             <div class="progress-item">
-              <div class="progress-k">ست</div>
-              <div class="progress-v" id="runFrac">۱<span>/</span>۴</div>
+              <div class="progress-k">Ø³Øª</div>
+              <div class="progress-v" id="runFrac">Û±<span>/</span>Û´</div>
             </div>
             <div class="progress-item" id="moveProgressItem">
-              <div class="progress-k">حرکت</div>
-              <div class="progress-v" id="runMoveCount">۱<span>/</span>۳</div>
+              <div class="progress-k">Ø­Ø±Ú©Øª</div>
+              <div class="progress-v" id="runMoveCount">Û±<span>/</span>Û³</div>
             </div>
           </div>
-          <div class="phase" id="runPhase">تمرین</div>
-          <div class="move-big" id="runMove">—</div>
+          <div class="phase" id="runPhase">ØªÙ…Ø±ÛŒÙ†</div>
+          <div class="move-big" id="runMove">â€”</div>
           <div class="timer-big" id="runTimer">0:40</div>
           <div class="sub" id="runSub"></div>
           <div class="next-card" id="nextCard" hidden>
             <div class="flow" id="nextFlow">
-              <div class="flow-arrow flow-arrow-lead" id="flowArrowLead" hidden>↓</div>
+              <div class="flow-arrow flow-arrow-lead" id="flowArrowLead" hidden>â†“</div>
               <div class="flow-row" id="flowRow1">
-                <span class="flow-num">۱</span>
+                <span class="flow-num">Û±</span>
                 <span class="flow-txt" id="flow1"></span>
               </div>
-              <div class="flow-arrow" id="flowArrow" hidden>↓</div>
+              <div class="flow-arrow" id="flowArrow" hidden>â†“</div>
               <div class="flow-row" id="flowRow2" hidden>
-                <span class="flow-num">۲</span>
+                <span class="flow-num">Û²</span>
                 <span class="flow-txt" id="flow2"></span>
               </div>
             </div>
           </div>
         </div>
         <div class="run-bar">
-          <button type="button" class="btn big" id="btnPause">توقف</button>
-          <button type="button" class="btn big primary" id="btnSkip">بعدی</button>
-          <button type="button" class="btn big ghost" id="btnAbort">خروج</button>
+          <button type="button" class="btn big" id="btnPause">ØªÙˆÙ‚Ù</button>
+          <button type="button" class="btn big primary" id="btnSkip">Ø¨Ø¹Ø¯ÛŒ</button>
+          <button type="button" class="btn big ghost" id="btnAbort">Ø®Ø±ÙˆØ¬</button>
         </div>
       </section>
 
       <section id="view-done" class="view">
         <div class="done-card">
-          <div class="frac done-frac" id="doneFrac">۴<span>/</span>۴</div>
+          <div class="frac done-frac" id="doneFrac">Û´<span>/</span>Û´</div>
           <p class="done-msg" id="doneMsg"></p>
-          <button type="button" class="btn primary block" id="btnDoneHome">ست‌ها</button>
+          <button type="button" class="btn primary block" id="btnDoneHome">Ø³Øªâ€ŒÙ‡Ø§</button>
         </div>
       </section>
     </main>
   </div>
-  <script src="tts-endpoint.js?v=96"></script>
-  <script src="app.js?v=96"></script>
+  <script src="tts-endpoint.js?v=97"></script>
+  <script src="app.js?v=97"></script>
   <script>
     if ("serviceWorker" in navigator) {
       var refreshing = false;
@@ -178,7 +178,7 @@
         location.reload();
       });
       navigator.serviceWorker
-        .register("./sw.js?v=96", { updateViaCache: "none" })
+        .register("./sw.js?v=97", { updateViaCache: "none" })
         .then(function (reg) {
           reg.update();
           if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });

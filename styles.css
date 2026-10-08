@@ -148,37 +148,36 @@ html, body {
   font-weight: 900;
   color: var(--muted);
 }
-/* وسط؛ کمی تپل‌تر؛ فونت ۱۶ تا گوشی زوم نکند */
+/* تمام‌عرض + تپل؛ فونت ۱۶ تا گوشی زوم نکند */
 .add-set-form .field-block:has(#pickFromLib),
 .add-set-form .field-block:has(#pickMoveName) {
   justify-items: stretch;
-  justify-self: center;
   width: 100%;
-  max-width: min(78vw, 280px);
-  margin-inline: auto;
-  text-align: center;
+  max-width: none;
+  margin-inline: 0;
+  text-align: start;
 }
 .add-set-form .select-wrap {
   width: 100%;
-  max-width: min(78vw, 280px);
-  margin-inline: auto;
+  max-width: none;
+  margin-inline: 0;
 }
 .add-set-form select,
 .add-set-form input[type="text"] {
   width: 100%;
-  max-width: min(78vw, 280px);
-  margin-inline: auto;
+  max-width: none;
+  margin-inline: 0;
   display: block;
-  min-height: 52px;
-  height: 52px;
+  min-height: 54px;
+  height: 54px;
   border-radius: 14px;
   border: 1px solid var(--line);
   background: var(--bg2, #17130e);
   color: inherit;
   font: inherit;
-  font-size: 16px; /* زیر از ۱۶ = زوم آی‌او‌اس/اندروید */
+  font-size: 16px; /* کمتر از ۱۶ = زوم آی‌او‌اس/اندروید */
   font-weight: 700;
-  padding: 10px 14px;
+  padding: 12px 14px;
   box-sizing: border-box;
   line-height: 1.25;
   touch-action: manipulation;
@@ -626,10 +625,10 @@ input[type="text"], input[type="number"] {
 }
 .pick-select,
 #pickFromLib.pick-select {
-  width: 100%;
-  max-width: min(78vw, 280px) !important;
-  min-height: 52px !important;
-  height: 52px !important;
+  width: 100% !important;
+  max-width: none !important;
+  min-height: 54px !important;
+  height: 54px !important;
   border-radius: 14px !important;
   border: 1px solid var(--line) !important;
   background: var(--bg2, #17130e) !important;
@@ -637,7 +636,7 @@ input[type="text"], input[type="number"] {
   font: inherit !important;
   font-size: 16px !important;
   font-weight: 700 !important;
-  padding: 10px 40px 10px 14px !important;
+  padding: 12px 40px 12px 14px !important;
   box-sizing: border-box;
   appearance: none;
   -webkit-appearance: none;
@@ -648,10 +647,11 @@ input[type="text"], input[type="number"] {
 #pickMoveName {
   font-size: 16px !important;
   font-weight: 700 !important;
-  max-width: min(78vw, 280px) !important;
-  min-height: 52px !important;
-  height: 52px !important;
-  padding: 10px 14px !important;
+  width: 100% !important;
+  max-width: none !important;
+  min-height: 54px !important;
+  height: 54px !important;
+  padding: 12px 14px !important;
   border-radius: 14px !important;
   touch-action: manipulation;
 }
