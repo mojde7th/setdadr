@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "30";
+  const APP_VER = "31";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=30";
+  const VOICE_Q = "?v=31";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -112,15 +112,25 @@
   function loadVoices() {
     if (!window.speechSynthesis) return;
     const voices = speechSynthesis.getVoices() || [];
+    const scoreVoice = (v, preferLang) => {
+      let s = 0;
+      const n = (v.name || "") + " " + (v.lang || "");
+      if (preferLang.test(v.lang || "")) s += 5;
+      if (/female|zira|samantha|aria|jenny|susan|hazel|neural|google/i.test(n)) s += 4;
+      if (/male|david|mark|george|james/i.test(n)) s -= 3;
+      if (/compact|eloquence/i.test(n)) s -= 1;
+      return s;
+    };
     faVoice =
-      voices.find((v) => /^fa(-|_|$)/i.test(v.lang)) ||
-      voices.find((v) => /persian|farsi|فارسی/i.test(v.name)) ||
+      [...voices]
+        .filter((v) => /^fa(-|_|$)/i.test(v.lang) || /persian|farsi|فارسی/i.test(v.name))
+        .sort((a, b) => scoreVoice(b, /^fa/) - scoreVoice(a, /^fa/))[0] ||
       voices.find((v) => /fa-IR|fa_IR|fa-AF/i.test(v.lang)) ||
       null;
     enVoice =
-      voices.find((v) => /^en(-|_|$)/i.test(v.lang) && /female|zira|samantha|google|aria|jenny/i.test(v.name)) ||
-      voices.find((v) => /^en-US/i.test(v.lang)) ||
-      voices.find((v) => /^en(-|_|$)/i.test(v.lang)) ||
+      [...voices]
+        .filter((v) => /^en(-|_|$)/i.test(v.lang))
+        .sort((a, b) => scoreVoice(b, /^en/) - scoreVoice(a, /^en/))[0] ||
       null;
     voiceReady = !!voices.length;
   }
@@ -450,17 +460,17 @@
           if (useEn) {
             u.voice = enVoice;
             u.lang = enVoice.lang || "en-US";
-            u.rate = 1.05;
-            u.pitch = 1.08;
+            u.rate = 1.12;
+            u.pitch = 1.15;
           } else {
             u.lang = "fa-IR";
             if (faVoice) {
               u.voice = faVoice;
               u.lang = faVoice.lang || "fa-IR";
             }
-            // پرانرژی ولی لطیف
-            u.rate = 1.12;
-            u.pitch = 1.14;
+            // ورزشی، پرانرژی، نه کند و غمگین
+            u.rate = 1.22;
+            u.pitch = 1.22;
           }
           u.volume = vol == null ? 1 : Math.min(1, vol);
           let finished = false;
@@ -655,9 +665,17 @@
     if (n <= 0) return;
     return queueAnnounce(async () => {
       buzz([55, 30, 90]);
-      await sleep(60);
+      await sleep(50);
       const phrase = faNum(n) + " ثانیه انجام دادی";
       await speakFaSynthAsync(phrase, 1);
+      if (!run) return;
+      const step = run.steps[run.i];
+      if (!step) return;
+      const name = step.kind === "work" ? step.name : step.nextName || "";
+      if (name) {
+        await sleep(140);
+        await speakMoveName(name, 1);
+      }
     });
   }
 
@@ -985,10 +1003,10 @@
     run.prevLeftCeil = cur;
     if (prev == null) return;
 
-    // یک‌بار وسط: مقدار انجام‌شده (نه مانده)
-    const midKey = run.i + ":mid";
-    const halfLeft = Math.ceil(run.phaseDur / 2);
-    if (run.phaseDur >= 12 && !run.announced[midKey] && prev > halfLeft && cur <= halfLeft) {
+    // یک‌بار بعد از حدود دوسوم انجام‌شده (+ اسم حرکت)
+    const midKey = run.i + ":twoThirds";
+    const thirdLeft = Math.ceil(run.phaseDur / 3);
+    if (run.phaseDur >= 12 && !run.announced[midKey] && prev > thirdLeft && cur <= thirdLeft) {
       run.announced[midKey] = true;
       const done = Math.max(1, Math.round(run.phaseDur - cur));
       speakDoneAmount(done);
