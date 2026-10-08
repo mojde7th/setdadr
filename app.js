@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "44";
+  const APP_VER = "45";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=44";
+  const VOICE_Q = "?v=45";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -1066,8 +1066,8 @@
     // دوسوم: زودتر تریگر کن تا وقتی صدا به «رفت» برسد همان ثانیه دقیق باشد
     const midKey = run.i + ":twoThirds";
     const targetLeft = Math.ceil(run.phaseDur / 3);
-    // عالی و «رفت» جلوتر تا وقتی به ثانیه هدف (مثل ۱۶ مانده) برسد عقب نباشد
-    const lead = 7;
+    // دقیقاً حدود ۱ ثانیه قبل از ثانیه هدف اعلام شود (نه خیلی زود)
+    const lead = 1;
     const fireLeft = targetLeft + lead;
     if (
       run.phaseDur >= 12 &&
