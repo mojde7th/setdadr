@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "35";
+  const APP_VER = "36";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=35";
+  const VOICE_Q = "?v=36";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -114,24 +114,31 @@
     const voices = speechSynthesis.getVoices() || [];
     const scoreVoice = (v, preferLang) => {
       let s = 0;
-      const n = (v.name || "") + " " + (v.lang || "");
-      if (preferLang.test(v.lang || "")) s += 5;
-      if (/female|zira|samantha|aria|jenny|susan|hazel|neural|google/i.test(n)) s += 4;
-      if (/male|david|mark|george|james/i.test(n)) s -= 3;
-      if (/compact|eloquence/i.test(n)) s -= 1;
+      const n = ((v.name || "") + " " + (v.lang || "")).toLowerCase();
+      if (preferLang.test(v.lang || "")) s += 6;
+      // ترجیح صداهای روشن‌تر و جدیدتر
+      if (/neural|natural|online|google|microsoft.*aria|jenny|sara|sonia|zira|samantha/i.test(n)) s += 8;
+      if (/female|woman|girl/i.test(n)) s += 3;
+      // صداهای کند/تخت را کنار بگذار
+      if (/compact|eloquence|desktop|espeak|microsoft.*server|heda|nazanin|dariush/i.test(n)) s -= 6;
+      if (/male|david|mark|george|james|farid|hamid/i.test(n)) s -= 5;
       return s;
     };
-    faVoice =
-      [...voices]
-        .filter((v) => /^fa(-|_|$)/i.test(v.lang) || /persian|farsi|فارسی/i.test(v.name))
-        .sort((a, b) => scoreVoice(b, /^fa/) - scoreVoice(a, /^fa/))[0] ||
-      voices.find((v) => /fa-IR|fa_IR|fa-AF/i.test(v.lang)) ||
-      null;
+    const faList = [...voices]
+      .filter((v) => /^fa(-|_|$)/i.test(v.lang) || /persian|farsi|فارسی/i.test(v.name))
+      .sort((a, b) => scoreVoice(b, /^fa/) - scoreVoice(a, /^fa/));
+    // اگر چند فارسی هست، دومی را ترجیح بده اگر اولی امتیاز منفی/ضعیف است
+    faVoice = faList.find((v) => scoreVoice(v, /^fa/) >= 6) || faList[0] || null;
+    // اگر فارسی خوب نبود، از انگلیسی زنانه پرانرژی برای تشویق استفاده می‌کنیم
+    const enList = [...voices]
+      .filter((v) => /^en(-|_|$)/i.test(v.lang))
+      .sort((a, b) => scoreVoice(b, /^en/) - scoreVoice(a, /^en/));
     enVoice =
-      [...voices]
-        .filter((v) => /^en(-|_|$)/i.test(v.lang))
-        .sort((a, b) => scoreVoice(b, /^en/) - scoreVoice(a, /^en/))[0] ||
+      enList.find((v) => /aria|jenny|samantha|zira|female|google|neural/i.test(v.name || "")) ||
+      enList[0] ||
       null;
+    // صدای تشویق جدا: ترجیح انگلیسی زنانه پرانرژی اگر فارسی ضعیف است
+    window.__cheerVoice = enVoice || faVoice;
     voiceReady = !!voices.length;
   }
   if (window.speechSynthesis) {
@@ -458,20 +465,24 @@
           const u = new SpeechSynthesisUtterance(String(text));
           const useEn = lang === "en" && enVoice;
           const o = opts || {};
-          if (useEn) {
+          if (o.voice) {
+            u.voice = o.voice;
+            u.lang = o.lang || o.voice.lang || "fa-IR";
+            u.rate = o.rate != null ? o.rate : 1.3;
+            u.pitch = o.pitch != null ? o.pitch : 1.3;
+          } else if (useEn) {
             u.voice = enVoice;
             u.lang = enVoice.lang || "en-US";
-            u.rate = o.rate != null ? o.rate : 1.12;
-            u.pitch = o.pitch != null ? o.pitch : 1.15;
+            u.rate = o.rate != null ? o.rate : 1.15;
+            u.pitch = o.pitch != null ? o.pitch : 1.18;
           } else {
             u.lang = "fa-IR";
             if (faVoice) {
               u.voice = faVoice;
               u.lang = faVoice.lang || "fa-IR";
             }
-            // ورزشی، پرانرژی، نه کند و غمگین
-            u.rate = o.rate != null ? o.rate : 1.22;
-            u.pitch = o.pitch != null ? o.pitch : 1.22;
+            u.rate = o.rate != null ? o.rate : 1.26;
+            u.pitch = o.pitch != null ? o.pitch : 1.26;
           }
           u.volume = vol == null ? 1 : Math.min(1, vol);
           let finished = false;
@@ -685,10 +696,20 @@
     if (n <= 0) return;
     return queueAnnounce(async () => {
       buzz([55, 30, 90]);
-      await sleep(40);
-      // تشویقی و پرانرژی — فقط مقدار انجام‌شده
-      const phrase = "عالی، " + faNum(n) + " ثانیه انجام دادی";
-      await speakFaSynthAsync(phrase, 1, "fa", { rate: 1.28, pitch: 1.28 });
+      await sleep(30);
+      const cheerOpts = {
+        rate: 1.35,
+        pitch: 1.32,
+        voice: faVoice || enVoice || null
+      };
+      // اول تشویق کوتاه، بعد مکث، بعد مقدار — بدون کشیدن «انجام دادی»
+      await speakFaSynthAsync("عالی", 1, "fa", cheerOpts);
+      await sleep(220);
+      await speakFaSynthAsync(faNum(n) + " ثانیه رفت", 1, "fa", {
+        rate: 1.32,
+        pitch: 1.3,
+        voice: cheerOpts.voice
+      });
     });
   }
 
