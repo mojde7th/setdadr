@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "103";
+  const APP_VER = "105";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -39,6 +39,22 @@
   let primedWorkName = "";
   let primedWorkBlob = null;
   let primedWorkAudioBuffer = null;
+  let primedExpectName = "";
+
+  function clearPrimedWork() {
+    primedWorkName = "";
+    primedWorkBlob = null;
+    primedWorkAudioBuffer = null;
+    primedExpectName = "";
+  }
+
+  function normSpeakKey(s) {
+    return String(s || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/ي/g, "ی")
+      .replace(/ك/g, "ک");
+  }
   const MUTE_LS = "setdadr-mute";
   let soundMuted = false;
   try {
@@ -48,7 +64,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=103";
+  const VOICE_Q = "?v=105";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -2149,27 +2165,50 @@
   }
 
   async function primeMoveAudio(name, blob) {
-    const nm = String(name || "").replace(/\s+/g, " ").trim();
+    const nm = normSpeakKey(name);
     if (!nm || !blob) return false;
+    // اگر حرکت عوض شده، پرایم قدیمی را ننشان
+    if (primedExpectName && primedExpectName !== nm) return false;
     try {
       unlockAudio();
       if (!audioCtx) return false;
       if (audioCtx.state === "suspended") await audioCtx.resume();
       const raw = await blob.arrayBuffer();
       const buf = await audioCtx.decodeAudioData(raw.slice(0));
+      if (primedExpectName && primedExpectName !== nm) return false;
       primedWorkName = nm;
       primedWorkBlob = blob;
       primedWorkAudioBuffer = buf;
-      await saveDynFaToCache(nm, blob);
+      try {
+        await saveDynFaToCache(nm, blob);
+      } catch {}
       return true;
     } catch {
       return false;
     }
   }
 
+  async function ensurePrimedFor(name) {
+    const nm = normSpeakKey(name);
+    if (!nm) return false;
+    if (primedWorkName === nm && primedWorkAudioBuffer) return true;
+    primedExpectName = nm;
+    let blob = null;
+    if (primedWorkName === nm && primedWorkBlob) blob = primedWorkBlob;
+    if (!blob) blob = await loadDynFaFromCache(nm);
+    if (!blob) blob = await cacheCloudEdgeBlob(nm);
+    if (!blob) return false;
+    return primeMoveAudio(nm, blob);
+  }
+
   async function playPrimedWorkName(name, vol) {
-    const nm = String(name || "").replace(/\s+/g, " ").trim();
-    if (!nm || primedWorkName !== nm || !primedWorkAudioBuffer || !audioCtx) {
+    const nm = normSpeakKey(name);
+    if (
+      !nm ||
+      primedWorkName !== nm ||
+      !primedWorkAudioBuffer ||
+      !audioCtx
+    ) {
       return false;
     }
     const gen = soundGen;
@@ -2219,53 +2258,46 @@
   }
 
   async function speakNextMoveName(name, seq) {
-    const nm = String(name || "").replace(/\s+/g, " ").trim();
-    // از اول بلاب را بگیر و به بافر صدا تبدیل کن تا «خود حرکت» همان را پخش کند
-    const prepP = nm
-      ? (async () => {
-          let blob = await loadDynFaFromCache(nm);
-          if (!blob) blob = await cacheCloudEdgeBlob(nm);
-          if (blob) await primeMoveAudio(nm, blob);
-        })()
-      : Promise.resolve();
+    const nm = normSpeakKey(name);
+    // فقط همین اسم بعدی؛ پرایم حرکت قبلی دور ریخته شود
+    if (nm !== primedExpectName) clearPrimedWork();
+    primedExpectName = nm;
+    const prepP = nm ? ensurePrimedFor(nm) : Promise.resolve(false);
     prepP.catch(() => {});
     let pref = await playVoiceFile("phrase-next.mp3", 1);
     if (!pref) pref = await speakFaAny("حرکت بعد", 1);
     if (seq != null && !announceAlive(seq)) return !!pref;
     if (!nm) return !!pref;
-    await sleep(60);
+    await sleep(50);
     if (seq != null && !announceAlive(seq)) return false;
-    // تا حد کوتاه صبر کن تا بافر آماده شود
+    // تا حد امکان قبل از گفتن اسم، بافر را بساز
     try {
-      await Promise.race([prepP, sleep(700)]);
+      await Promise.race([prepP, sleep(1200)]);
     } catch {}
     if (seq != null && !announceAlive(seq)) return false;
+    if (primedExpectName !== nm) return false;
+    let said = false;
     {
       const ok = await playPrimedWorkName(nm, 1);
-      if (ok) return true;
+      if (ok) said = true;
     }
-    if (primedWorkName === nm && primedWorkBlob) {
+    if (!said && primedWorkName === nm && primedWorkBlob) {
       const ok = await playBlobFa(primedWorkBlob, 1);
       if (ok) {
         await primeMoveAudio(nm, primedWorkBlob);
-        return true;
+        said = true;
       }
     }
-    {
-      const cached = await playCachedFaOnly(nm, 1);
-      if (cached) {
-        const b = await loadDynFaFromCache(nm);
-        if (b) await primeMoveAudio(nm, b);
-        return true;
-      }
+    if (!said) {
+      said = await speakMoveNameOnly(nm, 1);
     }
-    const said = await speakMoveNameOnly(nm, 1);
-    // بعد از پخش لینکی هم سعی کن بافر برای فاز کار بسازی
-    prepP.catch(() => {});
-    cacheCloudEdgeBlob(nm)
-      .then((blob) => (blob ? primeMoveAudio(nm, blob) : null))
-      .catch(() => {});
-    return said;
+    // بعد از تلفظ در استراحت: حتماً بافر را برای «خود حرکت» آماده کن (منتظر بمان)
+    if (primedExpectName === nm && !(primedWorkName === nm && primedWorkAudioBuffer)) {
+      try {
+        await ensurePrimedFor(nm);
+      } catch {}
+    }
+    return !!said;
   }
 
   async function speakCheerOnly(seq) {
@@ -2285,19 +2317,15 @@
         step.kind === "work" && step.name ? warmFaTts(step.name) : Promise.resolve();
       buzz(step.kind === "work" ? [80, 35, 90] : [55, 30, 70]);
       if (step.kind === "work") {
-        // بوق اول، بعد حدود ۲ ثانیه همان تلفظ آماده‌شده از «حرکت بعد»
+        // بوق اول، بعد حدود ۲ ثانیه همان اسم سخت فارسی را دوباره بگو
         startBgKeepAlive();
         beepSoftRing(0);
-        const nm = String(step.name || "").replace(/\s+/g, " ").trim();
+        const nm = normSpeakKey(step.name);
+        primedExpectName = nm;
         warmWork.catch(() => {});
-        // اگر بافر نیست، در همین ۲ث بساز
-        if (nm && !(primedWorkName === nm && primedWorkAudioBuffer)) {
-          (async () => {
-            let blob = primedWorkBlob || (await loadDynFaFromCache(nm));
-            if (!blob) blob = await cacheCloudEdgeBlob(nm);
-            if (blob) await primeMoveAudio(nm, blob);
-          })().catch(() => {});
-        }
+        // در همین ۲ث بافر را آماده نگه دار
+        const prepWork = nm ? ensurePrimedFor(nm) : Promise.resolve(false);
+        prepWork.catch(() => {});
         const t0 = Date.now();
         while (Date.now() - t0 < 2000) {
           if (!announceAlive(seq)) return;
@@ -2313,13 +2341,29 @@
           if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
         } catch {}
         if (!nm) return;
+        try {
+          await Promise.race([prepWork, sleep(800)]);
+        } catch {}
+        if (!announceAlive(seq)) return;
+        if (!(primedWorkName === nm && primedWorkAudioBuffer)) {
+          try {
+            await ensurePrimedFor(nm);
+          } catch {}
+        }
+        if (!announceAlive(seq)) return;
         const gen = soundGen;
         let ok = false;
-        // مسیر اصلی: بافر دیکد‌شده از استراحت (بدون شبکه / بدون قفل پخش)
+        // فقط اگر اسم یکی است — بلاب حرکت قبلی هرگز پخش نشود
         if (gen === soundGen && announceAlive(seq)) {
           ok = await playPrimedWorkName(nm, 1);
         }
-        if (!ok && gen === soundGen && announceAlive(seq) && primedWorkBlob) {
+        if (
+          !ok &&
+          gen === soundGen &&
+          announceAlive(seq) &&
+          primedWorkName === nm &&
+          primedWorkBlob
+        ) {
           ok = await playBlobFa(primedWorkBlob, 1);
         }
         if (!ok && gen === soundGen && announceAlive(seq)) {
@@ -2327,7 +2371,7 @@
         }
         if (!ok && gen === soundGen && announceAlive(seq)) {
           const blob = await cacheCloudEdgeBlob(nm);
-          if (blob && gen === soundGen && announceAlive(seq)) {
+          if (blob && gen === soundGen && announceAlive(seq) && primedExpectName === nm) {
             await primeMoveAudio(nm, blob);
             ok = await playPrimedWorkName(nm, 1);
             if (!ok) ok = await playBlobFa(blob, 1);
@@ -2336,6 +2380,8 @@
         if (!ok && gen === soundGen && announceAlive(seq)) {
           ok = await speakMoveName(nm, 1);
         }
+        // بعد از اعلام این حرکت، پرایم را خالی کن تا به حرکت بعد نشت نکند
+        if (primedExpectName === nm) clearPrimedWork();
         return;
       }
       beepSoftRing(0);
