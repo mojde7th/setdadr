@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "84";
+  const APP_VER = "85";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=84";
+  const VOICE_Q = "?v=85";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -1724,7 +1724,36 @@
     const isEn = hasLatin && !hasFa;
     const keyLow = raw.toLowerCase();
 
-    // ۱) کلیپ آفلاین — انگلیسی رایج (اسکوات/scout و…) و فارسی لیست
+    // انگلیسی مربی: همان واژهٔ انگلیسی خوانده شود (نه کلیپ فارسی اسکوات و…)
+    if (isEn) {
+      {
+        const ok = await playCachedFaOnly(speakText, v);
+        if (ok) return true;
+      }
+      {
+        const ok = await playBakedDynClip(speakText, v);
+        if (ok) return true;
+      }
+      const okS = await speakSynthLang(speakText, v, "en", {
+        noCancel: true,
+        rate: 1.42
+      });
+      if (okS) return true;
+      const okG = await playGoogleDirect(speakText, v, "en");
+      if (okG) return true;
+      // پشتیبان: اگر TTS انگلیسی نبود، کلیپ فارسی نگاشت‌شده
+      const clipFa =
+        (said && MOVE_CLIP[said.text]) ||
+        MOVE_CLIP[keyLow] ||
+        MOVE_CLIP[raw];
+      if (clipFa) {
+        const ok = await playVoiceFile(clipFa, v);
+        if (ok) return true;
+      }
+      return false;
+    }
+
+    // فارسی: اول کلیپ لیست، بعد سیستم/گوگل
     const clip =
       MOVE_CLIP[raw] ||
       MOVE_CLIP[keyLow] ||
@@ -1732,7 +1761,6 @@
     if (clip) {
       const ok = await playVoiceFile(clip, v);
       if (ok) return true;
-      // اگر HTML شکست، یک‌بار دیگر با مسیر وب‌آودیو
       try {
         unlockAudio();
         const buf = await loadVoiceBuffer(clip);
@@ -1766,29 +1794,6 @@
       const okC = await playCachedFaOnly(said.text, v);
       if (okC) return true;
     }
-
-    // ۲) انگلیسی: سیستم بعد گوگل — واقعی، نه بوق
-    if (isEn) {
-      const okS = await speakSynthLang(speakText, v, "en", {
-        noCancel: true,
-        rate: 1.4
-      });
-      if (okS) return true;
-      const okG = await playGoogleDirect(speakText, v, "en");
-      if (okG) return true;
-      // اگر به فارسی نگاشت شده بود ولی کلیپ بالا شکست
-      if (said && said.text && MOVE_EN[said.text]) {
-        const en2 = MOVE_EN[said.text];
-        const ok2 = await speakSynthLang(en2, v, "en", {
-          noCancel: true,
-          rate: 1.4
-        });
-        if (ok2) return true;
-      }
-      return false;
-    }
-
-    // ۳) فارسی: سیستم / گوگل / هجی لاتین با صدای انگلیسی واقعی
     if (hasUsableFaVoice()) {
       const ok = await speakSynthLang(speakText, v, "fa", {
         noCancel: true,
