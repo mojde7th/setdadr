@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "79";
+  const APP_VER = "80";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=79";
+  const VOICE_Q = "?v=80";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -1477,44 +1477,44 @@
 
   // آوانویسی ماشینی فارسی → لاتین؛ هر متن بی‌ربط را با صدای انگلیسی گوشی می‌خواند
   const FA_ROMAN = {
-    ا: "aa",
-    آ: "aa",
-    ب: "be",
-    پ: "pe",
-    ت: "te",
-    ث: "se",
-    ج: "je",
-    چ: "che",
-    ح: "he",
-    خ: "khe",
-    د: "de",
-    ذ: "ze",
-    ر: "re",
-    ز: "ze",
-    ژ: "zhe",
-    س: "se",
-    ش: "she",
-    ص: "se",
-    ض: "ze",
-    ط: "ta",
-    ظ: "za",
-    ع: "a",
-    غ: "ghe",
-    ف: "fe",
-    ق: "ghe",
-    ک: "ke",
-    ك: "ke",
-    گ: "ge",
-    ل: "le",
-    م: "me",
-    ن: "ne",
-    و: "o",
-    ه: "he",
-    ی: "i",
-    ي: "i",
-    ء: "",
-   ٔ: "",
-    ‌: " ",
+    "ا": "aa",
+    "آ": "aa",
+    "ب": "be",
+    "پ": "pe",
+    "ت": "te",
+    "ث": "se",
+    "ج": "je",
+    "چ": "che",
+    "ح": "he",
+    "خ": "khe",
+    "د": "de",
+    "ذ": "ze",
+    "ر": "re",
+    "ز": "ze",
+    "ژ": "zhe",
+    "س": "se",
+    "ش": "she",
+    "ص": "se",
+    "ض": "ze",
+    "ط": "ta",
+    "ظ": "za",
+    "ع": "a",
+    "غ": "ghe",
+    "ف": "fe",
+    "ق": "ghe",
+    "ک": "ke",
+    "ك": "ke",
+    "گ": "ge",
+    "ل": "le",
+    "م": "me",
+    "ن": "ne",
+    "و": "o",
+    "ه": "he",
+    "ی": "i",
+    "ي": "i",
+    "ء": "",
+    "\u0654": "",
+    "\u200c": " ",
     " ": " ",
     "۰": "0",
     "۱": "1",
