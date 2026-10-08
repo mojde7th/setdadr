@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "124";
+  const APP_VER = "125";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -67,7 +67,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=124";
+  const VOICE_Q = "?v=125";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -909,38 +909,49 @@
         if (gen !== soundGen) return;
         const t0 = audioCtx.currentTime + (o.atMs || 0) / 1000;
         const master = audioCtx.createGain();
-        // فیلتر باز — صدای گرفته/مخملی ندهد
         const lp = audioCtx.createBiquadFilter();
         lp.type = "lowpass";
-        lp.frequency.setValueAtTime(o.bright ? 7000 : 4500, t0);
-        lp.Q.setValueAtTime(0.4, t0);
-        const peak = o.peak != null ? o.peak : 0.95;
-        const total = o.total != null ? o.total : 0.55;
+        // مثل نسخه ۱۱۰: گرم باشگاهی، نه تیز و نه بمب
+        lp.frequency.setValueAtTime(o.bright ? 2200 : 1400, t0);
+        lp.Q.setValueAtTime(0.55, t0);
+        const peak = o.peak != null ? o.peak : 1.1;
+        const total = o.total != null ? o.total : 0.65;
         master.gain.setValueAtTime(0.0001, t0);
-        master.gain.exponentialRampToValueAtTime(peak, t0 + 0.02);
-        master.gain.setValueAtTime(peak * 0.75, t0 + total * 0.45);
+        master.gain.exponentialRampToValueAtTime(peak, t0 + 0.045);
+        master.gain.setValueAtTime(peak * 0.85, t0 + total * 0.5);
         master.gain.exponentialRampToValueAtTime(0.0001, t0 + total);
         master.connect(lp);
         lp.connect(audioCtx.destination);
         const notes = o.notes || [
-          { f: 523.25, at: 0, dur: 0.28, g: 0.7 },
-          { f: 659.25, at: 0.1, dur: 0.32, g: 0.8 }
+          { f: 440, at: 0, dur: 0.32, g: 1.0 },
+          { f: 554.37, at: 0.1, dur: 0.36, g: 0.95 }
         ];
         const oscs = [];
         notes.forEach((n) => {
+          const o1 = audioCtx.createOscillator();
+          const o2 = audioCtx.createOscillator();
+          const g1 = audioCtx.createGain();
+          const g2 = audioCtx.createGain();
+          o1.type = "sine";
+          o2.type = "sine";
           const gt = t0 + n.at;
-          const osc = audioCtx.createOscillator();
-          const g = audioCtx.createGain();
-          osc.type = "sine";
-          osc.frequency.setValueAtTime(n.f, gt);
-          g.gain.setValueAtTime(0.0001, gt);
-          g.gain.exponentialRampToValueAtTime(n.g, gt + 0.015);
-          g.gain.exponentialRampToValueAtTime(0.0001, gt + n.dur);
-          osc.connect(g);
-          g.connect(master);
-          osc.start(gt);
-          osc.stop(gt + n.dur + 0.02);
-          oscs.push(osc);
+          o1.frequency.setValueAtTime(n.f, gt);
+          o2.frequency.setValueAtTime(n.f * 2, gt);
+          g1.gain.setValueAtTime(0.0001, gt);
+          g1.gain.exponentialRampToValueAtTime(n.g * 0.72, gt + 0.05);
+          g1.gain.exponentialRampToValueAtTime(0.0001, gt + n.dur);
+          g2.gain.setValueAtTime(0.0001, gt);
+          g2.gain.exponentialRampToValueAtTime(n.g * 0.14, gt + 0.06);
+          g2.gain.exponentialRampToValueAtTime(0.0001, gt + n.dur);
+          o1.connect(g1);
+          o2.connect(g2);
+          g1.connect(master);
+          g2.connect(master);
+          o1.start(gt);
+          o2.start(gt);
+          o1.stop(gt + n.dur + 0.03);
+          o2.stop(gt + n.dur + 0.03);
+          oscs.push(o1, o2);
         });
         const entry = { osc: oscs[0], gain: master, oscs };
         activeBeep = entry;
@@ -952,19 +963,19 @@
   }
 
   function beepSoftRing(atMs) {
-    // شروع: یک زنگ شیشه‌ای نرم و بلند — «شروع»
+    // شروع: همان زنگ گرم نسخه ۱۱۰
     if (document.hidden || !audioOutputOk()) {
       setTimeout(() => playHtmlBeep(), atMs || 0);
     }
     playWarmChime({
       atMs: atMs || 0,
       stack: false,
-      bright: true,
-      peak: 0.58,
-      total: 0.65,
+      bright: false,
+      peak: 1.05,
+      total: 0.55,
       notes: [
-        { f: 783.99, at: 0, dur: 0.35, g: 0.4 },
-        { f: 1046.5, at: 0.1, dur: 0.45, g: 0.48 }
+        { f: 440, at: 0, dur: 0.32, g: 1.0 },
+        { f: 554.37, at: 0.1, dur: 0.36, g: 0.95 }
       ]
     });
     setTimeout(() => forceHaptic("start"), 280);
@@ -973,7 +984,7 @@
   function beepMidChime() {}
 
   function beepSoftDouble() {
-    // ۴ث مانده: دو تیک کوتاه بلورین — کاملاً جدا از زنگ شروع (نه بمب)
+    // ۴ث: دو تیک کوتاه زیرتر/تیزتر — با زنگ شروع فرق واضح دارد
     const tick = (at, freq) => {
       if (document.hidden || !audioOutputOk()) {
         setTimeout(() => playHtmlWarnBeep(), at);
@@ -982,13 +993,13 @@
         atMs: at,
         stack: true,
         bright: true,
-        peak: 0.5,
-        total: 0.15,
-        notes: [{ f: freq, at: 0, dur: 0.1, g: 0.42 }]
+        peak: 0.7,
+        total: 0.14,
+        notes: [{ f: freq, at: 0, dur: 0.09, g: 0.55 }]
       });
     };
-    tick(0, 1318.5);
-    setTimeout(() => tick(0, 1568.0), 190);
+    tick(0, 988);
+    setTimeout(() => tick(0, 1175), 200);
     setTimeout(() => forceHaptic("warn"), 260);
   }
 
