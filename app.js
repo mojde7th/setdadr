@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "102";
+  const APP_VER = "103";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -38,6 +38,7 @@
   const activeBeeps = [];
   let primedWorkName = "";
   let primedWorkBlob = null;
+  let primedWorkAudioBuffer = null;
   const MUTE_LS = "setdadr-mute";
   let soundMuted = false;
   try {
@@ -47,7 +48,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=102";
+  const VOICE_Q = "?v=103";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -2147,36 +2148,124 @@
     return speakMoveNameOnly(name, vol);
   }
 
+  async function primeMoveAudio(name, blob) {
+    const nm = String(name || "").replace(/\s+/g, " ").trim();
+    if (!nm || !blob) return false;
+    try {
+      unlockAudio();
+      if (!audioCtx) return false;
+      if (audioCtx.state === "suspended") await audioCtx.resume();
+      const raw = await blob.arrayBuffer();
+      const buf = await audioCtx.decodeAudioData(raw.slice(0));
+      primedWorkName = nm;
+      primedWorkBlob = blob;
+      primedWorkAudioBuffer = buf;
+      await saveDynFaToCache(nm, blob);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function playPrimedWorkName(name, vol) {
+    const nm = String(name || "").replace(/\s+/g, " ").trim();
+    if (!nm || primedWorkName !== nm || !primedWorkAudioBuffer || !audioCtx) {
+      return false;
+    }
+    const gen = soundGen;
+    try {
+      unlockAudio();
+      if (audioCtx.state === "suspended") await audioCtx.resume();
+      if (gen !== soundGen) return false;
+      stopVoiceFile();
+      await new Promise((resolve) => {
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          resolve();
+        };
+        if (gen !== soundGen) {
+          finish();
+          return;
+        }
+        const src = audioCtx.createBufferSource();
+        const g = audioCtx.createGain();
+        g.gain.value = Math.max(0.05, Math.min(1, vol == null ? 0.98 : vol));
+        src.buffer = primedWorkAudioBuffer;
+        src.connect(g);
+        g.connect(audioCtx.destination);
+        liveSources.add(src);
+        voicePlayer = src;
+        src.onended = () => {
+          liveSources.delete(src);
+          finish();
+        };
+        src.start();
+        setTimeout(() => {
+          if (gen !== soundGen) {
+            try {
+              src.stop();
+            } catch {}
+            liveSources.delete(src);
+          }
+          finish();
+        }, Math.min(8000, (primedWorkAudioBuffer.duration + 0.4) * 1000));
+      });
+      return gen === soundGen;
+    } catch {
+      return false;
+    }
+  }
+
   async function speakNextMoveName(name, seq) {
     const nm = String(name || "").replace(/\s+/g, " ").trim();
-    // گرم‌کردن در پس‌زمینه — بین «حرکت بعد» و اسم صبر اضافه نگذار
-    if (nm) {
-      cacheCloudEdgeBlob(nm)
-        .then((blob) => {
-          if (blob) {
-            primedWorkName = nm;
-            primedWorkBlob = blob;
-          }
-        })
-        .catch(() => {});
-    }
+    // از اول بلاب را بگیر و به بافر صدا تبدیل کن تا «خود حرکت» همان را پخش کند
+    const prepP = nm
+      ? (async () => {
+          let blob = await loadDynFaFromCache(nm);
+          if (!blob) blob = await cacheCloudEdgeBlob(nm);
+          if (blob) await primeMoveAudio(nm, blob);
+        })()
+      : Promise.resolve();
+    prepP.catch(() => {});
     let pref = await playVoiceFile("phrase-next.mp3", 1);
     if (!pref) pref = await speakFaAny("حرکت بعد", 1);
     if (seq != null && !announceAlive(seq)) return !!pref;
     if (!nm) return !!pref;
-    // فقط یک نفس کوتاه؛ حداکثر فاصله کم
     await sleep(60);
     if (seq != null && !announceAlive(seq)) return false;
-    // اگر بلاب آماده است همان را بگو تا تأخیر ابر نیاید
+    // تا حد کوتاه صبر کن تا بافر آماده شود
+    try {
+      await Promise.race([prepP, sleep(700)]);
+    } catch {}
+    if (seq != null && !announceAlive(seq)) return false;
+    {
+      const ok = await playPrimedWorkName(nm, 1);
+      if (ok) return true;
+    }
     if (primedWorkName === nm && primedWorkBlob) {
       const ok = await playBlobFa(primedWorkBlob, 1);
-      if (ok) return true;
+      if (ok) {
+        await primeMoveAudio(nm, primedWorkBlob);
+        return true;
+      }
     }
     {
       const cached = await playCachedFaOnly(nm, 1);
-      if (cached) return true;
+      if (cached) {
+        const b = await loadDynFaFromCache(nm);
+        if (b) await primeMoveAudio(nm, b);
+        return true;
+      }
     }
-    return speakMoveNameOnly(nm, 1);
+    const said = await speakMoveNameOnly(nm, 1);
+    // بعد از پخش لینکی هم سعی کن بافر برای فاز کار بسازی
+    prepP.catch(() => {});
+    cacheCloudEdgeBlob(nm)
+      .then((blob) => (blob ? primeMoveAudio(nm, blob) : null))
+      .catch(() => {});
+    return said;
   }
 
   async function speakCheerOnly(seq) {
@@ -2196,20 +2285,18 @@
         step.kind === "work" && step.name ? warmFaTts(step.name) : Promise.resolve();
       buzz(step.kind === "work" ? [80, 35, 90] : [55, 30, 70]);
       if (step.kind === "work") {
-        // بوق اول، بعد حدود ۲ ثانیه اسم حرکت (حتماً)
+        // بوق اول، بعد حدود ۲ ثانیه همان تلفظ آماده‌شده از «حرکت بعد»
         startBgKeepAlive();
         beepSoftRing(0);
         const nm = String(step.name || "").replace(/\s+/g, " ").trim();
         warmWork.catch(() => {});
-        if (nm) {
-          cacheCloudEdgeBlob(nm)
-            .then((blob) => {
-              if (blob) {
-                primedWorkName = nm;
-                primedWorkBlob = blob;
-              }
-            })
-            .catch(() => {});
+        // اگر بافر نیست، در همین ۲ث بساز
+        if (nm && !(primedWorkName === nm && primedWorkAudioBuffer)) {
+          (async () => {
+            let blob = primedWorkBlob || (await loadDynFaFromCache(nm));
+            if (!blob) blob = await cacheCloudEdgeBlob(nm);
+            if (blob) await primeMoveAudio(nm, blob);
+          })().catch(() => {});
         }
         const t0 = Date.now();
         while (Date.now() - t0 < 2000) {
@@ -2228,13 +2315,11 @@
         if (!nm) return;
         const gen = soundGen;
         let ok = false;
-        // بلاب آماده‌شده از «حرکت بعد»
-        if (
-          !ok &&
-          primedWorkName === nm &&
-          primedWorkBlob &&
-          gen === soundGen
-        ) {
+        // مسیر اصلی: بافر دیکد‌شده از استراحت (بدون شبکه / بدون قفل پخش)
+        if (gen === soundGen && announceAlive(seq)) {
+          ok = await playPrimedWorkName(nm, 1);
+        }
+        if (!ok && gen === soundGen && announceAlive(seq) && primedWorkBlob) {
           ok = await playBlobFa(primedWorkBlob, 1);
         }
         if (!ok && gen === soundGen && announceAlive(seq)) {
@@ -2243,18 +2328,13 @@
         if (!ok && gen === soundGen && announceAlive(seq)) {
           const blob = await cacheCloudEdgeBlob(nm);
           if (blob && gen === soundGen && announceAlive(seq)) {
-            primedWorkName = nm;
-            primedWorkBlob = blob;
-            ok = await playBlobFa(blob, 1);
+            await primeMoveAudio(nm, blob);
+            ok = await playPrimedWorkName(nm, 1);
+            if (!ok) ok = await playBlobFa(blob, 1);
           }
         }
         if (!ok && gen === soundGen && announceAlive(seq)) {
           ok = await speakMoveName(nm, 1);
-        }
-        if (!ok && gen === soundGen && announceAlive(seq)) {
-          unlockAudio();
-          await sleep(60);
-          if (announceAlive(seq) && soundGen === gen) await speakMoveName(nm, 1);
         }
         return;
       }
