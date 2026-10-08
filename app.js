@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "116";
+  const APP_VER = "117";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -65,7 +65,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=116";
+  const VOICE_Q = "?v=117";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -611,8 +611,8 @@
       const osc = audioCtx.createOscillator();
       const g = audioCtx.createGain();
       // فراصوت خیلی ضعیف — وزوز شنیده نشود
-      g.gain.value = 0.00008;
-      osc.frequency.value = 17500;
+      g.gain.value = 0.00003;
+      osc.frequency.value = 18000;
       osc.type = "sine";
       osc.connect(g);
       g.connect(audioCtx.destination);
@@ -790,9 +790,9 @@
   }
 
   function makeQuietKeepUrl() {
-    // ۱۷٫۵کیلوهرتز خیلی ضعیف — وزوز مورچه‌ای شنیده نشود
+    // نویز سفید خیلی ضعیف روی ۴۴٫۱ک — وزوز مورچه‌ای نمی‌آید
     try {
-      const sr = 16000;
+      const sr = 44100;
       const sec = 2;
       const n = sr * sec;
       const data = new ArrayBuffer(44 + n * 2);
@@ -814,11 +814,8 @@
       w(36, "data");
       view.setUint32(40, n * 2, true);
       for (let i = 0; i < n; i++) {
-        const tt = i / sr;
-        const sample = Math.sin(2 * Math.PI * 17500 * tt) * 0.0022;
+        const sample = (Math.random() * 2 - 1) * 0.00035;
         let v = (sample * 32767) | 0;
-        if (v > 32767) v = 32767;
-        if (v < -32768) v = -32768;
         view.setInt16(44 + i * 2, v, true);
       }
       return URL.createObjectURL(new Blob([data], { type: "audio/wav" }));
@@ -854,13 +851,13 @@
       } catch {}
       const a = makeHtmlAudio(makeQuietKeepUrl());
       a.loop = true;
-      a.volume = 0.01;
+      a.volume = 0.004;
       a.muted = false;
       bgKeepAudio = a;
     } else {
       try {
         bgKeepAudio.muted = false;
-        bgKeepAudio.volume = 0.01;
+        bgKeepAudio.volume = 0.004;
         bgKeepAudio.loop = true;
       } catch {}
     }
@@ -903,7 +900,7 @@
     if (bgKeepAudio) {
       try {
         bgKeepAudio.muted = false;
-        bgKeepAudio.volume = 0.01;
+        bgKeepAudio.volume = 0.004;
       } catch {}
       const p = bgKeepAudio.play();
       if (p && typeof p.then === "function") {
