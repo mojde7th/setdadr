@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "43";
+  const APP_VER = "44";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=43";
+  const VOICE_Q = "?v=44";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -179,8 +179,18 @@
     paintMuteBtn();
   }
 
+  function announceAlive(seq) {
+    return seq === announceSeq;
+  }
+
   function queueAnnounce(task) {
-    announceChain = announceChain.then(() => task()).catch(() => {});
+    const seq = announceSeq;
+    announceChain = announceChain
+      .then(async () => {
+        if (!announceAlive(seq)) return;
+        await task(seq);
+      })
+      .catch(() => {});
     return announceChain;
   }
 
@@ -265,6 +275,8 @@
   function stopAllSound() {
     announceSeq += 1;
     speakToken += 1;
+    // صف اعلام قبلی را رها کن تا با «بعدی» حرف قبلی نگوید
+    announceChain = Promise.resolve();
     stopBeep();
     stopVoiceFile();
     if (window.speechSynthesis) {
@@ -670,13 +682,12 @@
   }
 
   async function speakPhase(step) {
-    return queueAnnounce(async () => {
-      // تمرین: زنگ + بلافاصله اسم
-      // استراحت: زنگ + «حرکت بعد» چسبیده به اسم
+    return queueAnnounce(async (seq) => {
+      if (!announceAlive(seq)) return;
       buzz(step.kind === "work" ? [100, 45, 100, 45, 160] : [70, 35, 70, 35, 90]);
       beepWhite(400, false);
-      // فاصله تا زنگ و اسم روی هم نیفتند
       await sleep(700);
+      if (!announceAlive(seq)) return;
       if (step.kind === "work") {
         if (step.name) await speakMoveName(step.name, 1);
         return;
@@ -686,7 +697,9 @@
       const said = sayForMove(name);
       if (!said.text) return;
       await speakFaSynthAsync("حرکت بعد", 1);
+      if (!announceAlive(seq)) return;
       await sleep(0);
+      if (!announceAlive(seq)) return;
       await speakFaSynthAsync(said.text, 1, said.lang === "en" ? "en" : "fa");
     });
   }
@@ -694,12 +707,15 @@
   async function speakDoneAmount(sec) {
     const n = Math.round(sec);
     if (n <= 0) return;
-    return queueAnnounce(async () => {
+    return queueAnnounce(async (seq) => {
+      if (!announceAlive(seq)) return;
       buzz([55, 30, 90]);
-      // بلافاصله عالی؛ نیم‌ثانیه بعد مقدار دقیق هدف
       let ok = await playVoiceFile("cheer-ali.mp3", 0.98);
+      if (!announceAlive(seq)) return;
       if (!ok) await speakFaSynthAsync("عالی", 1, "fa", { rate: 1.2, pitch: 1.2 });
+      if (!announceAlive(seq)) return;
       await sleep(450);
+      if (!announceAlive(seq)) return;
       if (VOICE_FILES.went[n]) {
         ok = await playVoiceFile("went-" + n + ".mp3", 0.98);
         if (ok) return;
@@ -1075,6 +1091,7 @@
 
   function advance() {
     if (!run) return;
+    stopAllSound();
     run.i += 1;
     if (run.i >= run.steps.length) {
       finishRun();
