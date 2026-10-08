@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "40";
+  const APP_VER = "41";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=40";
+  const VOICE_Q = "?v=41";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -686,7 +686,7 @@
       const said = sayForMove(name);
       if (!said.text) return;
       await speakFaSynthAsync("حرکت بعد", 1);
-      await sleep(350);
+      await sleep(180);
       await speakFaSynthAsync(said.text, 1, said.lang === "en" ? "en" : "fa");
     });
   }
@@ -699,7 +699,7 @@
       // بلافاصله عالی؛ نیم‌ثانیه بعد مقدار دقیق هدف
       let ok = await playVoiceFile("cheer-ali.mp3", 0.98);
       if (!ok) await speakFaSynthAsync("عالی", 1, "fa", { rate: 1.2, pitch: 1.2 });
-      await sleep(500);
+      await sleep(450);
       if (VOICE_FILES.went[n]) {
         ok = await playVoiceFile("went-" + n + ".mp3", 0.98);
         if (ok) return;
@@ -1050,7 +1050,8 @@
     // دوسوم: زودتر تریگر کن تا وقتی صدا به «رفت» برسد همان ثانیه دقیق باشد
     const midKey = run.i + ":twoThirds";
     const targetLeft = Math.ceil(run.phaseDur / 3);
-    const lead = 2; // جبران تأخیر کلیپ عالی + نیم‌ثانیه
+    // عالی ۲–۳ ثانیه زودتر؛ اعلام زمان هم جلوتر تا عقب نیفتد
+    const lead = 4;
     const fireLeft = targetLeft + lead;
     if (
       run.phaseDur >= 12 &&
