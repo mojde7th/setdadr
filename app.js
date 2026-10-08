@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "42";
+  const APP_VER = "43";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=42";
+  const VOICE_Q = "?v=43";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -675,8 +675,8 @@
       // استراحت: زنگ + «حرکت بعد» چسبیده به اسم
       buzz(step.kind === "work" ? [100, 45, 100, 45, 160] : [70, 35, 70, 35, 90]);
       beepWhite(400, false);
-      // فاصله کوتاه تا زنگ و اسم روی هم نیفتند
-      await sleep(400);
+      // فاصله تا زنگ و اسم روی هم نیفتند
+      await sleep(700);
       if (step.kind === "work") {
         if (step.name) await speakMoveName(step.name, 1);
         return;
