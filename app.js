@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "64";
+  const APP_VER = "65";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=64";
+  const VOICE_Q = "?v=65";
   const dynFaAudio = new Map(); // متن فارسی → Audio
   const dynFaBlob = new Map(); // متن فارسی → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -579,7 +579,7 @@
             ws.close();
           } catch {}
           done(null);
-        }, 10000);
+        }, 2800);
 
         ws.onopen = () => {
           try {
@@ -866,10 +866,16 @@
       }
       unlockAudio();
       loadVoices();
-      speakToken += 1;
-      const tok = speakToken;
       const ios = isIOSLike();
       const o = opts || {};
+      const useEn = lang === "en" && enVoice;
+      // روی آیفون بدون صدای فارسی، تلفظ فارسی معمولاً سکوت است
+      if (!useEn && !o.voice && ios && !faVoice) {
+        resolve(false);
+        return;
+      }
+      speakToken += 1;
+      const tok = speakToken;
       if (!ios && !o.noCancel) {
         try {
           speechSynthesis.cancel();
@@ -885,7 +891,6 @@
         } catch {}
         try {
           const u = new SpeechSynthesisUtterance(String(text));
-          const useEn = lang === "en" && enVoice;
           if (o.voice) {
             u.voice = o.voice;
             u.lang = o.lang || o.voice.lang || "fa-IR";
@@ -902,8 +907,8 @@
               u.voice = faVoice;
               u.lang = faVoice.lang || "fa-IR";
             }
-            u.rate = o.rate != null ? o.rate : 1.26;
-            u.pitch = o.pitch != null ? o.pitch : 1.26;
+            u.rate = o.rate != null ? o.rate : 1.32;
+            u.pitch = o.pitch != null ? o.pitch : 1.2;
           }
           u.volume = vol == null ? 1 : Math.min(1, vol);
           let finished = false;
@@ -1227,17 +1232,24 @@
       return speakFaSynthAsync(raw, v, "en", opts);
     }
 
-    // ۳) هر فارسی از هر جا (انتخاب‌شده / تایپ‌شده) — دیلارا بعد کش
+    // ۳) راه ساده رایج: تلفظ سیستم فارسی؛ بعد پشتیبان کوتاه آنلاین
     if (hasFa) {
       const phrase = said.text || raw;
+      loadVoices();
+      if (faVoice || !ios) {
+        const synthOk = await speakFaSynthAsync(phrase, v, "fa", {
+          ...opts,
+          rate: 1.35,
+          pitch: 1.18
+        });
+        if (synthOk) return true;
+      }
       const dyn = await playDynamicFa(phrase, v);
       if (dyn) return true;
       if (phrase !== raw) {
         const dyn2 = await playDynamicFa(raw, v);
         if (dyn2) return true;
       }
-      const synthOk = await speakFaSynthAsync(phrase, v, "fa", opts);
-      if (synthOk) return true;
     }
 
     // ۴) آخرین راه: معادل انگلیسی شناخته‌شده
@@ -1257,13 +1269,21 @@
   async function speakNextMoveName(name, seq) {
     const ios = isIOSLike();
     const opts = ios ? { noCancel: true } : {};
-    // حتماً اول «حرکت بعد» از کلیپ، بعد اسم
-    let ok = await playVoiceFile("phrase-next.mp3", 0.98);
+    // اول «حرکت بعد»، بعد خیلی سریع اسم (فاصله کم)
+    loadVoices();
+    let ok = false;
+    if (faVoice || !ios) {
+      ok = await speakFaSynthAsync("حرکت بعد", 1, "fa", {
+        ...opts,
+        rate: 1.4,
+        pitch: 1.15
+      });
+    }
     if (!ok) {
-      await speakFaSynthAsync("حرکت بعد", 1, "fa", opts);
+      ok = await playVoiceFile("phrase-next.mp3", 0.98);
     }
     if (seq != null && !announceAlive(seq)) return false;
-    await sleep(220);
+    await sleep(45);
     if (seq != null && !announceAlive(seq)) return false;
     if (!name) return false;
     return speakMoveNameOnly(name, 1);
