@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "56";
+  const APP_VER = "57";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=56";
+  const VOICE_Q = "?v=57";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -746,25 +746,27 @@
     return { text: raw, lang: "fa" };
   }
 
-  // روی آیفون صدای فارسی سیستم غالباً نیست؛ اسم لاتین را انگلیسی بگو
+  // همیشه پیشوند فارسی «حرکت بعد»؛ اسم لاتین جدا با انگلیسی
   function sayForDevice(name, asNext) {
     const raw = String(name || "").trim();
     if (!raw) return { text: "", lang: "fa" };
-    const ios = isIOSLike();
     const hasLatin = /[A-Za-z]/.test(raw);
-    if (ios && hasLatin) {
-      const en = raw;
-      return { text: asNext ? "next " + en : en, lang: "en" };
-    }
-    const said = sayForMove(raw);
-    if (!said.text) return { text: "", lang: "fa" };
+    const hasFa = /[\u0600-\u06FF]/.test(raw);
     if (asNext) {
+      if (hasLatin && !hasFa) {
+        return { text: raw, lang: "en", prefixFa: "حرکت بعد" };
+      }
+      const said = sayForMove(raw);
+      if (!said.text) return { text: "", lang: "fa" };
       if (said.lang === "en") {
         return { text: said.text, lang: "en", prefixFa: "حرکت بعد" };
       }
       return { text: "حرکت بعد " + said.text, lang: "fa" };
     }
-    return said;
+    if (isIOSLike() && hasLatin && !hasFa) {
+      return { text: raw, lang: "en" };
+    }
+    return sayForMove(raw);
   }
 
   async function speakMoveName(name, vol) {
