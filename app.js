@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "58";
+  const APP_VER = "59";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,8 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=58";
+  const VOICE_Q = "?v=59";
+  const dynFaAudio = new Map(); // متن فارسی دلخواه → Audio آماده‌شده
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -435,33 +436,96 @@
     return buf;
   }
 
+  function faTtsUrl(text) {
+    const q = encodeURIComponent(String(text || "").trim().slice(0, 160));
+    return (
+      "https://translate.googleapis.com/translate_tts?ie=UTF-8&client=gtx&tl=fa&q=" +
+      q
+    );
+  }
+
+  function makeHtmlAudio(src) {
+    const a = new Audio(src);
+    a.playsInline = true;
+    a.setAttribute("playsinline", "");
+    a.setAttribute("webkit-playsinline", "");
+    a.preload = "auto";
+    return a;
+  }
+
+  function warmFaTts(text) {
+    const key = String(text || "").trim().slice(0, 160);
+    if (!key || !/[\u0600-\u06FF]/.test(key)) return;
+    if (dynFaAudio.has(key)) return;
+    try {
+      const a = makeHtmlAudio(faTtsUrl(key));
+      dynFaAudio.set(key, a);
+      try {
+        a.load();
+      } catch {}
+    } catch {}
+  }
+
+  function warmMoveVoice(name) {
+    try {
+      const said = sayForMove(name);
+      if (said && said.text) warmFaTts(said.text);
+    } catch {}
+  }
+
+  async function playHtmlAudioEl(a, vol) {
+    if (soundMuted || !a) return false;
+    unlockAudio();
+    stopVoiceFile();
+    try {
+      a.pause();
+      a.currentTime = 0;
+    } catch {}
+    a.volume = Math.max(0.05, Math.min(1, vol == null ? 0.98 : vol));
+    voicePlayer = a;
+    return await new Promise((resolve) => {
+      let done = false;
+      const finish = (ok) => {
+        if (done) return;
+        done = true;
+        resolve(!!ok);
+      };
+      a.onended = () => finish(true);
+      a.onerror = () => finish(false);
+      const p = a.play();
+      if (p && typeof p.then === "function") {
+        p.then(() => {}).catch(() => finish(false));
+      }
+      setTimeout(() => finish(true), 9000);
+    });
+  }
+
+  // هر متن فارسی دلخواه (حتی جامپ و اسم‌های غریبه) — روی گوشی با تی‌تی‌اس آنلاین
+  async function playDynamicFa(text, vol) {
+    const key = String(text || "").trim().slice(0, 160);
+    if (!key) return false;
+    try {
+      let a = dynFaAudio.get(key);
+      if (!a) {
+        a = makeHtmlAudio(faTtsUrl(key));
+        dynFaAudio.set(key, a);
+      }
+      const ok = await playHtmlAudioEl(a, vol);
+      if (ok) return true;
+      // یک‌بار دیگر با آدرس تازه
+      const a2 = makeHtmlAudio(faTtsUrl(key));
+      dynFaAudio.set(key, a2);
+      return await playHtmlAudioEl(a2, vol);
+    } catch {
+      return false;
+    }
+  }
+
   async function playVoiceFileHtml(rel, vol) {
     try {
       if (soundMuted) return false;
-      unlockAudio();
-      stopVoiceFile();
-      const a = new Audio(VOICE_BASE + rel + VOICE_Q);
-      a.playsInline = true;
-      a.setAttribute("playsinline", "");
-      a.setAttribute("webkit-playsinline", "");
-      a.preload = "auto";
-      a.volume = Math.max(0.05, Math.min(1, vol == null ? 0.98 : vol));
-      voicePlayer = a;
-      return await new Promise((resolve) => {
-        let done = false;
-        const finish = (ok) => {
-          if (done) return;
-          done = true;
-          resolve(!!ok);
-        };
-        a.onended = () => finish(true);
-        a.onerror = () => finish(false);
-        const p = a.play();
-        if (p && typeof p.then === "function") {
-          p.then(() => {}).catch(() => finish(false));
-        }
-        setTimeout(() => finish(true), 9000);
-      });
+      const a = makeHtmlAudio(VOICE_BASE + rel + VOICE_Q);
+      return await playHtmlAudioEl(a, vol);
     } catch {
       return false;
     }
@@ -715,7 +779,10 @@
     yoga: "یوگا",
     stretch: "کشش",
     کشش: "کشش",
-    استراحت: "استراحت"
+    استراحت: "استراحت",
+    jump: "جامپ",
+    jumps: "جامپ",
+    جامپ: "جامپ"
   };
 
   // کلیپ آفلاین فارسی برای گوشی (آیفون تلفظ فارسی سیستم ندارد)
@@ -761,7 +828,8 @@
     "بتل روپ": "move-battle.mp3",
     طناب: "move-jump-rope.mp3",
     یوگا: "move-yoga.mp3",
-    کشش: "move-stretch.mp3"
+    کشش: "move-stretch.mp3",
+    جامپ: "move-jump.mp3"
   };
 
   const MOVE_EN = {
@@ -806,7 +874,8 @@
     "بتل روپ": "battle rope",
     طناب: "jump rope",
     یوگا: "yoga",
-    کشش: "stretch"
+    کشش: "stretch",
+    جامپ: "jump"
   };
 
   function sayForMove(name) {
@@ -847,29 +916,47 @@
     const ios = isIOSLike();
     const opts = ios ? { noCancel: true } : {};
     const v = vol == null ? 0.98 : vol;
+    const hasLatin = /[A-Za-z]/.test(raw);
+    const hasFa = /[\u0600-\u06FF]/.test(said.text) || /[\u0600-\u06FF]/.test(raw);
 
-    // ۱) کلیپ آفلاین فارسی (برای گوشی حیاتی است)
+    // ۱) کلیپ آفلاین فارسی
     const clip = MOVE_CLIP[said.text];
     if (clip) {
       const ok = await playVoiceFile(clip, v);
       if (ok) return true;
     }
 
-    // ۲) اسم لاتین یا معادل انگلیسی روی آیفون
-    const hasLatin = /[A-Za-z]/.test(raw);
-    const hasFa = /[\u0600-\u06FF]/.test(raw);
-    if (hasLatin && !hasFa) {
+    // ۲) فقط لاتین → انگلیسی سیستم
+    if (hasLatin && !hasFa && said.lang === "en") {
+      return speakFaSynthAsync(said.text || raw, v, "en", opts);
+    }
+    if (hasLatin && !/[\u0600-\u06FF]/.test(raw) && !MOVE_SAY[normMoveKey(raw)]) {
       return speakFaSynthAsync(raw, v, "en", opts);
     }
-    if (ios && MOVE_EN[said.text]) {
+
+    // ۳) هر فارسی دلخواه: روی گوشی اول تی‌تی‌اس آنلاین (هر کلمه‌ای مثل جامپ)
+    if (hasFa) {
+      if (ios) {
+        const dyn = await playDynamicFa(said.text, v);
+        if (dyn) return true;
+      }
+      const synthOk = await speakFaSynthAsync(said.text, v, "fa", opts);
+      if (synthOk && !ios) return true;
+      if (!ios) {
+        const dyn = await playDynamicFa(said.text, v);
+        if (dyn) return true;
+      }
+      if (synthOk) return true;
+    }
+
+    // ۴) آخرین راه: معادل انگلیسی شناخته‌شده
+    if (MOVE_EN[said.text]) {
       return speakFaSynthAsync(MOVE_EN[said.text], v, "en", opts);
     }
     if (said.lang === "en") {
       return speakFaSynthAsync(said.text, v, "en", opts);
     }
-
-    // ۳) تلفظ فارسی سیستم (لپ‌تاپ)
-    return speakFaSynthAsync(said.text, v, "fa", opts);
+    return playDynamicFa(said.text, v);
   }
 
   async function speakMoveName(name, vol) {
@@ -1224,6 +1311,9 @@
     stopAllSound();
     const steps = buildTimeline(p);
     unlockAudio();
+    try {
+      p.circuit.forEach((c) => warmMoveVoice(c.name));
+    } catch {}
     run = {
       planId: p.id,
       title: p.title,
@@ -1453,6 +1543,7 @@
     const work = Math.max(5, Number($("#moveWork").value) || 40);
     state.moves.unshift({ id: uid(), name, work });
     save(state);
+    warmMoveVoice(name);
     $("#moveName").value = "";
     renderMoves();
   });
@@ -1470,6 +1561,7 @@
       renderMoves();
     }
     circuit.push({ id: uid(), name, work });
+    warmMoveVoice(name);
     $("#pickMoveName").value = "";
     const sel = $("#pickFromLib");
     if (sel) sel.value = "";
