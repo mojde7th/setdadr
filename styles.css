@@ -148,43 +148,44 @@ html, body {
   font-weight: 900;
   color: var(--muted);
 }
-/* طول کوتاه + وسط افقی */
+/* وسط؛ کمی تپل‌تر؛ فونت ۱۶ تا گوشی زوم نکند */
 .add-set-form .field-block:has(#pickFromLib),
 .add-set-form .field-block:has(#pickMoveName) {
   justify-items: stretch;
   justify-self: center;
   width: 100%;
-  max-width: min(72vw, 260px);
+  max-width: min(78vw, 280px);
   margin-inline: auto;
   text-align: center;
 }
 .add-set-form .select-wrap {
   width: 100%;
-  max-width: min(72vw, 260px);
+  max-width: min(78vw, 280px);
   margin-inline: auto;
 }
 .add-set-form select,
 .add-set-form input[type="text"] {
   width: 100%;
-  max-width: min(72vw, 260px);
+  max-width: min(78vw, 280px);
   margin-inline: auto;
   display: block;
-  min-height: 44px;
-  height: 44px;
-  border-radius: 12px;
+  min-height: 52px;
+  height: 52px;
+  border-radius: 14px;
   border: 1px solid var(--line);
   background: var(--bg2, #17130e);
   color: inherit;
   font: inherit;
-  font-size: 14px;
+  font-size: 16px; /* زیر از ۱۶ = زوم آی‌او‌اس/اندروید */
   font-weight: 700;
-  padding: 8px 12px;
+  padding: 10px 14px;
   box-sizing: border-box;
-  line-height: 1.3;
+  line-height: 1.25;
+  touch-action: manipulation;
 }
 .add-set-form input[type="text"]::placeholder {
-  font-size: 13px;
-  opacity: 0.55;
+  font-size: 16px;
+  opacity: 0.5;
 }
 .num-step.with-unit {
   grid-template-columns: 44px 1fr 44px auto;
@@ -626,35 +627,43 @@ input[type="text"], input[type="number"] {
 .pick-select,
 #pickFromLib.pick-select {
   width: 100%;
-  max-width: min(72vw, 260px) !important;
-  min-height: 44px !important;
-  height: 44px !important;
-  border-radius: 12px !important;
+  max-width: min(78vw, 280px) !important;
+  min-height: 52px !important;
+  height: 52px !important;
+  border-radius: 14px !important;
   border: 1px solid var(--line) !important;
   background: var(--bg2, #17130e) !important;
   color: inherit !important;
   font: inherit !important;
-  font-size: 14px !important;
+  font-size: 16px !important;
   font-weight: 700 !important;
-  padding: 8px 36px 8px 12px !important;
+  padding: 10px 40px 10px 14px !important;
   box-sizing: border-box;
   appearance: none;
   -webkit-appearance: none;
   cursor: pointer;
-  line-height: 1.3;
+  line-height: 1.25;
+  touch-action: manipulation;
 }
 #pickMoveName {
-  font-size: 14px !important;
+  font-size: 16px !important;
   font-weight: 700 !important;
-  max-width: min(72vw, 260px) !important;
-  min-height: 44px !important;
-  height: 44px !important;
-  padding: 8px 12px !important;
-  border-radius: 12px !important;
+  max-width: min(78vw, 280px) !important;
+  min-height: 52px !important;
+  height: 52px !important;
+  padding: 10px 14px !important;
+  border-radius: 14px !important;
+  touch-action: manipulation;
 }
 #pickMoveName::placeholder {
-  font-size: 13px !important;
-  opacity: 0.55;
+  font-size: 16px !important;
+  opacity: 0.5;
+}
+/* صفحه حرکت‌ها هم بدون زوم */
+#moveName {
+  font-size: 16px !important;
+  min-height: 48px;
+  touch-action: manipulation;
 }
 .pick-select:focus {
   outline: none;
