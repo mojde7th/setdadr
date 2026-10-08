@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "122";
+  const APP_VER = "123";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -67,7 +67,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=122";
+  const VOICE_Q = "?v=123";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -928,7 +928,7 @@
   }
 
   function beepSoftRing(atMs) {
-    // شروع: زنگ نرم آیفونی + هپتیک اجباری
+    // شروع حرکت: یک زنگ بلند بالارونده — مشخصاً «برو»
     if (document.hidden || !audioOutputOk()) {
       setTimeout(() => playHtmlBeep(), atMs || 0);
     }
@@ -936,29 +936,23 @@
       atMs: atMs || 0,
       stack: false,
       bright: true,
-      peak: 0.62,
-      total: 0.48,
+      peak: 0.72,
+      total: 0.7,
       notes: [
-        { f: 1046.5, at: 0, dur: 0.28, g: 0.42 },
-        { f: 1318.5, at: 0.07, dur: 0.36, g: 0.36 }
+        { f: 523.25, at: 0, dur: 0.22, g: 0.45 },
+        { f: 659.25, at: 0.12, dur: 0.28, g: 0.55 },
+        { f: 880.0, at: 0.28, dur: 0.4, g: 0.65 }
       ]
     });
-    setTimeout(() => forceHaptic("start"), 200);
+    setTimeout(() => forceHaptic("start"), 250);
   }
 
   function beepMidChime() {
-    if (document.hidden || !audioOutputOk()) playHtmlBeep();
-    playWarmChime({
-      stack: false,
-      bright: true,
-      peak: 0.5,
-      total: 0.28,
-      notes: [{ f: 880.0, at: 0, dur: 0.16, g: 0.4 }]
-    });
-    setTimeout(() => forceHaptic("mid"), 120);
+    // دیگر برای عالی صدا نمی‌زند؛ نگه داشته شده اگر جایی لازم شد
   }
 
   function beepSoftDouble() {
+    // ۴ ثانیه مانده: سه ضربه کوتاه بم — با زنگ شروع قاطی نمی‌شود
     const tick = (at) => {
       if (document.hidden || !audioOutputOk()) {
         setTimeout(() => playHtmlWarnBeep(), at);
@@ -966,15 +960,16 @@
       playWarmChime({
         atMs: at,
         stack: true,
-        bright: true,
-        peak: 0.55,
-        total: 0.14,
-        notes: [{ f: 1174.7, at: 0, dur: 0.09, g: 0.45 }]
+        bright: false,
+        peak: 0.8,
+        total: 0.18,
+        notes: [{ f: 220.0, at: 0, dur: 0.12, g: 0.75 }]
       });
     };
     tick(0);
-    setTimeout(() => tick(0), 200);
-    setTimeout(() => forceHaptic("warn"), 280);
+    setTimeout(() => tick(0), 240);
+    setTimeout(() => tick(0), 480);
+    setTimeout(() => forceHaptic("warn"), 300);
   }
 
   function beepWhite(ms, soft) {
@@ -3052,7 +3047,7 @@
 
   async function speakCheerOnly(seq) {
     if (seq != null && !announceAlive(seq)) return;
-    buzz([55, 30, 90]);
+    // بدون بوق — فقط صدای عالی
     let ok = await playVoiceFile("cheer-ali.mp3", 0.98);
     if (seq != null && !announceAlive(seq)) return;
     if (!ok) await speakFaAny("عالی", 1);
@@ -3535,7 +3530,7 @@
         cur <= fireLeft
       ) {
         run.announced[midKey] = true;
-        beepMidChime();
+        // بدون بوق وسط — فقط عالی + ثانیه
         speakDoneAmount(done, total);
       }
     }
