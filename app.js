@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "117";
+  const APP_VER = "118";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,6 +41,8 @@
   let primedWorkBlob = null;
   let primedWorkAudioBuffer = null;
   let primedExpectName = "";
+  const primedHtmlSpeak = new Map(); // key -> { a, url }
+  const primedSpeakAudios = new Set();
 
   function clearPrimedWork() {
     primedWorkName = "";
@@ -65,7 +67,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=117";
+  const VOICE_Q = "?v=118";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -527,6 +529,7 @@
     const keep = bgKeepAudio;
     liveAudios.forEach((a) => {
       if (keep && a === keep) return;
+      if (primedSpeakAudios.has(a)) return;
       try {
         a.onended = null;
         a.onerror = null;
@@ -545,6 +548,7 @@
     });
     liveAudios.clear();
     if (keep) liveAudios.add(keep);
+    primedSpeakAudios.forEach((a) => liveAudios.add(a));
   }
 
   function killAllSources() {
@@ -936,48 +940,48 @@
         const t0 = audioCtx.currentTime + (o.atMs || 0) / 1000;
         const master = audioCtx.createGain();
         const lp = audioCtx.createBiquadFilter();
-        const hp = audioCtx.createBiquadFilter();
-        hp.type = "highpass";
-        hp.frequency.setValueAtTime(o.bright ? 140 : 55, t0);
         lp.type = "lowpass";
-        lp.frequency.setValueAtTime(o.bright ? 5200 : 2400, t0);
-        lp.Q.setValueAtTime(0.75, t0);
-        const peak = o.peak != null ? o.peak : 1.4;
-        const total = o.total != null ? o.total : 0.8;
+        lp.frequency.setValueAtTime(o.bright ? 2600 : 1100, t0);
+        lp.Q.setValueAtTime(0.55, t0);
+        const peak = o.peak != null ? o.peak : 1.2;
+        const total = o.total != null ? o.total : 0.7;
         master.gain.setValueAtTime(0.0001, t0);
-        master.gain.exponentialRampToValueAtTime(peak, t0 + 0.025);
-        master.gain.setValueAtTime(peak * 0.9, t0 + total * 0.4);
+        master.gain.exponentialRampToValueAtTime(peak, t0 + 0.04);
+        master.gain.setValueAtTime(peak * 0.88, t0 + total * 0.5);
         master.gain.exponentialRampToValueAtTime(0.0001, t0 + total);
-        master.connect(hp);
-        hp.connect(lp);
+        master.connect(lp);
         lp.connect(audioCtx.destination);
         const notes = o.notes || [
-          { f: 392.0, at: 0, dur: 0.42, g: 1.05 },
-          { f: 523.25, at: 0.12, dur: 0.48, g: 1.15 },
-          { f: 659.25, at: 0.28, dur: 0.52, g: 1.0 }
+          { f: 392.0, at: 0, dur: 0.38, g: 0.95 },
+          { f: 523.25, at: 0.14, dur: 0.42, g: 1.05 },
+          { f: 659.25, at: 0.3, dur: 0.45, g: 0.85 }
         ];
         const oscs = [];
         notes.forEach((n) => {
+          const o1 = audioCtx.createOscillator();
+          const o2 = audioCtx.createOscillator();
+          const g1 = audioCtx.createGain();
+          const g2 = audioCtx.createGain();
+          o1.type = "sine";
+          o2.type = "sine";
           const gt = t0 + n.at;
-          const layer = (type, freq, gainMul, detune) => {
-            const osc = audioCtx.createOscillator();
-            const g = audioCtx.createGain();
-            osc.type = type;
-            osc.frequency.setValueAtTime(freq, gt);
-            if (detune) osc.detune.setValueAtTime(detune, gt);
-            g.gain.setValueAtTime(0.0001, gt);
-            g.gain.exponentialRampToValueAtTime(n.g * gainMul, gt + 0.018);
-            g.gain.exponentialRampToValueAtTime(0.0001, gt + n.dur);
-            osc.connect(g);
-            g.connect(master);
-            osc.start(gt);
-            osc.stop(gt + n.dur + 0.05);
-            oscs.push(osc);
-          };
-          layer("sine", n.f, 0.78, 0);
-          layer("triangle", n.f, 0.42, -7);
-          layer("sine", n.f * 2, 0.26, 5);
-          layer("sine", n.f * 3, 0.12, -4);
+          o1.frequency.setValueAtTime(n.f, gt);
+          o2.frequency.setValueAtTime(n.f * 2, gt);
+          g1.gain.setValueAtTime(0.0001, gt);
+          g1.gain.exponentialRampToValueAtTime(n.g * 0.75, gt + 0.045);
+          g1.gain.exponentialRampToValueAtTime(0.0001, gt + n.dur);
+          g2.gain.setValueAtTime(0.0001, gt);
+          g2.gain.exponentialRampToValueAtTime(n.g * 0.14, gt + 0.05);
+          g2.gain.exponentialRampToValueAtTime(0.0001, gt + n.dur);
+          o1.connect(g1);
+          o2.connect(g2);
+          g1.connect(master);
+          g2.connect(master);
+          o1.start(gt);
+          o2.start(gt);
+          o1.stop(gt + n.dur + 0.03);
+          o2.stop(gt + n.dur + 0.03);
+          oscs.push(o1, o2);
         });
         const entry = { osc: oscs[0], gain: master, oscs };
         activeBeep = entry;
@@ -989,49 +993,44 @@
   }
 
   function beepSoftRing(atMs) {
-    // شروع حرکت: زنگ غنی بالارونده و بلند
+    // شروع حرکت: یک زنگ بالارونده روشن
     buzz([400, 120, 550]);
     if (document.hidden || !audioOutputOk()) {
       setTimeout(() => playHtmlBeep(), atMs || 0);
-      setTimeout(() => playHtmlBeep(), (atMs || 0) + 90);
     }
     playWarmChime({
       atMs: atMs || 0,
       stack: false,
       bright: true,
-      peak: 1.55,
-      total: 0.95,
+      peak: 1.2,
+      total: 0.65,
       notes: [
-        { f: 392.0, at: 0, dur: 0.28, g: 0.95 },
-        { f: 523.25, at: 0.08, dur: 0.36, g: 1.15 },
-        { f: 659.25, at: 0.2, dur: 0.42, g: 1.25 },
-        { f: 783.99, at: 0.36, dur: 0.55, g: 1.35 }
+        { f: 523.25, at: 0, dur: 0.24, g: 0.9 },
+        { f: 659.25, at: 0.12, dur: 0.3, g: 1.05 },
+        { f: 783.99, at: 0.28, dur: 0.38, g: 1.15 }
       ]
     });
   }
 
   function beepSoftDouble() {
-    // ۴ ثانیه مانده: سه ضربه بم پرقدرت — کاملاً جدا از زنگ شروع
+    // ۴ ثانیه مانده: سه تیک بم — جدا از زنگ شروع
     buzz([120, 70, 120, 70, 120, 70, 200]);
-    const tick = (delay) => {
+    const tick = (at) => {
       if (document.hidden || !audioOutputOk()) {
-        setTimeout(() => playHtmlWarnBeep(), delay);
+        setTimeout(() => playHtmlWarnBeep(), at);
       }
       playWarmChime({
-        atMs: delay,
+        atMs: at,
         stack: true,
         bright: false,
-        peak: 1.45,
-        total: 0.38,
-        notes: [
-          { f: 164.81, at: 0, dur: 0.28, g: 1.3 },
-          { f: 220.0, at: 0.02, dur: 0.26, g: 1.05 }
-        ]
+        peak: 1.15,
+        total: 0.26,
+        notes: [{ f: 196.0, at: 0, dur: 0.18, g: 1.2 }]
       });
     };
     tick(0);
-    setTimeout(() => tick(0), 300);
-    setTimeout(() => tick(0), 600);
+    setTimeout(() => tick(0), 280);
+    setTimeout(() => tick(0), 560);
   }
 
   function beepWhite(ms, soft) {
@@ -2277,6 +2276,127 @@
     }
   }
 
+  function dropPrimedHtml(key) {
+    const slot = primedHtmlSpeak.get(key);
+    if (!slot) return;
+    try {
+      primedSpeakAudios.delete(slot.a);
+      liveAudios.delete(slot.a);
+      slot.a.pause();
+      slot.a.removeAttribute("src");
+      slot.a.load();
+    } catch {}
+    try {
+      URL.revokeObjectURL(slot.url);
+    } catch {}
+    primedHtmlSpeak.delete(key);
+  }
+
+  async function primeHtmlSpeak(text) {
+    const key = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
+    if (!key || soundMuted) return false;
+    try {
+      let blob = await loadDynFaFromCache(key);
+      if (!blob) blob = await ensureSpeakBlob(key, document.hidden ? 6000 : 4500);
+      if (!blob) return false;
+      dropPrimedHtml(key);
+      const url = URL.createObjectURL(blob);
+      const a = makeHtmlAudio(url);
+      a.preload = "auto";
+      primedSpeakAudios.add(a);
+      primedHtmlSpeak.set(key, { a, url, key });
+      // بافر را در پیش‌زمینه پر کن تا در بکگراند play قطعی باشد
+      try {
+        a.muted = true;
+        a.volume = 0.001;
+        const p = a.play();
+        if (p && typeof p.then === "function") await p;
+        a.pause();
+        a.currentTime = 0;
+        a.muted = false;
+        a.volume = 1;
+      } catch {
+        try {
+          a.muted = false;
+          a.volume = 1;
+        } catch {}
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function playPrimedHtmlSpeak(text, vol) {
+    const key = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
+    if (!key || soundMuted) return false;
+    const gen = soundGen;
+    const tok = speakToken;
+    if (!soundAlive(gen, tok)) return false;
+    let slot = primedHtmlSpeak.get(key);
+    if (!slot) {
+      const okPrime = await primeHtmlSpeak(key);
+      if (!okPrime || !soundAlive(gen, tok)) return false;
+      slot = primedHtmlSpeak.get(key);
+    }
+    if (!slot) return false;
+    startBgKeepAlive();
+    unlockAudio();
+    const a = slot.a;
+    const v = vol == null ? 1 : vol;
+    try {
+      a.muted = false;
+      a.volume = Math.max(0.2, Math.min(1, v));
+      a.pause();
+      a.currentTime = 0;
+    } catch {}
+    // پخش همان عنصر از قبل بافرشده — در بکگراند پایدارتر از Audio جدید
+    return await new Promise((resolve) => {
+      let done = false;
+      const finish = (ok) => {
+        if (done) return;
+        done = true;
+        try {
+          a.onplaying = null;
+          a.onended = null;
+          a.onerror = null;
+        } catch {}
+        startBgKeepAlive();
+        resolve(!!ok && soundAlive(gen, tok));
+      };
+      a.onplaying = () => {};
+      a.onended = () => finish(true);
+      a.onerror = () => finish(false);
+      const p = a.play();
+      if (p && typeof p.then === "function") {
+        p.then(() => {
+          if (!soundAlive(gen, tok)) {
+            try {
+              a.pause();
+            } catch {}
+            finish(false);
+          }
+        }).catch(() => finish(false));
+      }
+      setTimeout(() => {
+        if (done) return;
+        if (!soundAlive(gen, tok)) {
+          finish(false);
+          return;
+        }
+        if (!a.paused || (a.currentTime || 0) > 0.01) {
+          const left = Math.max(
+            600,
+            Math.min(12000, (isFinite(a.duration) ? a.duration * 1000 : 4000) + 500)
+          );
+          setTimeout(() => finish(true), left);
+          return;
+        }
+        finish(false);
+      }, document.hidden ? 4000 : 2500);
+    });
+  }
+
   // در بکگراند فقط بلاب محلی با HTML — URL مستقیم اغلب پخش نمی‌شود
   async function playTextBgSafe(text, vol) {
     const key = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
@@ -2286,6 +2406,10 @@
     if (!soundAlive(gen, tok)) return false;
     startBgKeepAlive();
     unlockAudio();
+    {
+      const ok = await playPrimedHtmlSpeak(key, vol);
+      if (ok) return true;
+    }
     let blob = null;
     try {
       blob = await loadDynFaFromCache(key);
@@ -2796,30 +2920,26 @@
       soundAlive(gen, tok) && (seq == null || announceAlive(seq));
     if (!alive()) return false;
     startBgKeepAlive();
-    // همزمان با «حرکت بعد» بلاب اسم را بگیر — حیاتی برای بکگراند
-    const prefetch = nm ? ensureSpeakBlob(nm, document.hidden ? 6000 : 4000) : Promise.resolve(null);
-    prefetch.catch(() => {});
+    // از قبل HTML را بافر کن تا در بکگراند اسم پخش شود
+    const prefetch = nm
+      ? primeHtmlSpeak(nm).catch(() => false)
+      : Promise.resolve(false);
     let pref = await playVoiceFile("phrase-next.mp3", 1);
     if (!alive()) return false;
-    if (!pref) pref = await playTextBgSafe("حرکت بعد", 1);
+    if (!pref) {
+      await primeHtmlSpeak("حرکت بعد").catch(() => {});
+      pref = await playPrimedHtmlSpeak("حرکت بعد", 1);
+      if (!pref) pref = await playTextBgSafe("حرکت بعد", 1);
+    }
     if (!alive()) return false;
     if (!nm) return !!pref;
     await sleep(80);
     if (!alive()) return false;
-    let blob = null;
     try {
-      blob = await prefetch;
+      await prefetch;
     } catch {}
-    if (!blob) {
-      try {
-        blob = await loadDynFaFromCache(nm);
-      } catch {}
-    }
     let said = false;
-    if (blob && alive()) {
-      said = await playBlobFa(blob, 1);
-      startBgKeepAlive();
-    }
+    if (alive()) said = await playPrimedHtmlSpeak(nm, 1);
     if (!said && alive()) said = await playTextBgSafe(nm, 1);
     if (!said && alive()) said = await speakMoveNameOnly(nm, 1);
     if (!said && alive()) said = await speakFaAny(nm, 1);
@@ -2872,9 +2992,8 @@
             }
           }
         } catch {}
-        // در ۲ث بلاب اسم را حتماً آماده کن (بکگراند بدون بلاب ساکت می‌ماند)
-        const prepBlob = nm ? ensureSpeakBlob(nm, 2200) : Promise.resolve(null);
-        prepBlob.catch(() => {});
+        // در ۲ث پخش‌کننده HTML را بافر کن — برای بکگراند حیاتی است
+        const prepHtml = nm ? primeHtmlSpeak(nm).catch(() => false) : Promise.resolve(false);
         const t0 = Date.now();
         while (Date.now() - t0 < 2000) {
           if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
@@ -2892,26 +3011,18 @@
           if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
         } catch {}
         if (!nm) return;
-        let ok = false;
-        let blob = null;
         try {
-          blob = await prepBlob;
+          await prepHtml;
         } catch {}
-        if (!blob && primedWorkName === nm && primedWorkBlob) blob = primedWorkBlob;
-        if (!blob) {
-          try {
-            blob = await loadDynFaFromCache(nm);
-          } catch {}
-        }
-        if (blob && announceAlive(seq) && soundAlive(gen, tok)) {
-          ok = await playBlobFa(blob, 1);
-          startBgKeepAlive();
-        }
-        if (!ok && announceAlive(seq) && soundAlive(gen, tok) && !document.hidden) {
-          ok = await playPrimedWorkName(nm, 1);
+        let ok = false;
+        if (announceAlive(seq) && soundAlive(gen, tok)) {
+          ok = await playPrimedHtmlSpeak(nm, 1);
         }
         if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
           ok = await playTextBgSafe(nm, 1);
+        }
+        if (!ok && announceAlive(seq) && soundAlive(gen, tok) && !document.hidden) {
+          ok = await playPrimedWorkName(nm, 1);
         }
         if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
           ok = await speakMoveNameOnly(nm, 1);
@@ -3642,13 +3753,13 @@
       try {
         const st = run.steps[run.i];
         if (st) {
-          if (st.name) ensureSpeakBlob(normSpeakKey(st.name), 5000).catch(() => {});
-          if (st.nextName) ensureSpeakBlob(normSpeakKey(st.nextName), 5000).catch(() => {});
+          if (st.name) primeHtmlSpeak(normSpeakKey(st.name)).catch(() => {});
+          if (st.nextName) primeHtmlSpeak(normSpeakKey(st.nextName)).catch(() => {});
         }
         const nxt = run.steps[run.i + 1];
         if (nxt) {
-          if (nxt.name) ensureSpeakBlob(normSpeakKey(nxt.name), 5000).catch(() => {});
-          if (nxt.nextName) ensureSpeakBlob(normSpeakKey(nxt.nextName), 5000).catch(() => {});
+          if (nxt.name) primeHtmlSpeak(normSpeakKey(nxt.name)).catch(() => {});
+          if (nxt.nextName) primeHtmlSpeak(normSpeakKey(nxt.nextName)).catch(() => {});
         }
       } catch {}
     }
