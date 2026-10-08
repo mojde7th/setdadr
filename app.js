@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "113";
+  const APP_VER = "114";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -65,7 +65,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=113";
+  const VOICE_Q = "?v=114";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -262,32 +262,136 @@
     return isIOSLike() || /Android|Mobile|webOS|BlackBerry/i.test(ua);
   }
 
-  function buzz(pattern) {
+  function canVibrateApi() {
     try {
-      if (!navigator.vibrate) return;
-      // ویبره قوی پیش‌فرض — جدا از قطع‌صدا
-      let p = pattern && pattern.length
-        ? pattern
-        : [250, 90, 320, 90, 400, 120, 500];
-      p = p.map((n) => {
-        if (n <= 0) return Math.max(50, n);
-        return Math.min(1000, Math.round(n * 2.4));
-      });
-      if (p.length < 7) p = p.concat([80, 280, 80, 350, 100, 450]);
+      return typeof navigator !== "undefined" && typeof navigator.vibrate === "function";
+    } catch {
+      return false;
+    }
+  }
+
+  function fireVibrate(pattern) {
+    if (!canVibrateApi()) return false;
+    try {
       navigator.vibrate(0);
-      navigator.vibrate(p);
-      // یک ضربه‌ٔ دوم برای حس قوی‌تر روی اندروید
-      setTimeout(() => {
+      const ok = navigator.vibrate(pattern);
+      return ok !== false;
+    } catch {
+      return false;
+    }
+  }
+
+  // ضربه بدنی از بلندگو — برای آیفون و هر جایی که vibrate نیست
+  function playHapticThump(level) {
+    const amp = level == null ? 1 : level;
+    try {
+      unlockAudio();
+      if (audioCtx) {
         try {
-          if (!run || run.paused) return;
-          navigator.vibrate([300, 80, 450]);
+          if (audioCtx.state === "suspended") audioCtx.resume();
         } catch {}
-      }, 650);
+        if (audioCtx.state === "running" || audioCtx.state === "suspended") {
+          const t0 = audioCtx.currentTime;
+          const osc = audioCtx.createOscillator();
+          const g = audioCtx.createGain();
+          const lp = audioCtx.createBiquadFilter();
+          lp.type = "lowpass";
+          lp.frequency.value = 180;
+          osc.type = "square";
+          osc.frequency.setValueAtTime(75, t0);
+          osc.frequency.exponentialRampToValueAtTime(45, t0 + 0.12);
+          g.gain.setValueAtTime(0.0001, t0);
+          g.gain.exponentialRampToValueAtTime(Math.min(1.4, 1.15 * amp), t0 + 0.012);
+          g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+          osc.connect(g);
+          g.connect(lp);
+          lp.connect(audioCtx.destination);
+          osc.start(t0);
+          osc.stop(t0 + 0.18);
+          return;
+        }
+      }
+    } catch {}
+    // HTML fallback
+    try {
+      const sr = 16000;
+      const n = Math.floor(sr * 0.14);
+      const data = new ArrayBuffer(44 + n * 2);
+      const view = new DataView(data);
+      const w = (o, s) => {
+        for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i));
+      };
+      w(0, "RIFF");
+      view.setUint32(4, 36 + n * 2, true);
+      w(8, "WAVE");
+      w(12, "fmt ");
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true);
+      view.setUint32(24, sr, true);
+      view.setUint32(28, sr * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true);
+      w(36, "data");
+      view.setUint32(40, n * 2, true);
+      for (let i = 0; i < n; i++) {
+        const x = i / sr;
+        const env = Math.min(1, x * 50) * Math.max(0, 1 - x / 0.14);
+        const sample = Math.sin(2 * Math.PI * 70 * x) * 0.95 * env * amp;
+        let v = (sample * 32767) | 0;
+        if (v > 32767) v = 32767;
+        if (v < -32768) v = -32768;
+        view.setInt16(44 + i * 2, v, true);
+      }
+      const a = makeHtmlAudio(URL.createObjectURL(new Blob([data], { type: "audio/wav" })));
+      a.volume = 1;
+      const p = a.play();
+      if (p && typeof p.then === "function") p.catch(() => {});
     } catch {}
   }
 
+  function buzz(pattern) {
+    // همیشه حس بدنی — جدا از قطع‌صدا
+    let p = pattern && pattern.length
+      ? pattern.slice()
+      : [280, 100, 350, 100, 450];
+    // فاصله‌ها (۰) را حفظ کن؛ فقط ضربه‌ها را قوی کن
+    p = p.map((n) => {
+      if (!n || n <= 0) return 0;
+      return Math.min(800, Math.max(80, Math.round(Number(n) * 1.8)));
+    });
+    // اگر الگوی فقط‌ضربه بود، ریتم قوی بساز
+    if (p.filter((n) => n > 0).length < 2) {
+      p = [400, 120, 500, 120, 600];
+    }
+    const ok = fireVibrate(p);
+    // اگر API نبود یا رد شد (آیفون/دسکتاپ) — ضربه صوتی قوی
+    if (!ok) {
+      playHapticThump(1.2);
+      setTimeout(() => playHapticThump(1), 140);
+      setTimeout(() => playHapticThump(1.15), 300);
+    } else {
+      // اندروید: ویبره + یک ضربه کوتاه برای حس بیشتر
+      playHapticThump(0.55);
+      setTimeout(() => {
+        try {
+          if (!run || run.paused) return;
+          fireVibrate([450, 100, 550]);
+        } catch {}
+      }, 700);
+    }
+  }
+
   function buzzHeavy() {
-    buzz([300, 100, 380, 100, 480, 120, 600, 150, 700]);
+    const ok = fireVibrate([400, 100, 500, 100, 650, 120, 800]);
+    playHapticThump(1.25);
+    setTimeout(() => playHapticThump(1.1), 150);
+    setTimeout(() => playHapticThump(1.2), 320);
+    if (ok) {
+      setTimeout(() => fireVibrate([500, 80, 700]), 750);
+    } else {
+      setTimeout(() => playHapticThump(1.3), 500);
+    }
   }
 
   function paintMuteBtn() {
@@ -3051,6 +3155,9 @@
     stopAllSound();
     const steps = buildTimeline(p);
     unlockAudio();
+    // ویبره را روی ژست کاربر مسلح کن (اندروید)
+    fireVibrate([80, 40, 120]);
+    playHapticThump(0.9);
     startBgKeepAlive();
     // صدا را در پس‌زمینه گرم کن؛ شروع را معطل نکن
     try {
