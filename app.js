@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "67";
+  const APP_VER = "68";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=67";
+  const VOICE_Q = "?v=68";
   const dynFaAudio = new Map(); // متن فارسی → Audio
   const dynFaBlob = new Map(); // متن فارسی → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -581,8 +581,8 @@
           try {
             ws.close();
           } catch {}
-          done(null);
-        }, 2800);
+          done(chunks.length ? new Blob(chunks, { type: "audio/mpeg" }) : null);
+        }, 12000);
 
         ws.onopen = () => {
           try {
@@ -914,15 +914,20 @@
           }
           u.volume = vol == null ? 1 : Math.min(1, vol);
           let finished = false;
+          let started = false;
           const done = (ok) => {
             if (finished) return;
             finished = true;
             resolve(!!ok);
           };
           let resumeIv = 0;
+          u.onstart = () => {
+            started = true;
+          };
           u.onend = () => {
             if (resumeIv) clearInterval(resumeIv);
-            done(true);
+            // فقط اگر واقعاً شروع شده باشد موفق است (جلوگیری از سکوت کاذب)
+            done(started);
           };
           u.onerror = () => {
             if (resumeIv) clearInterval(resumeIv);
@@ -940,11 +945,16 @@
               } catch {}
             }, 200);
           }
-          setTimeout(() => done(true), Math.min(12000, 1600 + String(text).length * 220));
+          setTimeout(() => {
+            if (finished) return;
+            if (resumeIv) clearInterval(resumeIv);
+            // اگر هنوز در حال حرف‌زدن است موفق؛ وگرنه شکست تا پشتیبان بیاید
+            done(started && (speechSynthesis.speaking || speechSynthesis.pending));
+          }, Math.min(12000, 1800 + String(text).length * 180));
         } catch {
           resolve(false);
         }
-      }, ios ? 90 : 50);
+      }, ios ? 120 : 50);
     });
   }
 
@@ -1228,66 +1238,111 @@
     }
   }
 
+  async function sha1Short(text) {
+    const data = new TextEncoder().encode(String(text));
+    const hash = await crypto.subtle.digest("SHA-1", data);
+    return [...new Uint8Array(hash)]
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("")
+      .slice(0, 16);
+  }
+
+  // کلیپ آفلاین برای هر متن دلخواه که با اسکریپت پخته شده: voice/dyn/{sha1}.mp3
+  async function playBakedDynClip(text, vol) {
+    const key = String(text || "").replace(/\s+/g, " ").trim().slice(0, 160);
+    if (!key || !window.crypto || !crypto.subtle) return false;
+    try {
+      const h = await sha1Short(key);
+      return playVoiceFile("dyn/" + h + ".mp3", vol);
+    } catch {
+      return false;
+    }
+  }
+
+  async function playGoogleFaAudio(text, vol) {
+    const key = String(text || "").trim().slice(0, 160);
+    if (!key) return false;
+    const urls = faTtsUrls(key).slice(0, 2);
+    for (let i = 0; i < urls.length; i++) {
+      try {
+        const a = makeHtmlAudio(urls[i]);
+        const ok = await playHtmlAudioEl(a, vol);
+        if (ok) return true;
+      } catch {}
+    }
+    return false;
+  }
+
   async function speakMoveNameOnly(name, vol) {
-    // همیشه عین متن کاربر (حتی بی‌ربط / دوقسمتی) — نه فقط لیست ازپیش
+    // همیشه عین متن کاربر (حتی بی‌ربط / دوقسمتی)
     const raw = String(name || "").replace(/\s+/g, " ").trim();
     if (!raw) return false;
     const said = sayForMove(raw);
     const ios = isIOSLike();
-    const opts = ios ? { noCancel: true } : {};
+    const opts = { noCancel: true };
     const v = vol == null ? 0.98 : vol;
     const hasFa = /[\u0600-\u06FF]/.test(raw);
     const hasLatin = /[A-Za-z]/.test(raw);
-    // متن اعلام: اول عین نوشتهٔ کاربر
     const speakText = raw;
 
-    // ۱) اگر برای همین متن کلیپ آماده بود
+    // ۱) کلیپ آماده برای همین متن
     const clip = MOVE_CLIP[raw] || (said && MOVE_CLIP[said.text]);
     if (clip) {
       const ok = await playVoiceFile(clip, v);
       if (ok) return true;
     }
 
-    // ۲) کش ذخیره‌شده برای همین متن کامل
+    // ۱b) کلیپ پختهٔ آفلاین برای هر متن (حتی بی‌ربط)
+    {
+      const ok = await playBakedDynClip(speakText, v);
+      if (ok) return true;
+    }
+
+    // ۲) کش آفلاین همین متن
     {
       const ok = await playCachedFaOnly(speakText, v);
       if (ok) return true;
     }
 
-    // ۳) تلفظ سیستم — هر متنی (انییتتیای، دو کلمه‌ای، …)
+    // ۳) تلفظ سیستم — هر متنی؛ بعد از بوق WebAudio کمی صبر
+    try {
+      if (window.speechSynthesis) speechSynthesis.resume();
+    } catch {}
+    await sleep(ios ? 180 : 60);
     loadVoices();
-    if (hasFa) {
-      const synthOk = await speakFaSynthAsync(speakText, v, "fa", {
+    {
+      const lang = hasFa || !hasLatin ? "fa" : "en";
+      const synthOk = await speakFaSynthAsync(speakText, v, lang, {
         ...opts,
-        rate: 1.32,
-        pitch: 1.15
+        rate: lang === "fa" ? 1.28 : 1.12,
+        pitch: 1.12
       });
-      if (synthOk) return true;
-    } else if (hasLatin) {
-      const synthOk = await speakFaSynthAsync(speakText, v, "en", opts);
-      if (synthOk) return true;
-    } else {
-      const synthOk = await speakFaSynthAsync(speakText, v, "fa", opts);
       if (synthOk) return true;
     }
 
-    // ۴) ساخت همان متن با دیلارا و کش (برای گوشی بدون صدای فارسی)
+    // ۴) پشتیبان آنلاین (دیلارا / گوگل) + کش برای دفعه بعد
     {
       const ok = await playDynamicFa(speakText, v);
       if (ok) return true;
     }
+    {
+      const ok = await playGoogleFaAudio(speakText, v);
+      if (ok) return true;
+    }
 
-    // ۵) اگر نگاشت معروف داشت، همان را بگو
+    // ۵) نگاشت معروف
     if (said && said.text && said.text !== speakText) {
       const clip2 = MOVE_CLIP[said.text];
       if (clip2) {
         const ok = await playVoiceFile(clip2, v);
         if (ok) return true;
       }
-      if (said.lang === "en" || MOVE_EN[said.text]) {
-        return speakFaSynthAsync(MOVE_EN[said.text] || said.text, v, "en", opts);
-      }
-      return speakFaSynthAsync(said.text, v, "fa", opts);
+      return speakFaSynthAsync(
+        MOVE_EN[said.text] || said.text,
+        v,
+        said.lang === "en" || MOVE_EN[said.text] ? "en" : "fa",
+        opts
+      );
     }
     return false;
   }
