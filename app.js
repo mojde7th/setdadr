@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "95";
+  const APP_VER = "96";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=95";
+  const VOICE_Q = "?v=96";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -828,14 +828,14 @@
     const hasFa = /[\u0600-\u06FF]/.test(key);
     const voice = hasFa ? EDGE_TTS_VOICE_FA : EDGE_TTS_VOICE_EN;
 
-    // ۱) ابر دائمی دیلارا/جنی — بدون لپ‌تاپ
+    // ۱) ابر دائمی — تایم‌اوت کوتاه تا گرم‌کردن صف اعلام را نکشد
     try {
       const url = cloudEdgeUrl(key, voice);
-      let res = await fetchWithTimeout(url, 12000, "no-store");
+      let res = await fetchWithTimeout(url, 4500, "no-store");
       if (!res || !res.ok) {
         res = await fetchWithTimeout(
           "https://corsproxy.io/?" + encodeURIComponent(url),
-          12000,
+          4500,
           "no-store"
         );
       }
@@ -1646,9 +1646,24 @@
       voiceName || (hasFa ? EDGE_TTS_VOICE_FA : EDGE_TTS_VOICE_EN);
     const url = cloudEdgeUrl(key, voice);
     unlockAudio();
-    // ۱) fetch مستقیم (اگر CORS اجازه داد → کش گوشی)
+    // اول پخش مستقیم Audio — fetch را جلو نگذار (گاهی ۱۲ث سکوت می‌ساخت)
     try {
-      const res = await fetchWithTimeout(url, 12000, "no-store");
+      const a = makeHtmlAudio(url);
+      const ok = await playHtmlAudioEl(a, vol == null ? 1 : vol, 10000);
+      if (ok) {
+        fetchWithTimeout(url, 8000, "no-store")
+          .then(async (res) => {
+            if (!res || !res.ok) return;
+            const blob = await res.blob();
+            if (blob && blob.size > 80) await saveDynFaToCache(key, blob);
+          })
+          .catch(() => {});
+        return true;
+      }
+    } catch {}
+    // اگر Audio نرفت: fetch کوتاه + پروکسی
+    try {
+      const res = await fetchWithTimeout(url, 5000, "no-store");
       if (res && res.ok) {
         const blob = await res.blob();
         if (blob && blob.size > 80) {
@@ -1658,16 +1673,9 @@
         }
       }
     } catch {}
-    // ۲) پخش مستقیم با Audio — برای مدیا معمولاً CORS لازم نیست
-    try {
-      const a = makeHtmlAudio(url);
-      const ok = await playHtmlAudioEl(a, vol == null ? 1 : vol, 14000);
-      if (ok) return true;
-    } catch {}
-    // ۳) پروکسی برای گرفتن بلاب و کش
     try {
       const proxied = "https://corsproxy.io/?" + encodeURIComponent(url);
-      const res = await fetchWithTimeout(proxied, 12000, "no-store");
+      const res = await fetchWithTimeout(proxied, 6000, "no-store");
       if (res && res.ok) {
         const blob = await res.blob();
         if (blob && blob.size > 80) {
@@ -1988,11 +1996,14 @@
 
   async function speakNextMoveName(name, seq) {
     const nm = String(name || "").replace(/\s+/g, " ").trim();
-    // استراحت ست/حرکت: اول «حرکت بعد» آفلاین، بعد دیلارا/اج
+    // هم‌زمان با «حرکت بعد»، اسم را گرم کن تا فاصله نیفتد
+    const warmP = nm ? warmFaTts(nm) : Promise.resolve();
     let pref = await playVoiceFile("phrase-next.mp3", 1);
     if (!pref) pref = await speakFaAny("حرکت بعد", 1);
     if (seq != null && !announceAlive(seq)) return !!pref;
-    await sleep(80);
+    try {
+      await Promise.race([warmP, sleep(400)]);
+    } catch {}
     if (seq != null && !announceAlive(seq)) return false;
     if (!nm) return !!pref;
     return speakMoveNameOnly(nm, 1);
@@ -2009,17 +2020,27 @@
   async function speakPhase(step) {
     return queueAnnounce(async (seq) => {
       if (!announceAlive(seq)) return;
-      const ios = isIOSLike();
       const isRest = step.kind === "rest-set" || step.kind === "rest-move";
-      buzz(step.kind === "work" ? [100, 45, 100, 45, 160] : [70, 35, 70, 35, 90]);
-      beepWhite(400, false);
-      await sleep(ios ? 500 : 350);
-      if (!announceAlive(seq)) return;
+      // برای کار: اسم را زود گرم کن
+      const warmWork =
+        step.kind === "work" && step.name ? warmFaTts(step.name) : Promise.resolve();
+      buzz(step.kind === "work" ? [80, 35, 90] : [55, 30, 70]);
       if (step.kind === "work") {
+        // بوق کوتاه‌تر + فاصلهٔ کم تا اسم حرکت حتماً شنیده شود
+        beepSoftRing(0);
+        await sleep(90);
+        if (!announceAlive(seq)) return;
+        try {
+          await Promise.race([warmWork, sleep(250)]);
+        } catch {}
+        if (!announceAlive(seq)) return;
         if (step.name) await speakMoveName(step.name, 1);
         return;
       }
-      // استراحت بین ست و بین حرکت: حتماً «حرکت بعد» + اسم
+      beepSoftRing(0);
+      await sleep(70);
+      if (!announceAlive(seq)) return;
+      // استراحت: «حرکت بعد» + اسم با فاصلهٔ کم
       if (isRest) {
         const next = step.nextName || "";
         await speakNextMoveName(next, seq);
@@ -2037,7 +2058,7 @@
       if (!announceAlive(seq)) return;
       await speakCheerOnly(seq);
       if (!announceAlive(seq)) return;
-      await sleep(450);
+      await sleep(120);
       if (!announceAlive(seq)) return;
       const ofKey = tot + ":" + n;
       if (VOICE_FILES.wentOf && VOICE_FILES.wentOf[ofKey]) {

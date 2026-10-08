@@ -14,14 +14,14 @@
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@500;700;800;900&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet"/>
-  <link rel="stylesheet" href="styles.css?v=95"/>
+  <link rel="stylesheet" href="styles.css?v=96"/>
 </head>
 <body>
   <div id="app">
     <header class="top" id="topBar">
       <div class="brand">ست<span>‌یار</span></div>
       <button type="button" class="mute-btn" id="btnMute" aria-pressed="false" aria-label="قطع و وصل صدا"><span class="mute-ico" aria-hidden="true"><svg class="ico-on" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg><svg class="ico-off" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg></span></button>
-      <div class="app-ver" id="appVer">v95</div>
+      <div class="app-ver" id="appVer">v96</div>
       <nav class="tabs" id="navTabs">
         <button type="button" data-view="home" class="on">ست‌ها</button>
         <button type="button" data-view="moves">حرکت‌ها</button>
@@ -167,8 +167,8 @@
       </section>
     </main>
   </div>
-  <script src="tts-endpoint.js?v=95"></script>
-  <script src="app.js?v=95"></script>
+  <script src="tts-endpoint.js?v=96"></script>
+  <script src="app.js?v=96"></script>
   <script>
     if ("serviceWorker" in navigator) {
       var refreshing = false;
@@ -178,7 +178,7 @@
         location.reload();
       });
       navigator.serviceWorker
-        .register("./sw.js?v=95", { updateViaCache: "none" })
+        .register("./sw.js?v=96", { updateViaCache: "none" })
         .then(function (reg) {
           reg.update();
           if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
