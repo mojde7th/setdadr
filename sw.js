@@ -1,4 +1,4 @@
-const CACHE = "setdadr-v52";
+const CACHE = "setdadr-v53";
 const ASSETS = [
   "./",
   "./index.html",

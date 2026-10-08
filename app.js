@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "52";
+  const APP_VER = "53";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=52";
+  const VOICE_Q = "?v=53";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -158,6 +158,15 @@
 
   function sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
+  }
+
+  function isIOSLike() {
+    if (typeof navigator === "undefined") return false;
+    const ua = navigator.userAgent || "";
+    return (
+      /iPad|iPhone|iPod/i.test(ua) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+    );
   }
 
   function buzz(pattern) {
@@ -424,10 +433,46 @@
     return buf;
   }
 
+  async function playVoiceFileHtml(rel, vol) {
+    try {
+      if (soundMuted) return false;
+      unlockAudio();
+      stopVoiceFile();
+      const a = new Audio(VOICE_BASE + rel + VOICE_Q);
+      a.playsInline = true;
+      a.setAttribute("playsinline", "");
+      a.setAttribute("webkit-playsinline", "");
+      a.preload = "auto";
+      a.volume = Math.max(0.05, Math.min(1, vol == null ? 0.98 : vol));
+      voicePlayer = a;
+      return await new Promise((resolve) => {
+        let done = false;
+        const finish = (ok) => {
+          if (done) return;
+          done = true;
+          resolve(!!ok);
+        };
+        a.onended = () => finish(true);
+        a.onerror = () => finish(false);
+        const p = a.play();
+        if (p && typeof p.then === "function") {
+          p.then(() => {}).catch(() => finish(false));
+        }
+        setTimeout(() => finish(true), 9000);
+      });
+    } catch {
+      return false;
+    }
+  }
+
   async function playVoiceFile(rel, vol) {
     try {
       if (soundMuted) return false;
       unlockAudio();
+      if (isIOSLike()) {
+        const htmlOk = await playVoiceFileHtml(rel, vol);
+        if (htmlOk) return true;
+      }
       if (!audioCtx) return false;
       if (audioCtx.state === "suspended") {
         try {
@@ -472,9 +517,13 @@
       loadVoices();
       speakToken += 1;
       const tok = speakToken;
-      try {
-        speechSynthesis.cancel();
-      } catch {}
+      const ios = isIOSLike();
+      const o = opts || {};
+      if (!ios && !o.noCancel) {
+        try {
+          speechSynthesis.cancel();
+        } catch {}
+      }
       setTimeout(() => {
         if (tok !== speakToken) {
           resolve(false);
@@ -486,7 +535,6 @@
         try {
           const u = new SpeechSynthesisUtterance(String(text));
           const useEn = lang === "en" && enVoice;
-          const o = opts || {};
           if (o.voice) {
             u.voice = o.voice;
             u.lang = o.lang || o.voice.lang || "fa-IR";
@@ -513,14 +561,32 @@
             finished = true;
             resolve(!!ok);
           };
-          u.onend = () => done(true);
-          u.onerror = () => done(false);
+          let resumeIv = 0;
+          u.onend = () => {
+            if (resumeIv) clearInterval(resumeIv);
+            done(true);
+          };
+          u.onerror = () => {
+            if (resumeIv) clearInterval(resumeIv);
+            done(false);
+          };
           speechSynthesis.speak(u);
+          if (ios) {
+            resumeIv = setInterval(() => {
+              if (finished) {
+                clearInterval(resumeIv);
+                return;
+              }
+              try {
+                speechSynthesis.resume();
+              } catch {}
+            }, 200);
+          }
           setTimeout(() => done(true), Math.min(12000, 1600 + String(text).length * 220));
         } catch {
           resolve(false);
         }
-      }, 50);
+      }, ios ? 90 : 50);
     });
   }
 
@@ -683,19 +749,43 @@
   async function speakMoveName(name, vol) {
     const { text, lang } = sayForMove(name);
     if (!text) return false;
-    return speakFaSynthAsync(text, vol == null ? 0.95 : vol, lang);
+    const synthOpts = isIOSLike() ? { noCancel: true } : {};
+    return speakFaSynthAsync(text, vol == null ? 0.95 : vol, lang, synthOpts);
+  }
+
+  async function speakCheerOnly(seq) {
+    if (seq != null && !announceAlive(seq)) return;
+    buzz([55, 30, 90]);
+    let ok = await playVoiceFile("cheer-ali.mp3", 0.98);
+    if (seq != null && !announceAlive(seq)) return;
+    if (!ok) {
+      await speakFaSynthAsync("عالی", 1, "fa", { rate: 1.2, pitch: 1.2, noCancel: true });
+    }
   }
 
   async function speakPhase(step) {
     return queueAnnounce(async (seq) => {
       if (!announceAlive(seq)) return;
+      const ios = isIOSLike();
       buzz(step.kind === "work" ? [100, 45, 100, 45, 160] : [70, 35, 70, 35, 90]);
+      if (step.kind === "work" && ios) {
+        if (step.name) await speakMoveName(step.name, 1);
+        if (!announceAlive(seq)) return;
+        beepWhite(400, false);
+        return;
+      }
       beepWhite(400, false);
       await sleep(400);
       if (!announceAlive(seq)) return;
       if (step.kind === "work") {
         if (step.name) await speakMoveName(step.name, 1);
         return;
+      }
+      if (step.kind === "rest-set") {
+        await speakCheerOnly(seq);
+        if (!announceAlive(seq)) return;
+        await sleep(350);
+        if (!announceAlive(seq)) return;
       }
       const name = step.nextName || "";
       if (!name) return;
@@ -709,7 +799,7 @@
         if (!announceAlive(seq)) return;
         await speakFaSynthAsync(said.text, 1, "en");
       } else {
-        await speakFaSynthAsync("حرکت بعد " + said.text, 1);
+        await speakFaSynthAsync("حرکت بعد " + said.text, 1, "fa", { noCancel: ios });
       }
     });
   }
@@ -720,20 +810,17 @@
     if (n <= 0) return;
     return queueAnnounce(async (seq) => {
       if (!announceAlive(seq)) return;
-      buzz([55, 30, 90]);
-      let ok = await playVoiceFile("cheer-ali.mp3", 0.98);
-      if (!announceAlive(seq)) return;
-      if (!ok) await speakFaSynthAsync("عالی", 1, "fa", { rate: 1.2, pitch: 1.2 });
+      await speakCheerOnly(seq);
       if (!announceAlive(seq)) return;
       await sleep(450);
       if (!announceAlive(seq)) return;
       const ofKey = tot + ":" + n;
       if (VOICE_FILES.wentOf && VOICE_FILES.wentOf[ofKey]) {
-        ok = await playVoiceFile("went-" + n + "-of-" + tot + ".mp3", 0.98);
+        let ok = await playVoiceFile("went-" + n + "-of-" + tot + ".mp3", 0.98);
         if (ok) return;
       }
       if (VOICE_FILES.went[n]) {
-        ok = await playVoiceFile("went-" + n + ".mp3", 0.98);
+        let ok = await playVoiceFile("went-" + n + ".mp3", 0.98);
         if (ok) return;
       }
       const phrase =
@@ -1063,6 +1150,8 @@
 
   function maybeAnnounce() {
     if (!run) return;
+    const step = run.steps[run.i];
+    if (!step || step.kind !== "work") return;
     const cur = Math.ceil(run.left);
     const prev = run.prevLeftCeil;
     run.prevLeftCeil = cur;
