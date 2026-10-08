@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "36";
+  const APP_VER = "37";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=36";
+  const VOICE_Q = "?v=37";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -680,14 +680,9 @@
       if (!name) return;
       const said = sayForMove(name);
       if (!said.text) return;
-      if (said.lang === "en") {
-        await speakFaSynthAsync("حرکت بعد", 1);
-        await sleep(10);
-        await speakFaSynthAsync(said.text, 1, "en");
-      } else {
-        // یک‌نفس فارسی؛ بدون مکث وسط
-        await speakFaSynthAsync("حرکت بعد " + said.text, 1);
-      }
+      await speakFaSynthAsync("حرکت بعد", 1);
+      await sleep(1000);
+      await speakFaSynthAsync(said.text, 1, said.lang === "en" ? "en" : "fa");
     });
   }
 
