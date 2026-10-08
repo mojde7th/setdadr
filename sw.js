@@ -1,4 +1,4 @@
-const CACHE = "setdadr-v49";
+const CACHE = "setdadr-v50";
 const ASSETS = [
   "./",
   "./index.html",
@@ -104,37 +104,42 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   const path = url.pathname;
-  const isShell =
-    e.request.mode === "navigate" ||
-    /\/(index\.html)?$/.test(path) ||
-    path.endsWith("/app.js") ||
-    path.endsWith("/styles.css") ||
-    path.endsWith("/sw.js");
+  const isJS = path.endsWith(".js");
+  const isCSS = path.endsWith(".css");
+  const isNav = e.request.mode === "navigate" || path.endsWith(".html");
 
-  if (isShell) {
+  // شل اپ: اول شبکه، بعد کش؛ هرگز HTML را جای JS برنگردان
+  if (isNav || isJS || isCSS) {
     e.respondWith(
       fetch(e.request)
         .then((res) => {
+          if (!res || !res.ok) throw new Error("net");
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
           return res;
         })
         .catch(() =>
-          caches.match(e.request).then((hit) => hit || caches.match("./index.html"))
+          caches.match(e.request, { ignoreSearch: true }).then((hit) => {
+            if (hit) return hit;
+            if (isJS) return caches.match("./app.js");
+            if (isCSS) return caches.match("./styles.css");
+            if (isNav) return caches.match("./index.html");
+            return undefined;
+          })
         )
     );
     return;
   }
 
   e.respondWith(
-    caches.match(e.request).then(
+    caches.match(e.request, { ignoreSearch: true }).then(
       (hit) =>
         hit ||
         fetch(e.request).then((res) => {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
           return res;
-        }).catch(() => caches.match("./index.html"))
+        })
     )
   );
 });
