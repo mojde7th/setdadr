@@ -1,4 +1,4 @@
-const CACHE = "setdadr-v71";
+const CACHE = "setdadr-v72";
 const ASSETS = [
   "./",
   "./index.html",
@@ -150,9 +150,16 @@ self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
 });
 
+self.addEventListener("message", (e) => {
+  if (e.data && e.data.type === "SKIP_WAITING") self.skipWaiting();
+});
+
 self.addEventListener("activate", (e) => {
   e.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
 });
 
@@ -161,12 +168,12 @@ self.addEventListener("fetch", (e) => {
   const path = url.pathname;
   const isJS = path.endsWith(".js");
   const isCSS = path.endsWith(".css");
-  const isNav = e.request.mode === "navigate" || path.endsWith(".html");
+  const isNav = e.request.mode === "navigate" || path.endsWith("/") || path.endsWith(".html");
 
-  // شل اپ: اول شبکه، بعد کش؛ هرگز HTML را جای JS برنگردان
+  // شل اپ: اول شبکه؛ فقط کش نسخهٔ فعلی (بدون ignoreSearch تا فایل قدیمی ۶۹ برنگردد)
   if (isNav || isJS || isCSS) {
     e.respondWith(
-      fetch(e.request)
+      fetch(e.request, { cache: "no-store" })
         .then((res) => {
           if (!res || !res.ok) throw new Error("net");
           const copy = res.clone();
@@ -174,27 +181,31 @@ self.addEventListener("fetch", (e) => {
           return res;
         })
         .catch(() =>
-          caches.match(e.request, { ignoreSearch: true }).then((hit) => {
-            if (hit) return hit;
-            if (isJS) return caches.match("./app.js");
-            if (isCSS) return caches.match("./styles.css");
-            if (isNav) return caches.match("./index.html");
-            return undefined;
-          })
+          caches.open(CACHE).then((c) =>
+            c.match(e.request).then((hit) => {
+              if (hit) return hit;
+              if (isJS && path.endsWith("app.js")) return c.match("./app.js");
+              if (isCSS && path.endsWith("styles.css")) return c.match("./styles.css");
+              if (isNav) return c.match("./index.html");
+              return undefined;
+            })
+          )
         )
     );
     return;
   }
 
   e.respondWith(
-    caches.match(e.request, { ignoreSearch: true }).then(
-      (hit) =>
-        hit ||
-        fetch(e.request).then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
-          return res;
-        })
+    caches.open(CACHE).then((c) =>
+      c.match(e.request).then(
+        (hit) =>
+          hit ||
+          fetch(e.request).then((res) => {
+            const copy = res.clone();
+            c.put(e.request, copy).catch(() => {});
+            return res;
+          })
+      )
     )
   );
 });
