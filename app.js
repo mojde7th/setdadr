@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "63";
+  const APP_VER = "64";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=63";
+  const VOICE_Q = "?v=64";
   const dynFaAudio = new Map(); // متن فارسی → Audio
   const dynFaBlob = new Map(); // متن فارسی → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -503,12 +503,178 @@
     }).finally(() => clearTimeout(timer));
   }
 
+  // صدای دیلارا مثل کلیپ‌ها — برای هر متن فارسی دلخواه
+  const EDGE_TTS_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
+  const EDGE_TTS_VOICE = "fa-IR-DilaraNeural";
+  const EDGE_TTS_CHROME = "143.0.3650.75";
+  let edgeTtsSkew = 0;
+
+  function edgeUuid() {
+    if (crypto.randomUUID) return crypto.randomUUID().replace(/-/g, "");
+    return (
+      Date.now().toString(16) +
+      Math.random().toString(16).slice(2) +
+      Math.random().toString(16).slice(2)
+    ).slice(0, 32);
+  }
+
+  async function edgeSecMsGec() {
+    const WIN_EPOCH = 11644473600;
+    let ticks = Date.now() / 1000 + edgeTtsSkew + WIN_EPOCH;
+    ticks -= ticks % 300;
+    ticks = Math.floor(ticks * (1e9 / 100));
+    const str = String(ticks) + EDGE_TTS_TOKEN;
+    const data = new TextEncoder().encode(str);
+    const hash = await crypto.subtle.digest("SHA-256", data);
+    return [...new Uint8Array(hash)]
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("")
+      .toUpperCase();
+  }
+
+  function edgeJsDate() {
+    return (
+      new Date().toUTCString().replace("GMT", "GMT+0000") +
+      " (Coordinated Universal Time)"
+    );
+  }
+
+  function escapeSsml(text) {
+    return String(text)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;");
+  }
+
+  function synthesizeEdgeFa(text) {
+    const key = String(text || "").trim().slice(0, 160);
+    if (!key) return Promise.resolve(null);
+    return new Promise(async (resolve) => {
+      let settled = false;
+      const done = (blob) => {
+        if (settled) return;
+        settled = true;
+        resolve(blob);
+      };
+      try {
+        const gec = await edgeSecMsGec();
+        const connId = edgeUuid();
+        const url =
+          "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1" +
+          "?TrustedClientToken=" +
+          EDGE_TTS_TOKEN +
+          "&ConnectionId=" +
+          connId +
+          "&Sec-MS-GEC=" +
+          gec +
+          "&Sec-MS-GEC-Version=1-" +
+          EDGE_TTS_CHROME;
+        const ws = new WebSocket(url);
+        ws.binaryType = "arraybuffer";
+        const chunks = [];
+        const killer = setTimeout(() => {
+          try {
+            ws.close();
+          } catch {}
+          done(null);
+        }, 10000);
+
+        ws.onopen = () => {
+          try {
+            const ts = edgeJsDate();
+            ws.send(
+              "X-Timestamp:" +
+                ts +
+                "\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n" +
+                '{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"true"},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}\r\n'
+            );
+            const ssml =
+              "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='fa-IR'>" +
+              "<voice name='" +
+              EDGE_TTS_VOICE +
+              "'>" +
+              "<prosody pitch='+0Hz' rate='+5%' volume='+0%'>" +
+              escapeSsml(key) +
+              "</prosody></voice></speak>";
+            ws.send(
+              "X-RequestId:" +
+                edgeUuid() +
+                "\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:" +
+                ts +
+                "Z\r\nPath:ssml\r\n\r\n" +
+                ssml
+            );
+          } catch {
+            clearTimeout(killer);
+            try {
+              ws.close();
+            } catch {}
+            done(null);
+          }
+        };
+
+        ws.onmessage = (ev) => {
+          if (typeof ev.data === "string") {
+            if (ev.data.indexOf("Path:turn.end") !== -1) {
+              clearTimeout(killer);
+              try {
+                ws.close();
+              } catch {}
+              if (!chunks.length) done(null);
+              else done(new Blob(chunks, { type: "audio/mpeg" }));
+            }
+            return;
+          }
+          try {
+            const buf = new Uint8Array(ev.data);
+            if (buf.length < 2) return;
+            const headerLength = (buf[0] << 8) | buf[1];
+            if (headerLength > buf.length) return;
+            let audio = buf.slice(headerLength + 2);
+            if (!audio.length && headerLength < buf.length) {
+              audio = buf.slice(headerLength);
+            }
+            // فقط اگر هدر Path:audio دارد یا بدنه mp3 است
+            const headTxt = new TextDecoder().decode(buf.slice(0, Math.min(headerLength, buf.length)));
+            if (headTxt.indexOf("Path:audio") === -1 && audio.length < 40) return;
+            if (audio.length) chunks.push(audio);
+          } catch {}
+        };
+
+        ws.onerror = () => {
+          clearTimeout(killer);
+          done(chunks.length ? new Blob(chunks, { type: "audio/mpeg" }) : null);
+        };
+        ws.onclose = () => {
+          clearTimeout(killer);
+          if (!settled) {
+            done(chunks.length ? new Blob(chunks, { type: "audio/mpeg" }) : null);
+          }
+        };
+      } catch {
+        done(null);
+      }
+    });
+  }
+
   async function fetchFaTtsBlob(text) {
     const key = String(text || "").trim().slice(0, 160);
     if (!key) return null;
     const cached = await loadDynFaFromCache(key);
     if (cached) return cached;
-    // فقط دو آدرس مستقیم؛ پروکسی‌ها شروع را قفل می‌کردند
+
+    // ۱) دیلارا از اج (همان صدای کلیپ‌ها) — هر کلمه فارسی
+    try {
+      const edgeBlob = await synthesizeEdgeFa(key);
+      if (edgeBlob && edgeBlob.size > 80) {
+        await saveDynFaToCache(key, edgeBlob);
+        return edgeBlob;
+      }
+    } catch {}
+
+    // ۲) گوگل به‌عنوان پشتیبان
     const urls = faTtsUrls(key).slice(0, 2);
     for (let i = 0; i < urls.length; i++) {
       try {
@@ -1061,11 +1227,16 @@
       return speakFaSynthAsync(raw, v, "en", opts);
     }
 
-    // ۳) هر فارسی دلخواه (دیوارنشینی و هر چیز دیگر) — دانلود/کش بعد پخش
+    // ۳) هر فارسی از هر جا (انتخاب‌شده / تایپ‌شده) — دیلارا بعد کش
     if (hasFa) {
-      const dyn = await playDynamicFa(said.text, v);
+      const phrase = said.text || raw;
+      const dyn = await playDynamicFa(phrase, v);
       if (dyn) return true;
-      const synthOk = await speakFaSynthAsync(said.text, v, "fa", opts);
+      if (phrase !== raw) {
+        const dyn2 = await playDynamicFa(raw, v);
+        if (dyn2) return true;
+      }
+      const synthOk = await speakFaSynthAsync(phrase, v, "fa", opts);
       if (synthOk) return true;
     }
 
@@ -1700,6 +1871,7 @@
     if (!known) return;
     $("#pickMoveName").value = known.name;
     $("#pickWork").value = String(known.work);
+    warmMoveVoice(known.name);
     // سلکت را خالی کن تا «گزینه» داخل اینپوت متنی نماند
     sel.value = "";
   });
