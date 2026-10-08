@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "77";
+  const APP_VER = "78";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=77";
+  const VOICE_Q = "?v=78";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -396,54 +396,85 @@
     setMediaPlaying(true, (run && run.title) || "ست‌یار");
   }
 
-  // یک زنگ نرم کوتاه — master جدا تا بوق دوم محو نشود
-  function beepSoftRing(atMs) {
+  // زنگ گرم باشگاهی — بم، نرم، بدون تیغ؛ برای ساعت‌ها تکرار آزار ندهد
+  function playWarmChime(opts) {
     if (soundMuted) return;
+    const o = opts || {};
     try {
       unlockAudio();
       if (!audioCtx) return;
       const start = () => {
-        const t0 = audioCtx.currentTime + (atMs || 0) / 1000;
+        if (!o.stack) stopBeep();
+        const t0 = audioCtx.currentTime + (o.atMs || 0) / 1000;
         const master = audioCtx.createGain();
+        const lp = audioCtx.createBiquadFilter();
+        lp.type = "lowpass";
+        lp.frequency.setValueAtTime(o.bright ? 1600 : 1200, t0);
+        lp.Q.setValueAtTime(0.55, t0);
+        const peak = o.peak != null ? o.peak : 1.15;
+        const total = o.total != null ? o.total : 0.7;
         master.gain.setValueAtTime(0.0001, t0);
-        master.gain.exponentialRampToValueAtTime(1.35, t0 + 0.015);
-        master.gain.setValueAtTime(1.35, t0 + 0.28);
-        master.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.42);
-        master.connect(audioCtx.destination);
-        const notes = [
-          { f: 740, at: 0, dur: 0.28, g: 1.05 },
-          { f: 988, at: 0.12, dur: 0.3, g: 1.15 }
+        master.gain.exponentialRampToValueAtTime(peak, t0 + 0.05);
+        master.gain.setValueAtTime(peak * 0.85, t0 + total * 0.55);
+        master.gain.exponentialRampToValueAtTime(0.0001, t0 + total);
+        master.connect(lp);
+        lp.connect(audioCtx.destination);
+        const notes = o.notes || [
+          { f: 392.0, at: 0, dur: 0.38, g: 0.95 },
+          { f: 523.25, at: 0.14, dur: 0.42, g: 1.05 },
+          { f: 659.25, at: 0.3, dur: 0.45, g: 0.85 }
         ];
+        const oscs = [];
         notes.forEach((n) => {
           const o1 = audioCtx.createOscillator();
           const o2 = audioCtx.createOscillator();
-          const g = audioCtx.createGain();
+          const g1 = audioCtx.createGain();
+          const g2 = audioCtx.createGain();
           o1.type = "sine";
-          o2.type = "triangle";
+          o2.type = "sine";
           const gt = t0 + n.at;
           o1.frequency.setValueAtTime(n.f, gt);
           o2.frequency.setValueAtTime(n.f * 2, gt);
-          g.gain.setValueAtTime(0.0001, gt);
-          g.gain.exponentialRampToValueAtTime(n.g, gt + 0.01);
-          g.gain.exponentialRampToValueAtTime(0.0001, gt + n.dur);
-          o1.connect(g);
-          o2.connect(g);
-          g.connect(master);
+          g1.gain.setValueAtTime(0.0001, gt);
+          g1.gain.exponentialRampToValueAtTime(n.g * 0.7, gt + 0.05);
+          g1.gain.exponentialRampToValueAtTime(0.0001, gt + n.dur);
+          // هارمونیک دوم خیلی ملایم — تیز نشود
+          g2.gain.setValueAtTime(0.0001, gt);
+          g2.gain.exponentialRampToValueAtTime(n.g * 0.12, gt + 0.06);
+          g2.gain.exponentialRampToValueAtTime(0.0001, gt + n.dur);
+          o1.connect(g1);
+          o2.connect(g2);
+          g1.connect(master);
+          g2.connect(master);
           o1.start(gt);
           o2.start(gt);
-          o1.stop(gt + n.dur + 0.02);
-          o2.stop(gt + n.dur + 0.02);
+          o1.stop(gt + n.dur + 0.03);
+          o2.stop(gt + n.dur + 0.03);
+          oscs.push(o1, o2);
         });
+        activeBeep = { osc: oscs[0], gain: master, oscs };
       };
       if (audioCtx.state === "suspended") audioCtx.resume().then(start).catch(start);
       else start();
     } catch {}
   }
 
+  function beepSoftRing(atMs) {
+    playWarmChime({
+      atMs: atMs || 0,
+      stack: true,
+      peak: 1.05,
+      total: 0.55,
+      notes: [
+        { f: 440, at: 0, dur: 0.32, g: 1.0 },
+        { f: 554.37, at: 0.1, dur: 0.36, g: 0.95 }
+      ]
+    });
+  }
+
   function beepSoftDouble() {
-    // دو زنگ کاملاً جدا — دومی همان بلندی اولی
     beepSoftRing(0);
-    setTimeout(() => beepSoftRing(0), 480);
+    setTimeout(() => beepSoftRing(0), 520);
   }
 
   function beepWhite(ms, soft) {
@@ -452,79 +483,15 @@
       beepSoftDouble();
       return;
     }
-    try {
-      unlockAudio();
-      if (!audioCtx) return;
-      const play = () => {
-        stopBeep();
-        const t0 = audioCtx.currentTime;
-        const master = audioCtx.createGain();
-        const comp = audioCtx.createDynamicsCompressor();
-        comp.threshold.setValueAtTime(-18, t0);
-        comp.knee.setValueAtTime(12, t0);
-        comp.ratio.setValueAtTime(4, t0);
-        comp.attack.setValueAtTime(0.003, t0);
-        comp.release.setValueAtTime(0.18, t0);
-        // نرم‌تر ولی بلند — بدون تیغ تیز بالا و بدون نویز کلیک
-        const filter = audioCtx.createBiquadFilter();
-        filter.type = "lowpass";
-        filter.frequency.setValueAtTime(2400, t0);
-        filter.Q.setValueAtTime(0.7, t0);
-
-        const notes = [
-          { f: 523.25, at: 0, dur: 0.22, g: 1.2 },
-          { f: 659.25, at: 0.12, dur: 0.24, g: 1.3 },
-          { f: 783.99, at: 0.26, dur: 0.32, g: 1.35 },
-          { f: 987.77, at: 0.42, dur: 0.4, g: 1.15 }
-        ];
-
-        const total = 0.92;
-        const peak = 1.5;
-        master.gain.setValueAtTime(0.0001, t0);
-        master.gain.exponentialRampToValueAtTime(peak, t0 + 0.04);
-        master.gain.setValueAtTime(peak * 0.92, t0 + total * 0.6);
-        master.gain.exponentialRampToValueAtTime(0.0001, t0 + total);
-
-        master.connect(filter);
-        filter.connect(comp);
-        comp.connect(audioCtx.destination);
-
-        const oscs = [];
-        notes.forEach((n) => {
-          const o1 = audioCtx.createOscillator();
-          const o2 = audioCtx.createOscillator();
-          const g = audioCtx.createGain();
-          o1.type = "sine";
-          o2.type = "sine";
-          o1.frequency.setValueAtTime(n.f, t0 + n.at);
-          o2.frequency.setValueAtTime(n.f * 2.0, t0 + n.at);
-          const gt = t0 + n.at;
-          g.gain.setValueAtTime(0.0001, gt);
-          g.gain.exponentialRampToValueAtTime(n.g, gt + 0.025);
-          g.gain.exponentialRampToValueAtTime(0.0001, gt + n.dur);
-          o1.connect(g);
-          o2.connect(g);
-          g.connect(master);
-          o1.start(gt);
-          o2.start(gt);
-          o1.stop(gt + n.dur + 0.03);
-          o2.stop(gt + n.dur + 0.03);
-          oscs.push(o1, o2);
-        });
-
-        activeBeep = { osc: oscs[0], gain: master, oscs };
-        if (oscs[0]) {
-          oscs[oscs.length - 1].onended = () => {
-            if (activeBeep && activeBeep.gain === master) activeBeep = null;
-          };
-        }
-      };
-      if (audioCtx.state === "suspended") {
-        audioCtx.resume().then(play).catch(play);
-      } else {
-        play();
-      }
-    } catch {}
+    playWarmChime({
+      peak: 1.2,
+      total: 0.75,
+      notes: [
+        { f: 349.23, at: 0, dur: 0.4, g: 1.0 },
+        { f: 440.0, at: 0.16, dur: 0.42, g: 1.1 },
+        { f: 523.25, at: 0.34, dur: 0.48, g: 0.9 }
+      ]
+    });
   }
 
   function nearestPhaseClip(n) {
@@ -1467,11 +1434,12 @@
     } catch {}
     await sleep(isIOSLike() ? 100 : 40);
     loadVoices();
+    const o = opts || {};
     return speakFaSynthAsync(text, vol, lang, {
-      ...(opts || {}),
+      ...o,
       noCancel: true,
-      rate: lang === "fa" ? 1.28 : 1.12,
-      pitch: 1.12
+      rate: o.rate != null ? o.rate : lang === "fa" ? 1.28 : 1.12,
+      pitch: o.pitch != null ? o.pitch : 1.12
     });
   }
 
@@ -1507,9 +1475,91 @@
     }
   }
 
+  // آوانویسی ماشینی فارسی → لاتین؛ هر متن بی‌ربط را با صدای انگلیسی گوشی می‌خواند
+  const FA_ROMAN = {
+    ا: "aa",
+    آ: "aa",
+    ب: "be",
+    پ: "pe",
+    ت: "te",
+    ث: "se",
+    ج: "je",
+    چ: "che",
+    ح: "he",
+    خ: "khe",
+    د: "de",
+    ذ: "ze",
+    ر: "re",
+    ز: "ze",
+    ژ: "zhe",
+    س: "se",
+    ش: "she",
+    ص: "se",
+    ض: "ze",
+    ط: "ta",
+    ظ: "za",
+    ع: "a",
+    غ: "ghe",
+    ف: "fe",
+    ق: "ghe",
+    ک: "ke",
+    ك: "ke",
+    گ: "ge",
+    ل: "le",
+    م: "me",
+    ن: "ne",
+    و: "o",
+    ه: "he",
+    ی: "i",
+    ي: "i",
+    ء: "",
+   ٔ: "",
+    ‌: " ",
+    " ": " ",
+    "۰": "0",
+    "۱": "1",
+    "۲": "2",
+    "۳": "3",
+    "۴": "4",
+    "۵": "5",
+    "۶": "6",
+    "۷": "7",
+    "۸": "8",
+    "۹": "9"
+  };
+
+  function romanizeFaMachine(text) {
+    const s = String(text || "");
+    let out = "";
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      if (FA_ROMAN[ch] != null) out += FA_ROMAN[ch] + " ";
+      else if (/[A-Za-z0-9]/.test(ch)) out += ch;
+      else if (/\s/.test(ch)) out += " ";
+    }
+    return out.replace(/\s+/g, " ").trim().slice(0, 180);
+  }
+
+  async function speakMachineAny(text, vol) {
+    // آخرین لایهٔ قطعی: ماشینی، حتی برای حروف بی‌ربط
+    const raw = String(text || "").replace(/\s+/g, " ").trim();
+    if (!raw) return false;
+    const hasFa = /[\u0600-\u06FF]/.test(raw);
+    const spoken = hasFa ? romanizeFaMachine(raw) : raw;
+    if (!spoken) return false;
+    // اول سیستم انگلیسی (روی تقریباً همه گوشی‌ها هست)
+    const ok = await speakSynthLang(spoken, vol == null ? 1 : vol, "en", {
+      noCancel: true,
+      rate: 0.95,
+      pitch: 1.05
+    });
+    if (ok) return true;
+    // بعد گوگل انگلیسی
+    return playGoogleFaAudio(spoken, vol == null ? 1 : vol, "en");
+  }
+
   async function speakMoveNameOnly(name, vol) {
-    // پایدار و بدون لپ‌تاپ:
-    // ۱) کلیپ/کش آفلاین  ۲) صدای خود گوشی/ویندوز  ۳) گوگل با اینترنت گوشی  ۴) دیلارا اختیاری کوتاه
+    // پایدار و بدون لپ‌تاپ + لایهٔ ماشینی برای متن بی‌ربط
     const raw = String(name || "").replace(/\s+/g, " ").trim();
     if (!raw) return false;
     const said = sayForMove(raw);
@@ -1547,7 +1597,6 @@
       }
     }
 
-    // صدای خود دستگاه — انگلیسی روی گوشی تقریباً همیشه؛ فارسی اگر بسته زبان نصب باشد
     {
       const ok = await speakSynthLang(speakText, v, lang, opts);
       if (ok) {
@@ -1555,13 +1604,11 @@
         return true;
       }
     }
-    // اگر ورودی انگلیسی به فارسی نگاشت شده، فارسی سیستم را هم امتحان کن
     if (said && said.lang === "fa" && said.text && said.text !== speakText) {
       const ok = await speakSynthLang(said.text, v, "fa", opts);
       if (ok) return true;
     }
 
-    // گوگل با اینترنت خود گوشی — بدون لپ‌تاپ
     {
       const ok = await playGoogleFaAudio(speakText, v, lang);
       if (ok) return true;
@@ -1572,9 +1619,14 @@
       if (ok) return true;
     }
 
-    // دیلارا فقط اگر در دسترس باشد؛ کوتاه؛ اجباری نیست
     {
       const ok = await playDilaraFa(speakText, v);
+      if (ok) return true;
+    }
+
+    // قطعی برای بی‌ربط / فارسی بدون موتور فارسی گوشی
+    {
+      const ok = await speakMachineAny(speakText, v);
       if (ok) return true;
     }
 
