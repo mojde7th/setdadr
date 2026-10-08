@@ -686,7 +686,7 @@
       const said = sayForMove(name);
       if (!said.text) return;
       await speakFaSynthAsync("حرکت بعد", 1);
-      await sleep(180);
+      await sleep(0);
       await speakFaSynthAsync(said.text, 1, said.lang === "en" ? "en" : "fa");
     });
   }
@@ -1050,8 +1050,8 @@
     // دوسوم: زودتر تریگر کن تا وقتی صدا به «رفت» برسد همان ثانیه دقیق باشد
     const midKey = run.i + ":twoThirds";
     const targetLeft = Math.ceil(run.phaseDur / 3);
-    // عالی ۲–۳ ثانیه زودتر؛ اعلام زمان هم جلوتر تا عقب نیفتد
-    const lead = 4;
+    // عالی و «رفت» جلوتر تا وقتی به ثانیه هدف (مثل ۱۶ مانده) برسد عقب نباشد
+    const lead = 7;
     const fireLeft = targetLeft + lead;
     if (
       run.phaseDur >= 12 &&
