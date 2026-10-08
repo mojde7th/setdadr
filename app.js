@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "69";
+  const APP_VER = "71";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=69";
+  const VOICE_Q = "?v=71";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -346,11 +346,11 @@
         // زنگ باشگاهی چندنُته — بلند و مشخص، نه بوق تیز زشت
         const notes = soft
           ? [
-              // دو زنگ پشت‌سرهم تا تمام‌شدن حس شود
-              { f: 698.46, at: 0, dur: 0.32, g: 0.8 },
-              { f: 880.0, at: 0.2, dur: 0.38, g: 0.75 },
-              { f: 698.46, at: 0.58, dur: 0.34, g: 0.85 },
-              { f: 880.0, at: 0.82, dur: 0.42, g: 0.8 }
+              // دو زنگ هم‌قدرت — بوق دوم شل نشود
+              { f: 698.46, at: 0, dur: 0.34, g: 0.92 },
+              { f: 880.0, at: 0.2, dur: 0.4, g: 0.95 },
+              { f: 698.46, at: 0.6, dur: 0.36, g: 1.0 },
+              { f: 880.0, at: 0.84, dur: 0.44, g: 1.02 }
             ]
           : [
               { f: 659.25, at: 0, dur: 0.15, g: 1.15 },
@@ -359,12 +359,18 @@
               { f: 1318.51, at: 0.34, dur: 0.38, g: 1.2 }
             ];
 
-        const total = soft ? 1.4 : 0.78;
-        const peak = soft ? 1.05 : 1.55;
+        const total = soft ? 1.45 : 0.78;
+        const peak = soft ? 1.2 : 1.55;
         master.gain.setValueAtTime(0.0001, t0);
         master.gain.exponentialRampToValueAtTime(peak, t0 + 0.02);
-        master.gain.setValueAtTime(peak * 0.85, t0 + total * 0.55);
-        master.gain.exponentialRampToValueAtTime(0.0001, t0 + total);
+        if (soft) {
+          // تا ته هر دو زنگ بلند بماند (قبلاً وسط راه افت می‌کرد)
+          master.gain.setValueAtTime(peak, t0 + total * 0.88);
+          master.gain.exponentialRampToValueAtTime(0.0001, t0 + total);
+        } else {
+          master.gain.setValueAtTime(peak * 0.85, t0 + total * 0.55);
+          master.gain.exponentialRampToValueAtTime(0.0001, t0 + total);
+        }
 
         master.connect(filter);
         filter.connect(comp);
@@ -691,7 +697,7 @@
     for (let i = 0; i < bases.length; i++) {
       try {
         const url = bases[i] + "/tts?t=" + encodeURIComponent(key);
-        const res = await fetchWithTimeout(url, 25000);
+        const res = await fetchWithTimeout(url, 3500);
         if (!res || !res.ok) continue;
         const blob = await res.blob();
         if (!blob || blob.size < 80) continue;
@@ -745,7 +751,7 @@
     } catch {}
   }
 
-  async function playHtmlAudioEl(a, vol) {
+  async function playHtmlAudioEl(a, vol, maxWaitMs) {
     if (soundMuted || !a) return false;
     unlockAudio();
     stopVoiceFile();
@@ -755,6 +761,7 @@
     } catch {}
     a.volume = Math.max(0.05, Math.min(1, vol == null ? 0.98 : vol));
     voicePlayer = a;
+    const waitCap = maxWaitMs != null ? maxWaitMs : 8000;
     return await new Promise((resolve) => {
       let done = false;
       let heard = false;
@@ -772,7 +779,17 @@
       if (p && typeof p.then === "function") {
         p.then(() => {}).catch(() => finish(false));
       }
-      setTimeout(() => finish(heard || (a.currentTime || 0) > 0.05), 8000);
+      // اگر تا ۲٫۲ث شروع نشد، شکست سریع (نمان برای اینترنت شل)
+      const failFast = Math.min(2200, waitCap);
+      setTimeout(() => {
+        if (done) return;
+        if (heard || (a.currentTime || 0) > 0.02) return;
+        try {
+          a.pause();
+        } catch {}
+        finish(false);
+      }, failFast);
+      setTimeout(() => finish(heard || (a.currentTime || 0) > 0.05), waitCap);
     });
   }
 
@@ -1293,21 +1310,26 @@
   }
 
   async function playGoogleFaAudio(text, vol) {
+    // همان روش رایج اپ‌های ایرانی: پخش مستقیم گوگل‌ترجمه‌تی‌تی‌اس (بدون انتظار سرور شخصی)
     const key = String(text || "").trim().slice(0, 160);
     if (!key) return false;
     const urls = faTtsUrls(key).slice(0, 2);
     for (let i = 0; i < urls.length; i++) {
       try {
         const a = makeHtmlAudio(urls[i]);
-        const ok = await playHtmlAudioEl(a, vol);
-        if (ok) return true;
+        const ok = await playHtmlAudioEl(a, vol, 9000);
+        if (ok) {
+          // در پس‌زمینه برای آفلاین بعد کش کن (بدون بلاک)
+          warmFaTts(key);
+          return true;
+        }
       } catch {}
     }
     return false;
   }
 
   async function speakMoveNameOnly(name, vol) {
-    // همیشه عین متن کاربر (حتی بی‌ربط / دوقسمتی)
+    // همیشه عین متن کاربر — بدون منتظر تونل/دانلود طولانی
     const raw = String(name || "").replace(/\s+/g, " ").trim();
     if (!raw) return false;
     const said = sayForMove(raw);
@@ -1318,39 +1340,36 @@
     const hasLatin = /[A-Za-z]/.test(raw);
     const speakText = raw;
 
-    // ۱) کلیپ آماده برای همین متن
+    // ۱) کلیپ آماده
     const clip = MOVE_CLIP[raw] || (said && MOVE_CLIP[said.text]);
     if (clip) {
       const ok = await playVoiceFile(clip, v);
       if (ok) return true;
     }
 
-    // ۱b) کلیپ پختهٔ آفلاین
+    // ۲) کلیپ پختهٔ آفلاین
     {
       const ok = await playBakedDynClip(speakText, v);
       if (ok) return true;
     }
 
-    // ۲) کش گوشی
+    // ۳) کش گوشی (قبلاً شنیده)
     {
       const ok = await playCachedFaOnly(speakText, v);
       if (ok) return true;
     }
 
-    // ۳) سرور دیلارا — هر جمله کامل (حتی بی‌ربط) + ذخیره برای آفلاین بعد
+    // ۴) گوگل‌ترجمه‌تی‌تی‌اس — مثل اپ‌های ایرانی؛ هر متن را واقعاً می‌خواند
     {
-      const blob = await fetchFaTtsBlob(speakText);
-      if (blob) {
-        const ok = await playBlobFa(blob, v);
-        if (ok) return true;
-      }
+      const ok = await playGoogleFaAudio(speakText, v);
+      if (ok) return true;
     }
 
-    // ۴) تلفظ سیستم
+    // ۵) تلفظ سیستم (آفلاین فوری اگر صدا نصب باشد)
     try {
       if (window.speechSynthesis) speechSynthesis.resume();
     } catch {}
-    await sleep(ios ? 180 : 60);
+    await sleep(ios ? 120 : 40);
     loadVoices();
     {
       const lang = hasFa || !hasLatin ? "fa" : "en";
@@ -1359,22 +1378,21 @@
         rate: lang === "fa" ? 1.28 : 1.12,
         pitch: 1.12
       });
-      if (synthOk) return true;
+      if (synthOk) {
+        warmFaTts(speakText);
+        return true;
+      }
     }
 
-    // ۵) گوگل
-    {
-      const ok = await playGoogleFaAudio(speakText, v);
-      if (ok) return true;
-    }
-
-    // ۵) نگاشت معروف
+    // ۶) نگاشت معروف
     if (said && said.text && said.text !== speakText) {
       const clip2 = MOVE_CLIP[said.text];
       if (clip2) {
         const ok = await playVoiceFile(clip2, v);
         if (ok) return true;
       }
+      const okG = await playGoogleFaAudio(said.text, v);
+      if (okG) return true;
       return speakFaSynthAsync(
         MOVE_EN[said.text] || said.text,
         v,
@@ -1382,6 +1400,9 @@
         opts
       );
     }
+
+    // کش پس‌زمینه برای بار بعد — زنده را بلاک نکن
+    warmFaTts(speakText);
     return false;
   }
 
@@ -1392,24 +1413,25 @@
   async function speakNextMoveName(name, seq) {
     const ios = isIOSLike();
     const opts = ios ? { noCancel: true } : {};
-    // اول «حرکت بعد»، بعد خیلی سریع اسم (فاصله کم)
-    loadVoices();
-    let ok = false;
-    if (faVoice || !ios) {
-      ok = await speakFaSynthAsync("حرکت بعد", 1, "fa", {
+    const nm = String(name || "").replace(/\s+/g, " ").trim();
+    // اول فوری کلیپ آفلاین «حرکت بعد» — بدون اینترنت
+    let pref = await playVoiceFile("phrase-next.mp3", 0.98);
+    if (!pref) {
+      pref = await playGoogleFaAudio("حرکت بعد", 1);
+    }
+    if (!pref) {
+      loadVoices();
+      pref = await speakFaSynthAsync("حرکت بعد", 1, "fa", {
         ...opts,
-        rate: 1.4,
-        pitch: 1.15
+        rate: 1.32,
+        pitch: 1.12
       });
     }
-    if (!ok) {
-      ok = await playVoiceFile("phrase-next.mp3", 0.98);
-    }
+    if (seq != null && !announceAlive(seq)) return !!pref;
+    await sleep(50);
     if (seq != null && !announceAlive(seq)) return false;
-    await sleep(45);
-    if (seq != null && !announceAlive(seq)) return false;
-    if (!name) return false;
-    return speakMoveNameOnly(name, 1);
+    if (!nm) return !!pref;
+    return speakMoveNameOnly(nm, 1);
   }
 
   async function speakCheerOnly(seq) {
@@ -1795,31 +1817,32 @@
   function maybeAnnounce() {
     if (!run) return;
     const step = run.steps[run.i];
-    if (!step || step.kind !== "work") return;
+    if (!step) return;
     const cur = Math.ceil(run.left);
     const prev = run.prevLeftCeil;
     run.prevLeftCeil = cur;
     if (prev == null) return;
 
-    const midKey = run.i + ":twoThirds";
-    // مثال ۴۰ث: روی حدود ۱۶ بگوید ۲۵ ثانیه از ۴۰ ثانیه رو رفتی
-    const total = Math.round(run.phaseDur);
-    const done = Math.max(1, Math.round((total * 5) / 8));
-    const targetLeft = Math.max(1, total - done);
-    // ۱ تا ۱٫۵ ثانیه زودتر از ثانیه هدف
-    const lead = 3;
-    const fireLeft = targetLeft + lead;
-    if (
-      total >= 12 &&
-      !run.announced[midKey] &&
-      prev > fireLeft &&
-      cur <= fireLeft
-    ) {
-      run.announced[midKey] = true;
-      speakDoneAmount(done, total);
+    // وسط فاز فقط برای کار (نه استراحت)
+    if (step.kind === "work") {
+      const midKey = run.i + ":twoThirds";
+      const total = Math.round(run.phaseDur);
+      const done = Math.max(1, Math.round((total * 5) / 8));
+      const targetLeft = Math.max(1, total - done);
+      const lead = 3;
+      const fireLeft = targetLeft + lead;
+      if (
+        total >= 12 &&
+        !run.announced[midKey] &&
+        prev > fireLeft &&
+        cur <= fireLeft
+      ) {
+        run.announced[midKey] = true;
+        speakDoneAmount(done, total);
+      }
     }
 
-    // ۴ ثانیه مانده: دو زنگ ملایم پشت‌سرهم (شنیده‌تر)
+    // ۴ ثانیه مانده: کار و استراحت (ست و حرکت)
     const softKey = run.i + ":soft4";
     if (run.phaseDur > 5 && !run.announced[softKey] && prev > 4 && cur <= 4) {
       run.announced[softKey] = true;
