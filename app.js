@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "80";
+  const APP_VER = "81";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=80";
+  const VOICE_Q = "?v=81";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -1052,7 +1052,6 @@
           };
           u.onend = () => {
             if (resumeIv) clearInterval(resumeIv);
-            // فقط اگر واقعاً شروع شده باشد موفق است (جلوگیری از سکوت کاذب)
             done(started);
           };
           u.onerror = () => {
@@ -1060,6 +1059,16 @@
             done(false);
           };
           speechSynthesis.speak(u);
+          // بعضی گوشی‌ها onstart نمی‌فرستند ولی واقعاً حرف می‌زنند
+          const poke = setInterval(() => {
+            if (finished) {
+              clearInterval(poke);
+              return;
+            }
+            try {
+              if (speechSynthesis.speaking || speechSynthesis.pending) started = true;
+            } catch {}
+          }, 120);
           if (ios) {
             resumeIv = setInterval(() => {
               if (finished) {
@@ -1072,11 +1081,11 @@
             }, 200);
           }
           setTimeout(() => {
+            clearInterval(poke);
             if (finished) return;
             if (resumeIv) clearInterval(resumeIv);
-            // اگر هنوز در حال حرف‌زدن است موفق؛ وگرنه شکست تا پشتیبان بیاید
-            done(started && (speechSynthesis.speaking || speechSynthesis.pending));
-          }, Math.min(12000, 1800 + String(text).length * 180));
+            done(started || speechSynthesis.speaking || speechSynthesis.pending);
+          }, Math.min(14000, 2200 + String(text).length * 200));
         } catch {
           resolve(false);
         }
@@ -1428,12 +1437,40 @@
     return false;
   }
 
-  async function speakSynthLang(text, vol, lang, opts) {
-    try {
-      if (window.speechSynthesis) speechSynthesis.resume();
-    } catch {}
-    await sleep(isIOSLike() ? 100 : 40);
+  async function waitVoices(ms) {
     loadVoices();
+    if (!window.speechSynthesis) return;
+    if ((speechSynthesis.getVoices() || []).length) return;
+    await new Promise((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        resolve();
+      };
+      try {
+        speechSynthesis.onvoiceschanged = () => {
+          loadVoices();
+          finish();
+        };
+      } catch {}
+      setTimeout(finish, ms || 500);
+    });
+    loadVoices();
+  }
+
+  async function speakSynthLang(text, vol, lang, opts) {
+    if (soundMuted || !text) return false;
+    unlockAudio();
+    // بعد از پخش mp3، بدون cancel گاهی سیستم ساکت می‌ماند
+    try {
+      speechSynthesis.cancel();
+    } catch {}
+    await sleep(isIOSLike() ? 90 : 40);
+    try {
+      speechSynthesis.resume();
+    } catch {}
+    await waitVoices(isIOSLike() ? 600 : 300);
     const o = opts || {};
     return speakFaSynthAsync(text, vol, lang, {
       ...o,
@@ -1441,6 +1478,24 @@
       rate: o.rate != null ? o.rate : lang === "fa" ? 1.28 : 1.12,
       pitch: o.pitch != null ? o.pitch : 1.12
     });
+  }
+
+  async function playGoogleDirect(text, vol, lang) {
+    // فقط لینک مستقیم گوگل — بدون صف طولانی پروکسی
+    const key = String(text || "").trim().slice(0, 160);
+    if (!key || soundMuted) return false;
+    const urls = faTtsUrls(key, lang).slice(0, 2);
+    for (let i = 0; i < urls.length; i++) {
+      try {
+        const a = makeHtmlAudio(urls[i]);
+        const ok = await playHtmlAudioEl(a, vol, 7000);
+        if (ok) {
+          warmFaTts(key);
+          return true;
+        }
+      } catch {}
+    }
+    return false;
   }
 
   async function fetchDilaraOnly(text) {
@@ -1559,16 +1614,14 @@
   }
 
   async function speakMoveNameOnly(name, vol) {
-    // پایدار و بدون لپ‌تاپ + لایهٔ ماشینی برای متن بی‌ربط
     const raw = String(name || "").replace(/\s+/g, " ").trim();
     if (!raw) return false;
     const said = sayForMove(raw);
-    const opts = { noCancel: true };
     const v = vol == null ? 0.98 : vol;
     const hasFa = /[\u0600-\u06FF]/.test(raw);
     const hasLatin = /[A-Za-z]/.test(raw);
     const speakText = raw;
-    const lang = hasFa || !hasLatin ? "fa" : "en";
+    const isEn = hasLatin && !hasFa;
     const keyLow = raw.toLowerCase();
 
     const clip =
@@ -1587,49 +1640,43 @@
       const ok = await playCachedFaOnly(speakText, v);
       if (ok) return true;
     }
-    if (said && said.text && said.text !== speakText) {
-      const ok = await playCachedFaOnly(said.text, v);
+
+    // انگلیسی: سریع — سیستم بعد گوگل مستقیم (بدون پروکسی طولانی)
+    if (isEn) {
+      const okS = await speakSynthLang(speakText, v, "en", { noCancel: true });
+      if (okS) return true;
+      const okG = await playGoogleDirect(speakText, v, "en");
+      if (okG) return true;
+      return speakMachineAny(speakText, v);
+    }
+
+    // فارسی / مخلوط
+    {
+      const ok = await speakSynthLang(speakText, v, "fa", { noCancel: true });
       if (ok) return true;
+    }
+    if (said && said.text && said.text !== speakText) {
       const clip2 = MOVE_CLIP[said.text];
       if (clip2) {
         const ok2 = await playVoiceFile(clip2, v);
         if (ok2) return true;
       }
+      const ok = await speakSynthLang(said.text, v, "fa", { noCancel: true });
+      if (ok) return true;
     }
-
     {
-      const ok = await speakSynthLang(speakText, v, lang, opts);
-      if (ok) {
-        warmFaTts(speakText);
-        return true;
-      }
-    }
-    if (said && said.lang === "fa" && said.text && said.text !== speakText) {
-      const ok = await speakSynthLang(said.text, v, "fa", opts);
+      const ok = await playGoogleDirect(speakText, v, "fa");
       if (ok) return true;
     }
-
-    {
-      const ok = await playGoogleFaAudio(speakText, v, lang);
-      if (ok) return true;
-    }
-    if (said && said.text && said.text !== speakText) {
-      const mapLang = said.lang === "en" ? "en" : "fa";
-      const ok = await playGoogleFaAudio(said.text, v, mapLang);
-      if (ok) return true;
-    }
-
-    {
-      const ok = await playDilaraFa(speakText, v);
-      if (ok) return true;
-    }
-
-    // قطعی برای بی‌ربط / فارسی بدون موتور فارسی گوشی
+    // ماشینی: حروف فارسی → لاتین با صدای انگلیسی گوشی (حتی بی‌ربط)
     {
       const ok = await speakMachineAny(speakText, v);
       if (ok) return true;
     }
-
+    {
+      const ok = await playDilaraFa(speakText, v);
+      if (ok) return true;
+    }
     warmFaTts(speakText);
     return false;
   }
@@ -1657,10 +1704,10 @@
     if (!pref) pref = await playGoogleFaAudio("حرکت بعد", 1, "fa");
     if (!pref) pref = await playDilaraFa("حرکت بعد", 1);
     if (seq != null && !announceAlive(seq)) return !!pref;
-    await sleep(60);
+    // کمی فاصله تا بعد از mp3، صدای سیستم/گوگل قفل نماند
+    await sleep(100);
     if (seq != null && !announceAlive(seq)) return false;
     if (!nm) return !!pref;
-    // اسم حرکت بعد (جمله فارسی کاربر هم همین‌جا خوانده می‌شود)
     return speakMoveNameOnly(nm, 1);
   }
 
