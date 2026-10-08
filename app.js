@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "115";
+  const APP_VER = "116";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -65,7 +65,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=115";
+  const VOICE_Q = "?v=116";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -610,9 +610,9 @@
       if (bgCtxKeep) return;
       const osc = audioCtx.createOscillator();
       const g = audioCtx.createGain();
-      // خیلی آرام؛ فقط برای زنده نگه داشتن AudioContext در بکگراند
-      g.gain.value = 0.00035;
-      osc.frequency.value = 48;
+      // فراصوت خیلی ضعیف — وزوز شنیده نشود
+      g.gain.value = 0.00008;
+      osc.frequency.value = 17500;
       osc.type = "sine";
       osc.connect(g);
       g.connect(audioCtx.destination);
@@ -671,7 +671,7 @@
   function makeBeepUrl() {
     try {
       const sr = 16000;
-      const sec = 0.28;
+      const sec = 0.42;
       const n = Math.floor(sr * sec);
       const data = new ArrayBuffer(44 + n * 2);
       const view = new DataView(data);
@@ -692,11 +692,14 @@
       w(36, "data");
       view.setUint32(40, n * 2, true);
       for (let i = 0; i < n; i++) {
-        const t0 = i / sr;
-        const env = Math.min(1, t0 * 30) * Math.max(0, 1 - t0 / sec);
+        const x = i / sr;
+        const env = Math.min(1, x * 25) * Math.max(0, 1 - x / sec);
+        const f = 520 + x * 420;
         const sample =
-          Math.sin(2 * Math.PI * 520 * t0) * 0.55 * env +
-          Math.sin(2 * Math.PI * 780 * t0) * 0.25 * env;
+          (Math.sin(2 * Math.PI * f * x) * 0.7 +
+            Math.sin(2 * Math.PI * f * 2 * x) * 0.28 +
+            Math.sin(2 * Math.PI * f * 3 * x) * 0.12) *
+          env;
         let v = (sample * 32767) | 0;
         if (v > 32767) v = 32767;
         if (v < -32768) v = -32768;
@@ -714,7 +717,7 @@
   function makeWarnBeepUrl() {
     try {
       const sr = 16000;
-      const sec = 0.16;
+      const sec = 0.22;
       const n = Math.floor(sr * sec);
       const data = new ArrayBuffer(44 + n * 2);
       const view = new DataView(data);
@@ -735,10 +738,12 @@
       w(36, "data");
       view.setUint32(40, n * 2, true);
       for (let i = 0; i < n; i++) {
-        const t0 = i / sr;
-        const env = Math.min(1, t0 * 40) * Math.max(0, 1 - t0 / sec);
-        // بم و کوتاه — هشدار ۴ث
-        const sample = Math.sin(2 * Math.PI * 220 * t0) * 0.7 * env;
+        const x = i / sr;
+        const env = Math.min(1, x * 45) * Math.max(0, 1 - x / sec);
+        const sample =
+          (Math.sin(2 * Math.PI * 175 * x) * 0.75 +
+            Math.sin(2 * Math.PI * 260 * x) * 0.35) *
+          env;
         let v = (sample * 32767) | 0;
         if (v > 32767) v = 32767;
         if (v < -32768) v = -32768;
@@ -785,7 +790,7 @@
   }
 
   function makeQuietKeepUrl() {
-    // سکوت مطلق را اندروید/آیفون می‌کشند؛ موج خیلی آروم نگه می‌دارد
+    // ۱۷٫۵کیلوهرتز خیلی ضعیف — وزوز مورچه‌ای شنیده نشود
     try {
       const sr = 16000;
       const sec = 2;
@@ -809,16 +814,14 @@
       w(36, "data");
       view.setUint32(40, n * 2, true);
       for (let i = 0; i < n; i++) {
-        const t = i / sr;
-        // دامنه خیلی کم؛ تقریباً نشنیده
-        const sample = Math.sin(2 * Math.PI * 55 * t) * 0.012;
+        const tt = i / sr;
+        const sample = Math.sin(2 * Math.PI * 17500 * tt) * 0.0022;
         let v = (sample * 32767) | 0;
         if (v > 32767) v = 32767;
         if (v < -32768) v = -32768;
         view.setInt16(44 + i * 2, v, true);
       }
-      const blob = new Blob([data], { type: "audio/wav" });
-      return URL.createObjectURL(blob);
+      return URL.createObjectURL(new Blob([data], { type: "audio/wav" }));
     } catch {
       return VOICE_BASE + "silence.wav" + VOICE_Q;
     }
@@ -851,13 +854,13 @@
       } catch {}
       const a = makeHtmlAudio(makeQuietKeepUrl());
       a.loop = true;
-      a.volume = 0.045;
+      a.volume = 0.01;
       a.muted = false;
       bgKeepAudio = a;
     } else {
       try {
         bgKeepAudio.muted = false;
-        bgKeepAudio.volume = 0.045;
+        bgKeepAudio.volume = 0.01;
         bgKeepAudio.loop = true;
       } catch {}
     }
@@ -900,7 +903,7 @@
     if (bgKeepAudio) {
       try {
         bgKeepAudio.muted = false;
-        bgKeepAudio.volume = 0.045;
+        bgKeepAudio.volume = 0.01;
       } catch {}
       const p = bgKeepAudio.play();
       if (p && typeof p.then === "function") {
@@ -931,54 +934,53 @@
       if (!audioCtx) return;
       const start = () => {
         if (gen !== soundGen) return;
-        // شروع حرکت قبلی را پاک کند؛ تیک‌های هشدار ۴ث روی هم مجازند
         if (!o.stack) stopBeep();
         if (gen !== soundGen) return;
         const t0 = audioCtx.currentTime + (o.atMs || 0) / 1000;
         const master = audioCtx.createGain();
         const lp = audioCtx.createBiquadFilter();
+        const hp = audioCtx.createBiquadFilter();
+        hp.type = "highpass";
+        hp.frequency.setValueAtTime(o.bright ? 140 : 55, t0);
         lp.type = "lowpass";
-        lp.frequency.setValueAtTime(o.bright ? 2400 : 900, t0);
-        lp.Q.setValueAtTime(0.55, t0);
-        const peak = o.peak != null ? o.peak : 1.15;
-        const total = o.total != null ? o.total : 0.7;
+        lp.frequency.setValueAtTime(o.bright ? 5200 : 2400, t0);
+        lp.Q.setValueAtTime(0.75, t0);
+        const peak = o.peak != null ? o.peak : 1.4;
+        const total = o.total != null ? o.total : 0.8;
         master.gain.setValueAtTime(0.0001, t0);
-        master.gain.exponentialRampToValueAtTime(peak, t0 + 0.05);
-        master.gain.setValueAtTime(peak * 0.85, t0 + total * 0.55);
+        master.gain.exponentialRampToValueAtTime(peak, t0 + 0.025);
+        master.gain.setValueAtTime(peak * 0.9, t0 + total * 0.4);
         master.gain.exponentialRampToValueAtTime(0.0001, t0 + total);
-        master.connect(lp);
+        master.connect(hp);
+        hp.connect(lp);
         lp.connect(audioCtx.destination);
         const notes = o.notes || [
-          { f: 392.0, at: 0, dur: 0.38, g: 0.95 },
-          { f: 523.25, at: 0.14, dur: 0.42, g: 1.05 },
-          { f: 659.25, at: 0.3, dur: 0.45, g: 0.85 }
+          { f: 392.0, at: 0, dur: 0.42, g: 1.05 },
+          { f: 523.25, at: 0.12, dur: 0.48, g: 1.15 },
+          { f: 659.25, at: 0.28, dur: 0.52, g: 1.0 }
         ];
         const oscs = [];
         notes.forEach((n) => {
-          const o1 = audioCtx.createOscillator();
-          const o2 = audioCtx.createOscillator();
-          const g1 = audioCtx.createGain();
-          const g2 = audioCtx.createGain();
-          o1.type = "sine";
-          o2.type = "sine";
           const gt = t0 + n.at;
-          o1.frequency.setValueAtTime(n.f, gt);
-          o2.frequency.setValueAtTime(n.f * 2, gt);
-          g1.gain.setValueAtTime(0.0001, gt);
-          g1.gain.exponentialRampToValueAtTime(n.g * 0.7, gt + 0.05);
-          g1.gain.exponentialRampToValueAtTime(0.0001, gt + n.dur);
-          g2.gain.setValueAtTime(0.0001, gt);
-          g2.gain.exponentialRampToValueAtTime(n.g * 0.12, gt + 0.06);
-          g2.gain.exponentialRampToValueAtTime(0.0001, gt + n.dur);
-          o1.connect(g1);
-          o2.connect(g2);
-          g1.connect(master);
-          g2.connect(master);
-          o1.start(gt);
-          o2.start(gt);
-          o1.stop(gt + n.dur + 0.03);
-          o2.stop(gt + n.dur + 0.03);
-          oscs.push(o1, o2);
+          const layer = (type, freq, gainMul, detune) => {
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, gt);
+            if (detune) osc.detune.setValueAtTime(detune, gt);
+            g.gain.setValueAtTime(0.0001, gt);
+            g.gain.exponentialRampToValueAtTime(n.g * gainMul, gt + 0.018);
+            g.gain.exponentialRampToValueAtTime(0.0001, gt + n.dur);
+            osc.connect(g);
+            g.connect(master);
+            osc.start(gt);
+            osc.stop(gt + n.dur + 0.05);
+            oscs.push(osc);
+          };
+          layer("sine", n.f, 0.78, 0);
+          layer("triangle", n.f, 0.42, -7);
+          layer("sine", n.f * 2, 0.26, 5);
+          layer("sine", n.f * 3, 0.12, -4);
         });
         const entry = { osc: oscs[0], gain: master, oscs };
         activeBeep = entry;
@@ -990,44 +992,49 @@
   }
 
   function beepSoftRing(atMs) {
-    // شروع حرکت: یک زنگ بلند بالارونده — با هشدار ۴ث فرق کند
+    // شروع حرکت: زنگ غنی بالارونده و بلند
     buzz([400, 120, 550]);
     if (document.hidden || !audioOutputOk()) {
       setTimeout(() => playHtmlBeep(), atMs || 0);
+      setTimeout(() => playHtmlBeep(), (atMs || 0) + 90);
     }
     playWarmChime({
       atMs: atMs || 0,
       stack: false,
       bright: true,
-      peak: 1.25,
-      total: 0.7,
+      peak: 1.55,
+      total: 0.95,
       notes: [
-        { f: 523.25, at: 0, dur: 0.22, g: 0.85 },
-        { f: 659.25, at: 0.12, dur: 0.28, g: 1.05 },
-        { f: 783.99, at: 0.28, dur: 0.4, g: 1.15 }
+        { f: 392.0, at: 0, dur: 0.28, g: 0.95 },
+        { f: 523.25, at: 0.08, dur: 0.36, g: 1.15 },
+        { f: 659.25, at: 0.2, dur: 0.42, g: 1.25 },
+        { f: 783.99, at: 0.36, dur: 0.55, g: 1.35 }
       ]
     });
   }
 
   function beepSoftDouble() {
-    // ۴ ثانیه مانده: سه تیک بم کوتاه — شبیه شروع حرکت نباشد
+    // ۴ ثانیه مانده: سه ضربه بم پرقدرت — کاملاً جدا از زنگ شروع
     buzz([120, 70, 120, 70, 120, 70, 200]);
-    const tick = (at) => {
+    const tick = (delay) => {
       if (document.hidden || !audioOutputOk()) {
-        setTimeout(() => playHtmlWarnBeep(), at);
+        setTimeout(() => playHtmlWarnBeep(), delay);
       }
       playWarmChime({
-        atMs: at,
+        atMs: delay,
         stack: true,
         bright: false,
-        peak: 1.1,
-        total: 0.28,
-        notes: [{ f: 196.0, at: 0, dur: 0.2, g: 1.15 }]
+        peak: 1.45,
+        total: 0.38,
+        notes: [
+          { f: 164.81, at: 0, dur: 0.28, g: 1.3 },
+          { f: 220.0, at: 0.02, dur: 0.26, g: 1.05 }
+        ]
       });
     };
     tick(0);
-    setTimeout(() => tick(0), 280);
-    setTimeout(() => tick(0), 560);
+    setTimeout(() => tick(0), 300);
+    setTimeout(() => tick(0), 600);
   }
 
   function beepWhite(ms, soft) {
