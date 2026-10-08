@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "60";
+  const APP_VER = "61";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,8 +41,10 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=60";
-  const dynFaAudio = new Map(); // متن فارسی دلخواه → Audio آماده‌شده
+  const VOICE_Q = "?v=61";
+  const dynFaAudio = new Map(); // متن فارسی → Audio
+  const dynFaBlob = new Map(); // متن فارسی → Blob کش‌شده
+  const DYN_FA_CACHE = "setdadr-fa-tts-v1";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -436,12 +438,18 @@
     return buf;
   }
 
-  function faTtsUrl(text) {
+  function faTtsUrls(text) {
     const q = encodeURIComponent(String(text || "").trim().slice(0, 160));
-    return (
-      "https://translate.googleapis.com/translate_tts?ie=UTF-8&client=gtx&tl=fa&q=" +
-      q
-    );
+    const direct = [
+      "https://translate.googleapis.com/translate_tts?ie=UTF-8&client=gtx&tl=fa&q=" + q,
+      "https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=fa&q=" + q
+    ];
+    const out = [...direct];
+    direct.forEach((u) => {
+      out.push("https://corsproxy.io/?" + encodeURIComponent(u));
+      out.push("https://api.allorigins.win/raw?url=" + encodeURIComponent(u));
+    });
+    return out;
   }
 
   function makeHtmlAudio(src) {
@@ -453,23 +461,66 @@
     return a;
   }
 
-  function warmFaTts(text) {
-    const key = String(text || "").trim().slice(0, 160);
-    if (!key || !/[\u0600-\u06FF]/.test(key)) return;
-    if (dynFaAudio.has(key)) return;
+  async function loadDynFaFromCache(key) {
+    if (dynFaBlob.has(key)) return dynFaBlob.get(key);
     try {
-      const a = makeHtmlAudio(faTtsUrl(key));
-      dynFaAudio.set(key, a);
-      try {
-        a.load();
-      } catch {}
+      if (!("caches" in window)) return null;
+      const cache = await caches.open(DYN_FA_CACHE);
+      const hit = await cache.match("fa-tts:" + encodeURIComponent(key));
+      if (!hit || !hit.ok) return null;
+      const blob = await hit.blob();
+      if (!blob || blob.size < 80) return null;
+      dynFaBlob.set(key, blob);
+      return blob;
+    } catch {
+      return null;
+    }
+  }
+
+  async function saveDynFaToCache(key, blob) {
+    dynFaBlob.set(key, blob);
+    try {
+      if (!("caches" in window)) return;
+      const cache = await caches.open(DYN_FA_CACHE);
+      await cache.put(
+        "fa-tts:" + encodeURIComponent(key),
+        new Response(blob, { headers: { "Content-Type": blob.type || "audio/mpeg" } })
+      );
     } catch {}
   }
 
-  function warmMoveVoice(name) {
+  async function fetchFaTtsBlob(text) {
+    const key = String(text || "").trim().slice(0, 160);
+    if (!key) return null;
+    const cached = await loadDynFaFromCache(key);
+    if (cached) return cached;
+    const urls = faTtsUrls(key);
+    for (let i = 0; i < urls.length; i++) {
+      try {
+        const res = await fetch(urls[i], { cache: "force-cache", credentials: "omit" });
+        if (!res || !res.ok) continue;
+        const blob = await res.blob();
+        if (!blob || blob.size < 80) continue;
+        await saveDynFaToCache(key, blob);
+        return blob;
+      } catch {}
+    }
+    return null;
+  }
+
+  async function warmFaTts(text) {
+    const key = String(text || "").trim().slice(0, 160);
+    if (!key || !/[\u0600-\u06FF]/.test(key)) return;
+    try {
+      if (MOVE_CLIP && MOVE_CLIP[key]) return;
+    } catch {}
+    await fetchFaTtsBlob(key);
+  }
+
+  async function warmMoveVoice(name) {
     try {
       const said = sayForMove(name);
-      if (said && said.text) warmFaTts(said.text);
+      if (said && said.text) await warmFaTts(said.text);
     } catch {}
   }
 
@@ -485,10 +536,14 @@
     voicePlayer = a;
     return await new Promise((resolve) => {
       let done = false;
+      let heard = false;
       const finish = (ok) => {
         if (done) return;
         done = true;
         resolve(!!ok);
+      };
+      a.onplaying = () => {
+        heard = true;
       };
       a.onended = () => finish(true);
       a.onerror = () => finish(false);
@@ -496,26 +551,75 @@
       if (p && typeof p.then === "function") {
         p.then(() => {}).catch(() => finish(false));
       }
-      setTimeout(() => finish(true), 9000);
+      setTimeout(() => finish(heard || (a.currentTime || 0) > 0.05), 8000);
     });
   }
 
-  // هر متن فارسی دلخواه (حتی جامپ و اسم‌های غریبه) — روی گوشی با تی‌تی‌اس آنلاین
+  async function playBlobFa(blob, vol) {
+    if (!blob) return false;
+    try {
+      unlockAudio();
+      // اول با AudioContext (بعد از آنلاک روی آیفون پایدارتر است)
+      if (audioCtx) {
+        try {
+          if (audioCtx.state === "suspended") await audioCtx.resume();
+          const raw = await blob.arrayBuffer();
+          const buf = await audioCtx.decodeAudioData(raw.slice(0));
+          stopVoiceFile();
+          await new Promise((resolve) => {
+            let done = false;
+            const finish = () => {
+              if (done) return;
+              done = true;
+              resolve();
+            };
+            const src = audioCtx.createBufferSource();
+            const g = audioCtx.createGain();
+            g.gain.value = Math.max(0.05, Math.min(1, vol == null ? 0.98 : vol));
+            src.buffer = buf;
+            src.connect(g);
+            g.connect(audioCtx.destination);
+            voicePlayer = src;
+            src.onended = finish;
+            src.start();
+            setTimeout(finish, Math.min(8000, (buf.duration + 0.4) * 1000));
+          });
+          return true;
+        } catch {}
+      }
+      const url = URL.createObjectURL(blob);
+      const a = makeHtmlAudio(url);
+      dynFaAudio.set(String(url), a);
+      const ok = await playHtmlAudioEl(a, vol);
+      setTimeout(() => {
+        try {
+          URL.revokeObjectURL(url);
+        } catch {}
+      }, 15000);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+
+  // هر متن فارسی دلخواه — اول از کش/دانلود، بعد پخش
   async function playDynamicFa(text, vol) {
     const key = String(text || "").trim().slice(0, 160);
     if (!key) return false;
     try {
-      let a = dynFaAudio.get(key);
-      if (!a) {
-        a = makeHtmlAudio(faTtsUrl(key));
-        dynFaAudio.set(key, a);
+      const blob = await fetchFaTtsBlob(key);
+      if (blob) {
+        const ok = await playBlobFa(blob, vol);
+        if (ok) return true;
       }
-      const ok = await playHtmlAudioEl(a, vol);
-      if (ok) return true;
-      // یک‌بار دیگر با آدرس تازه
-      const a2 = makeHtmlAudio(faTtsUrl(key));
-      dynFaAudio.set(key, a2);
-      return await playHtmlAudioEl(a2, vol);
+      // آخرین تلاش: پخش مستقیم لینک
+      const urls = faTtsUrls(key).slice(0, 2);
+      for (let i = 0; i < urls.length; i++) {
+        const a = makeHtmlAudio(urls[i]);
+        const ok = await playHtmlAudioEl(a, vol);
+        if (ok) return true;
+      }
+      return false;
     } catch {
       return false;
     }
@@ -782,7 +886,11 @@
     استراحت: "استراحت",
     jump: "جامپ",
     jumps: "جامپ",
-    جامپ: "جامپ"
+    جامپ: "جامپ",
+    دیوارنشینی: "دیوارنشینی",
+    "دیوار نشینی": "دیوار نشینی",
+    "wall sit": "دیوارنشینی",
+    wallsit: "دیوارنشینی"
   };
 
   // کلیپ آفلاین فارسی برای گوشی (آیفون تلفظ فارسی سیستم ندارد)
@@ -829,7 +937,9 @@
     طناب: "move-jump-rope.mp3",
     یوگا: "move-yoga.mp3",
     کشش: "move-stretch.mp3",
-    جامپ: "move-jump.mp3"
+    جامپ: "move-jump.mp3",
+    دیوارنشینی: "move-divar.mp3",
+    "دیوار نشینی": "move-divar-space.mp3"
   };
 
   const MOVE_EN = {
@@ -875,7 +985,9 @@
     طناب: "jump rope",
     یوگا: "yoga",
     کشش: "stretch",
-    جامپ: "jump"
+    جامپ: "jump",
+    دیوارنشینی: "wall sit",
+    "دیوار نشینی": "wall sit"
   };
 
   function sayForMove(name) {
@@ -934,18 +1046,11 @@
       return speakFaSynthAsync(raw, v, "en", opts);
     }
 
-    // ۳) هر فارسی دلخواه: روی گوشی اول تی‌تی‌اس آنلاین (هر کلمه‌ای مثل جامپ)
+    // ۳) هر فارسی دلخواه (دیوارنشینی و هر چیز دیگر) — دانلود/کش بعد پخش
     if (hasFa) {
-      if (ios) {
-        const dyn = await playDynamicFa(said.text, v);
-        if (dyn) return true;
-      }
+      const dyn = await playDynamicFa(said.text, v);
+      if (dyn) return true;
       const synthOk = await speakFaSynthAsync(said.text, v, "fa", opts);
-      if (synthOk && !ios) return true;
-      if (!ios) {
-        const dyn = await playDynamicFa(said.text, v);
-        if (dyn) return true;
-      }
       if (synthOk) return true;
     }
 
@@ -1299,7 +1404,7 @@
     return steps;
   }
 
-  function startRun(id) {
+  async function startRun(id) {
     const p = state.plans.find((x) => x.id === id);
     if (!p || !p.circuit.length) return;
     // دوبار زدن شروع = زوم صدا؛ قفل کوتاه + قطع قبلی
@@ -1307,13 +1412,14 @@
     startLock = true;
     setTimeout(() => {
       startLock = false;
-    }, 700);
+    }, 1200);
     stopLoop();
     stopAllSound();
     const steps = buildTimeline(p);
     unlockAudio();
+    // قبل از شروع، صدای فارسی هر حرکت را بکش تا وسط تمرین گیر نکند
     try {
-      p.circuit.forEach((c) => warmMoveVoice(c.name));
+      await Promise.all(p.circuit.map((c) => warmMoveVoice(c.name)));
     } catch {}
     run = {
       planId: p.id,

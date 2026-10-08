@@ -1,4 +1,4 @@
-const CACHE = "setdadr-v60";
+const CACHE = "setdadr-v61";
 const ASSETS = [
   "./",
   "./index.html",
@@ -69,6 +69,8 @@ const ASSETS = [
   "./voice/move-calf.mp3",
   "./voice/move-crunch.mp3",
   "./voice/move-deadlift.mp3",
+  "./voice/move-divar-space.mp3",
+  "./voice/move-divar.mp3",
   "./voice/move-farmer.mp3",
   "./voice/move-glute-bridge.mp3",
   "./voice/move-goblet-squat.mp3",
