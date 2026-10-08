@@ -1,2 +1,2 @@
-﻿// Dilara TTS public URL — updated by tools/start_tts_public.ps1
-window.SETDADR_TTS_API = "https://core-macro-current-thomson.trycloudflare.com";
+﻿// Optional Dilara TTS — NOT required. App works via device TTS + Google + offline clips.
+window.SETDADR_TTS_API = "";

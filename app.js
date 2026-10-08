@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "76";
+  const APP_VER = "77";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=76";
+  const VOICE_Q = "?v=77";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -1036,7 +1036,7 @@
       loadVoices();
       const ios = isIOSLike();
       const o = opts || {};
-      const useEn = lang === "en" && enVoice;
+      const wantEn = lang === "en";
       speakToken += 1;
       const tok = speakToken;
       if (!ios && !o.noCancel) {
@@ -1054,24 +1054,22 @@
         } catch {}
         try {
           const u = new SpeechSynthesisUtterance(String(text));
+          // حتی بدون پیدا کردن voice؛ lang را بگذار تا موتور گوشی (گوگل‌تی‌تی‌اس) بخواند
           if (o.voice) {
             u.voice = o.voice;
-            u.lang = o.lang || o.voice.lang || "fa-IR";
+            u.lang = o.lang || o.voice.lang || (wantEn ? "en-US" : "fa-IR");
             u.rate = o.rate != null ? o.rate : 1.3;
             u.pitch = o.pitch != null ? o.pitch : 1.3;
-          } else if (useEn) {
-            u.voice = enVoice;
-            u.lang = enVoice.lang || "en-US";
-            u.rate = o.rate != null ? o.rate : 1.15;
-            u.pitch = o.pitch != null ? o.pitch : 1.18;
+          } else if (wantEn) {
+            if (enVoice) u.voice = enVoice;
+            u.lang = (enVoice && enVoice.lang) || "en-US";
+            u.rate = o.rate != null ? o.rate : 1.12;
+            u.pitch = o.pitch != null ? o.pitch : 1.12;
           } else {
-            u.lang = "fa-IR";
-            if (faVoice) {
-              u.voice = faVoice;
-              u.lang = faVoice.lang || "fa-IR";
-            }
-            u.rate = o.rate != null ? o.rate : 1.32;
-            u.pitch = o.pitch != null ? o.pitch : 1.2;
+            if (faVoice) u.voice = faVoice;
+            u.lang = (faVoice && faVoice.lang) || "fa-IR";
+            u.rate = o.rate != null ? o.rate : 1.28;
+            u.pitch = o.pitch != null ? o.pitch : 1.12;
           }
           u.volume = vol == null ? 1 : Math.min(1, vol);
           let finished = false;
@@ -1482,11 +1480,12 @@
     if (!key) return null;
     const cached = await loadDynFaFromCache(key);
     if (cached) return cached;
-    const bases = getTtsApiBases();
+    // فقط یک تلاش کوتاه — وابسته به لپ‌تاپ نباشد / تمرین را معطل نکند
+    const bases = getTtsApiBases().slice(0, 1);
     for (let i = 0; i < bases.length; i++) {
       try {
         const url = bases[i] + "/tts?t=" + encodeURIComponent(key);
-        const res = await fetchWithTimeout(url, 10000);
+        const res = await fetchWithTimeout(url, 2500);
         if (!res || !res.ok) continue;
         const blob = await res.blob();
         if (!blob || blob.size < 80) continue;
@@ -1509,7 +1508,8 @@
   }
 
   async function speakMoveNameOnly(name, vol) {
-    // انگلیسی معروف: کلیپ آفلاین. تازه/دلخواه: دیلارا (تونل) بعد گوگل بعد سیستم
+    // پایدار و بدون لپ‌تاپ:
+    // ۱) کلیپ/کش آفلاین  ۲) صدای خود گوشی/ویندوز  ۳) گوگل با اینترنت گوشی  ۴) دیلارا اختیاری کوتاه
     const raw = String(name || "").replace(/\s+/g, " ").trim();
     if (!raw) return false;
     const said = sayForMove(raw);
@@ -1537,36 +1537,17 @@
       const ok = await playCachedFaOnly(speakText, v);
       if (ok) return true;
     }
-
-    // فارسی روی ویندوز: سیستم خوب است
-    if (lang === "fa" && hasUsableFaVoice()) {
-      const ok = await speakSynthLang(speakText, v, "fa", opts);
-      if (ok) return true;
-    }
-
-    // دیلارا برای فارسی و انگلیسی (گوشی)
-    {
-      const ok = await playDilaraFa(speakText, v);
-      if (ok) return true;
-    }
-    // اگر به فارسی نگاشت شده، همان را هم از دیلارا بگیر
     if (said && said.text && said.text !== speakText) {
-      const ok = await playDilaraFa(said.text, v);
+      const ok = await playCachedFaOnly(said.text, v);
       if (ok) return true;
-    }
-
-    {
-      const ok = await playGoogleFaAudio(speakText, v, lang);
-      if (ok) return true;
-    }
-
-    if (lang === "en" || hasUsableEnVoice()) {
-      const ok = await speakSynthLang(speakText, v, lang === "fa" ? "fa" : "en", opts);
-      if (ok) {
-        warmFaTts(speakText);
-        return true;
+      const clip2 = MOVE_CLIP[said.text];
+      if (clip2) {
+        const ok2 = await playVoiceFile(clip2, v);
+        if (ok2) return true;
       }
     }
+
+    // صدای خود دستگاه — انگلیسی روی گوشی تقریباً همیشه؛ فارسی اگر بسته زبان نصب باشد
     {
       const ok = await speakSynthLang(speakText, v, lang, opts);
       if (ok) {
@@ -1574,26 +1555,27 @@
         return true;
       }
     }
+    // اگر ورودی انگلیسی به فارسی نگاشت شده، فارسی سیستم را هم امتحان کن
+    if (said && said.lang === "fa" && said.text && said.text !== speakText) {
+      const ok = await speakSynthLang(said.text, v, "fa", opts);
+      if (ok) return true;
+    }
 
+    // گوگل با اینترنت خود گوشی — بدون لپ‌تاپ
+    {
+      const ok = await playGoogleFaAudio(speakText, v, lang);
+      if (ok) return true;
+    }
     if (said && said.text && said.text !== speakText) {
-      const clip2 = MOVE_CLIP[said.text];
-      if (clip2) {
-        const ok = await playVoiceFile(clip2, v);
-        if (ok) return true;
-      }
-      const mapLang = said.lang === "en" || MOVE_EN[said.text] ? "en" : "fa";
-      const okG = await playGoogleFaAudio(
-        mapLang === "en" ? MOVE_EN[said.text] || said.text : said.text,
-        v,
-        mapLang
-      );
-      if (okG) return true;
-      return speakSynthLang(
-        MOVE_EN[said.text] || said.text,
-        v,
-        mapLang,
-        opts
-      );
+      const mapLang = said.lang === "en" ? "en" : "fa";
+      const ok = await playGoogleFaAudio(said.text, v, mapLang);
+      if (ok) return true;
+    }
+
+    // دیلارا فقط اگر در دسترس باشد؛ کوتاه؛ اجباری نیست
+    {
+      const ok = await playDilaraFa(speakText, v);
+      if (ok) return true;
     }
 
     warmFaTts(speakText);
@@ -1608,12 +1590,10 @@
     const ios = isIOSLike();
     const opts = ios ? { noCancel: true } : {};
     const nm = String(name || "").replace(/\s+/g, " ").trim();
-    // استراحت ست/حرکت: اول «حرکت بعد» آفلاین قطعی، بعد اسم
+    // استراحت ست/حرکت: اول «حرکت بعد» آفلاین، بعد سیستم/گوگل (بدون وابستگی به لپ‌تاپ)
     let pref = await playVoiceFile("phrase-next.mp3", 1);
     if (!pref) pref = await playBakedDynClip("حرکت بعد", 1);
     if (!pref) pref = await playCachedFaOnly("حرکت بعد", 1);
-    if (!pref) pref = await playDilaraFa("حرکت بعد", 1);
-    if (!pref) pref = await playGoogleFaAudio("حرکت بعد", 1, "fa");
     if (!pref) {
       loadVoices();
       pref = await speakFaSynthAsync("حرکت بعد", 1, "fa", {
@@ -1622,6 +1602,8 @@
         pitch: 1.1
       });
     }
+    if (!pref) pref = await playGoogleFaAudio("حرکت بعد", 1, "fa");
+    if (!pref) pref = await playDilaraFa("حرکت بعد", 1);
     if (seq != null && !announceAlive(seq)) return !!pref;
     await sleep(120);
     if (seq != null && !announceAlive(seq)) return false;
