@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "108";
+  const APP_VER = "109";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -28,6 +28,7 @@
   let audioCtx = null;
   let activeBeep = null;
   let startLock = false;
+  let skipLock = false;
   let speechWarmed = false;
   let voicePlayer = null;
   let announceSeq = 0;
@@ -64,7 +65,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=108";
+  const VOICE_Q = "?v=109";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -405,8 +406,15 @@
         a.onended = null;
         a.onerror = null;
         a.onplaying = null;
+        try {
+          a.volume = 0;
+          a.muted = true;
+        } catch {}
         a.pause();
-        a.removeAttribute("src");
+        try {
+          a.removeAttribute("src");
+          a.src = "";
+        } catch {}
         a.load();
       } catch {}
     });
@@ -681,10 +689,12 @@
 
   function makeHtmlAudio(src) {
     const a = new Audio(src);
+    a._setdadrGen = soundGen;
     a.playsInline = true;
     a.setAttribute("playsinline", "");
     a.setAttribute("webkit-playsinline", "");
     a.preload = "auto";
+    a.muted = false;
     liveAudios.add(a);
     const drop = () => {
       try {
@@ -1014,6 +1024,7 @@
   async function playHtmlAudioEl(a, vol, maxWaitMs) {
     if (soundMuted || !a) return false;
     const gen = soundGen;
+    if (a._setdadrGen != null && a._setdadrGen !== gen) return false;
     unlockAudio();
     stopVoiceFile();
     try {
@@ -1021,6 +1032,9 @@
       a.currentTime = 0;
     } catch {}
     if (gen !== soundGen) return false;
+    try {
+      a.muted = false;
+    } catch {}
     a.volume = Math.max(0.05, Math.min(1, vol == null ? 0.98 : vol));
     voicePlayer = a;
     const waitCap = maxWaitMs != null ? maxWaitMs : 12000;
@@ -1039,6 +1053,15 @@
         resolve(!!ok && gen === soundGen);
       };
       a.onplaying = () => {
+        if (gen !== soundGen || (a._setdadrGen != null && a._setdadrGen !== soundGen)) {
+          try {
+            a.volume = 0;
+            a.muted = true;
+            a.pause();
+          } catch {}
+          finish(false);
+          return;
+        }
         heard = true;
       };
       a.onended = () => finish(true);
@@ -2271,11 +2294,16 @@
   }
 
   async function speakNextMoveName(name, seq) {
-    const nm = String(name || "").replace(/\s+/g, " ").trim();
+    const raw = String(name || "").replace(/\s+/g, " ").trim();
+    const nm = normSpeakKey(raw);
     const gen = soundGen;
     const tok = speakToken;
     if (seq != null && !announceAlive(seq)) return false;
     if (!soundAlive(gen, tok)) return false;
+    if (nm) {
+      primedExpectName = nm;
+      ensurePrimedFor(nm).catch(() => {});
+    }
     let pref = await playVoiceFile("phrase-next.mp3", 1);
     if (!soundAlive(gen, tok) || (seq != null && !announceAlive(seq))) return false;
     if (!pref) pref = await speakFaAny("حرکت بعد", 1);
@@ -2283,7 +2311,12 @@
     if (!nm) return !!pref;
     await sleep(60);
     if (!soundAlive(gen, tok) || (seq != null && !announceAlive(seq))) return false;
-    return speakMoveNameOnly(nm, 1);
+    const said = await speakMoveNameOnly(nm, 1);
+    // بعد از گفتن در استراحت، بافر را برای خود حرکت آماده نگه دار
+    if (said && soundAlive(gen, tok) && nm) {
+      ensurePrimedFor(nm).catch(() => {});
+    }
+    return !!said;
   }
 
   async function speakCheerOnly(seq) {
@@ -2303,10 +2336,12 @@
         step.kind === "work" && step.name ? warmFaTts(step.name) : Promise.resolve();
       buzz(step.kind === "work" ? [80, 35, 90] : [55, 30, 70]);
       if (step.kind === "work") {
-        // بوق اول، بعد حدود ۲ ثانیه اسم را ساده بگو (مثل قبل — بدون قفل پرایم)
+        // بوق، ~۲ث، بعد همان اسمی که در استراحت گفته شد را دوباره بگو
         startBgKeepAlive();
         beepSoftRing(0);
         const nm = normSpeakKey(step.name);
+        const gen = soundGen;
+        const tok = speakToken;
         if (nm) {
           primedExpectName = nm;
           warmWork.catch(() => {});
@@ -2314,20 +2349,33 @@
         }
         const t0 = Date.now();
         while (Date.now() - t0 < 2000) {
-          if (!announceAlive(seq)) return;
+          if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
           unlockAudio();
           try {
             if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
           } catch {}
           await sleep(250);
         }
-        if (!announceAlive(seq)) return;
+        if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
         unlockAudio();
         try {
           if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
         } catch {}
         if (!nm) return;
-        await speakMoveNameOnly(nm, 1);
+        let ok = false;
+        // اگر همان اسم در استراحت پرایم شده، فوری از بافر بگو
+        if (primedWorkName === nm && primedWorkAudioBuffer) {
+          ok = await playPrimedWorkName(nm, 1);
+        }
+        if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
+          ok = await speakMoveNameOnly(nm, 1);
+        }
+        if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
+          await sleep(180);
+          if (announceAlive(seq) && soundAlive(gen, tok)) {
+            ok = await speakFaAny(nm, 1);
+          }
+        }
         if (primedExpectName === nm) clearPrimedWork();
         return;
       }
@@ -2762,14 +2810,16 @@
     const mySeq = announceSeq;
     setTimeout(() => {
       if (!run || soundGen !== myGen || announceSeq !== mySeq) return;
-      // هر صدای دیررس اعلام قبلی را دوباره بکش، بعد اعلام جدید
+      // قطع دوباره قبل از اعلام — صدای دیررس فاز قبل وارد نشود
+      stopBeep();
       killAllHtmlAudio();
       killAllSources();
       stopVoiceFile();
       unlockAudio();
       startBgKeepAlive();
+      if (!run || soundGen !== myGen || announceSeq !== mySeq) return;
       speakPhase(step);
-    }, 120);
+    }, 380);
     loop();
   }
 
@@ -2992,12 +3042,16 @@
   });
 
   $("#btnSkip").addEventListener("click", () => {
-    if (!run) return;
+    if (!run || skipLock) return;
+    skipLock = true;
+    setTimeout(() => {
+      skipLock = false;
+    }, 450);
     unlockAudio();
-    // قطع سخت فوری؛ advance دوباره قطع می‌کند و اعلام جدید می‌گذارد
     stopAllSound();
     killAllHtmlAudio();
     killAllSources();
+    stopBeep();
     run.skipped = (run.skipped || 0) + 1;
     advance();
   });
