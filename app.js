@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "66";
+  const APP_VER = "67";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=66";
+  const VOICE_Q = "?v=67";
   const dynFaAudio = new Map(); // متن فارسی → Audio
   const dynFaBlob = new Map(); // متن فارسی → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -703,8 +703,12 @@
 
   async function warmMoveVoice(name) {
     try {
-      const said = sayForMove(name);
-      if (said && said.text) await warmFaTts(said.text);
+      const raw = String(name || "").replace(/\s+/g, " ").trim();
+      if (!raw) return;
+      // عین متن کاربر را کش کن (حتی بی‌ربط / چندکلمه‌ای)
+      await warmFaTts(raw);
+      const said = sayForMove(raw);
+      if (said && said.text && said.text !== raw) await warmFaTts(said.text);
     } catch {}
   }
 
@@ -872,11 +876,6 @@
       const ios = isIOSLike();
       const o = opts || {};
       const useEn = lang === "en" && enVoice;
-      // روی آیفون بدون صدای فارسی، تلفظ فارسی معمولاً سکوت است
-      if (!useEn && !o.voice && ios && !faVoice) {
-        resolve(false);
-        return;
-      }
       speakToken += 1;
       const tok = speakToken;
       if (!ios && !o.noCancel) {
@@ -1230,58 +1229,65 @@
   }
 
   async function speakMoveNameOnly(name, vol) {
-    const raw = String(name || "").trim();
+    // همیشه عین متن کاربر (حتی بی‌ربط / دوقسمتی) — نه فقط لیست ازپیش
+    const raw = String(name || "").replace(/\s+/g, " ").trim();
     if (!raw) return false;
     const said = sayForMove(raw);
-    if (!said.text) return false;
     const ios = isIOSLike();
     const opts = ios ? { noCancel: true } : {};
     const v = vol == null ? 0.98 : vol;
+    const hasFa = /[\u0600-\u06FF]/.test(raw);
     const hasLatin = /[A-Za-z]/.test(raw);
-    const hasFa = /[\u0600-\u06FF]/.test(said.text) || /[\u0600-\u06FF]/.test(raw);
-    const phrase = said.text || raw;
+    // متن اعلام: اول عین نوشتهٔ کاربر
+    const speakText = raw;
 
-    // ۱) کلیپ آفلاین داخل اپ
-    const clip = MOVE_CLIP[said.text] || MOVE_CLIP[raw];
+    // ۱) اگر برای همین متن کلیپ آماده بود
+    const clip = MOVE_CLIP[raw] || (said && MOVE_CLIP[said.text]);
     if (clip) {
       const ok = await playVoiceFile(clip, v);
       if (ok) return true;
     }
 
-    // ۲) صدای ذخیره‌شده روی گوشی (کش آفلاین) — بدون اینترنت
-    if (hasFa) {
-      let ok = await playCachedFaOnly(phrase, v);
+    // ۲) کش ذخیره‌شده برای همین متن کامل
+    {
+      const ok = await playCachedFaOnly(speakText, v);
       if (ok) return true;
-      if (phrase !== raw) {
-        ok = await playCachedFaOnly(raw, v);
-        if (ok) return true;
-      }
     }
 
-    // ۳) تلفظ سیستم (آفلاین؛ ویندوز/اندروید با بسته فارسی)
-    if (hasLatin && !hasFa) {
-      return speakFaSynthAsync(said.text || raw, v, "en", opts);
-    }
+    // ۳) تلفظ سیستم — هر متنی (انییتتیای، دو کلمه‌ای، …)
+    loadVoices();
     if (hasFa) {
-      loadVoices();
-      const synthOk = await speakFaSynthAsync(phrase, v, "fa", {
+      const synthOk = await speakFaSynthAsync(speakText, v, "fa", {
         ...opts,
-        rate: 1.35,
-        pitch: 1.18
+        rate: 1.32,
+        pitch: 1.15
       });
       if (synthOk) return true;
-      // در پس‌زمینه برای دفعه بعد کش کن (تمرین را معطل نکن)
-      if (typeof navigator !== "undefined" && navigator.onLine) {
-        warmFaTts(phrase);
-      }
+    } else if (hasLatin) {
+      const synthOk = await speakFaSynthAsync(speakText, v, "en", opts);
+      if (synthOk) return true;
+    } else {
+      const synthOk = await speakFaSynthAsync(speakText, v, "fa", opts);
+      if (synthOk) return true;
     }
 
-    // ۴) معادل انگلیسی شناخته‌شده (آفلاین)
-    if (MOVE_EN[said.text] || MOVE_EN[raw]) {
-      return speakFaSynthAsync(MOVE_EN[said.text] || MOVE_EN[raw], v, "en", opts);
+    // ۴) ساخت همان متن با دیلارا و کش (برای گوشی بدون صدای فارسی)
+    {
+      const ok = await playDynamicFa(speakText, v);
+      if (ok) return true;
     }
-    if (said.lang === "en") {
-      return speakFaSynthAsync(said.text, v, "en", opts);
+
+    // ۵) اگر نگاشت معروف داشت، همان را بگو
+    if (said && said.text && said.text !== speakText) {
+      const clip2 = MOVE_CLIP[said.text];
+      if (clip2) {
+        const ok = await playVoiceFile(clip2, v);
+        if (ok) return true;
+      }
+      if (said.lang === "en" || MOVE_EN[said.text]) {
+        return speakFaSynthAsync(MOVE_EN[said.text] || said.text, v, "en", opts);
+      }
+      return speakFaSynthAsync(said.text, v, "fa", opts);
     }
     return false;
   }
