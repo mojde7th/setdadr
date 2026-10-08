@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "78";
+  const APP_VER = "79";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=78";
+  const VOICE_Q = "?v=79";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -1657,7 +1657,7 @@
     if (!pref) pref = await playGoogleFaAudio("حرکت بعد", 1, "fa");
     if (!pref) pref = await playDilaraFa("حرکت بعد", 1);
     if (seq != null && !announceAlive(seq)) return !!pref;
-    await sleep(120);
+    await sleep(60);
     if (seq != null && !announceAlive(seq)) return false;
     if (!nm) return !!pref;
     // اسم حرکت بعد (جمله فارسی کاربر هم همین‌جا خوانده می‌شود)
