@@ -63,31 +63,28 @@ html, body {
   background: var(--bg2);
   color: var(--txt);
   border-radius: 12px;
-  padding: 8px 12px;
-  font: 800 13px var(--font);
+  padding: 0;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  min-height: 40px;
+  flex: 0 0 auto;
 }
+.mute-btn .mute-ico { display: grid; place-items: center; line-height: 0; }
+.mute-btn .ico-off { display: none; }
+.mute-btn.is-muted .ico-on { display: none; }
+.mute-btn.is-muted .ico-off { display: block; }
 .mute-btn.is-muted {
   color: #1a1208;
   background: var(--accent);
   border-color: var(--accent);
 }
 .mute-btn:active { transform: scale(0.98); }
-.tabs { display: flex; gap: 6px; flex-wrap: wrap; }
-.tabs button {
-  border: 1px solid var(--line);
-  background: var(--bg2);
-  color: var(--muted);
-  border-radius: 12px;
-  padding: 10px 14px;
-  font: 800 14px var(--font);
-}
-.tabs button.on {
-  color: #1a1208;
-  background: var(--accent);
-  border-color: var(--accent);
-}
+/* tabs below */
+/* tabs replaced */
 .view { display: none; }
 .view.on { display: block; }
 .home-head {
@@ -180,7 +177,7 @@ html, body {
   gap: 4px;
   align-items: stretch;
   min-width: 0;
-  direction: ltr; /* فیزیکی: چپ + ، راست − */
+  direction: ltr; /* فیزیکی: چپ − ، راست + */
 }
 .num-step input[type="number"] {
   text-align: center;
@@ -641,4 +638,45 @@ input[type="text"], input[type="number"] {
   font-size: 32px;
   color: #f0b75a;
   margin-bottom: 4px;
+}
+
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: nowrap;
+  width: 100%;
+  flex: 1 1 100%;
+  margin-top: 6px;
+}
+.tabs button {
+  flex: 1 1 0;
+  border: 1px solid var(--line);
+  background: var(--bg2);
+  color: var(--muted);
+  border-radius: 14px;
+  padding: 12px 10px;
+  font: 800 15px var(--font);
+  min-height: 48px;
+}
+.tabs button.on {
+  color: #1a1208;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.list .row.actions-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 8px;
+  width: 100%;
+}
+.list .row.actions-row .btn {
+  width: 100%;
+  margin: 0;
+  justify-content: center;
+  text-align: center;
+  white-space: nowrap;
+}
+.list .row.actions-row .btn.primary {
+  font-weight: 900;
 }

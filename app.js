@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "59";
+  const APP_VER = "60";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=59";
+  const VOICE_Q = "?v=60";
   const dynFaAudio = new Map(); // متن فارسی دلخواه → Audio آماده‌شده
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
@@ -184,7 +184,7 @@
     if (!btn) return;
     btn.setAttribute("aria-pressed", soundMuted ? "true" : "false");
     btn.classList.toggle("is-muted", soundMuted);
-    btn.textContent = soundMuted ? "صدا قطع" : "صدا روشن";
+    btn.setAttribute("aria-label", soundMuted ? "صدا قطع است" : "صدا روشن است");
   }
 
   function setSoundMuted(on) {
@@ -1180,6 +1180,7 @@
       li.querySelector(".meta").textContent =
         p.circuit.length + " حرکت · " + p.rounds + " ست · استراحت ست " + p.restSet + "ث";
       const actions = li.children[1];
+      actions.className = "row actions-row";
       const start = document.createElement("button");
       start.type = "button";
       start.className = "btn primary sm";
