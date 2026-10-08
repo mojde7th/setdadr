@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "111";
+  const APP_VER = "112";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -65,7 +65,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=111";
+  const VOICE_Q = "?v=112";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -264,17 +264,30 @@
 
   function buzz(pattern) {
     try {
-      // ویبره جدا از قطع‌صدا — حتی در بکگراند هم باید بماند
       if (!navigator.vibrate) return;
-      let p = pattern && pattern.length ? pattern : [90, 45, 110];
-      // وقتی صفحه مخفی است الگوی قوی‌تر تا حس شود
-      if (document.hidden) {
-        p = p.map((n) => (n > 0 ? Math.max(n, 120) : n));
-        if (p.length < 5) p = p.concat([60, 140, 60, 160]);
-      }
+      // ویبره قوی پیش‌فرض — جدا از قطع‌صدا
+      let p = pattern && pattern.length
+        ? pattern
+        : [250, 90, 320, 90, 400, 120, 500];
+      p = p.map((n) => {
+        if (n <= 0) return Math.max(50, n);
+        return Math.min(1000, Math.round(n * 2.4));
+      });
+      if (p.length < 7) p = p.concat([80, 280, 80, 350, 100, 450]);
       navigator.vibrate(0);
       navigator.vibrate(p);
+      // یک ضربه‌ٔ دوم برای حس قوی‌تر روی اندروید
+      setTimeout(() => {
+        try {
+          if (!run || run.paused) return;
+          navigator.vibrate([300, 80, 450]);
+        } catch {}
+      }, 650);
     } catch {}
+  }
+
+  function buzzHeavy() {
+    buzz([300, 100, 380, 100, 480, 120, 600, 150, 700]);
   }
 
   function paintMuteBtn() {
@@ -551,6 +564,69 @@
     bgWatchIv = 0;
   }
 
+  function makeBeepUrl() {
+    try {
+      const sr = 16000;
+      const sec = 0.28;
+      const n = Math.floor(sr * sec);
+      const data = new ArrayBuffer(44 + n * 2);
+      const view = new DataView(data);
+      const w = (o, s) => {
+        for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i));
+      };
+      w(0, "RIFF");
+      view.setUint32(4, 36 + n * 2, true);
+      w(8, "WAVE");
+      w(12, "fmt ");
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true);
+      view.setUint32(24, sr, true);
+      view.setUint32(28, sr * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true);
+      w(36, "data");
+      view.setUint32(40, n * 2, true);
+      for (let i = 0; i < n; i++) {
+        const t0 = i / sr;
+        const env = Math.min(1, t0 * 30) * Math.max(0, 1 - t0 / sec);
+        const sample =
+          Math.sin(2 * Math.PI * 520 * t0) * 0.55 * env +
+          Math.sin(2 * Math.PI * 780 * t0) * 0.25 * env;
+        let v = (sample * 32767) | 0;
+        if (v > 32767) v = 32767;
+        if (v < -32768) v = -32768;
+        view.setInt16(44 + i * 2, v, true);
+      }
+      return URL.createObjectURL(new Blob([data], { type: "audio/wav" }));
+    } catch {
+      return null;
+    }
+  }
+
+  let cachedBeepUrl = null;
+  function playHtmlBeep() {
+    try {
+      if (soundMuted) return;
+      if (!cachedBeepUrl) cachedBeepUrl = makeBeepUrl();
+      if (!cachedBeepUrl) return;
+      const a = makeHtmlAudio(cachedBeepUrl);
+      a.volume = 1;
+      const p = a.play();
+      if (p && typeof p.then === "function") p.catch(() => {});
+    } catch {}
+  }
+
+  function audioOutputOk() {
+    try {
+      if (document.hidden) return false;
+      if (!audioCtx) return false;
+      return audioCtx.state === "running";
+    } catch {
+      return false;
+    }
+  }
+
   function makeQuietKeepUrl() {
     // سکوت مطلق را اندروید/آیفون می‌کشند؛ موج خیلی آروم نگه می‌دارد
     try {
@@ -757,6 +833,11 @@
   }
 
   function beepSoftRing(atMs) {
+    buzzHeavy();
+    if (document.hidden || !audioOutputOk()) {
+      setTimeout(() => playHtmlBeep(), atMs || 0);
+      setTimeout(() => playHtmlBeep(), (atMs || 0) + 160);
+    }
     playWarmChime({
       atMs: atMs || 0,
       stack: false,
@@ -1196,7 +1277,7 @@
     a.volume = Math.max(0.05, Math.min(1, vol == null ? 0.98 : vol));
     voicePlayer = a;
     const waitCap = maxWaitMs != null ? maxWaitMs : 12000;
-    const startCap = Math.min(2800, waitCap);
+    const startCap = Math.min(document.hidden ? 8000 : 2800, waitCap);
     return await new Promise((resolve) => {
       let done = false;
       let heard = false;
@@ -1293,10 +1374,13 @@
         if (ok) return true;
       } catch {}
       if (gen !== soundGen) return false;
+      // بکگراند: فقط HTML؛ WebAudio اغلب بدون صدا true برمی‌گرداند
+      if (document.hidden) return false;
       if (audioCtx) {
         try {
           if (audioCtx.state === "suspended") await audioCtx.resume();
           if (gen !== soundGen) return false;
+          if (audioCtx.state !== "running") return false;
           const raw = await blob.arrayBuffer();
           if (gen !== soundGen) return false;
           const buf = await audioCtx.decodeAudioData(raw.slice(0));
@@ -2011,6 +2095,7 @@
 
     const tryOnce = async () => {
       if (!soundAlive(gen, tok)) return false;
+      // اول کش — در بکگراند شبکه ممکن است دیر باشد
       try {
         const cached = await loadDynFaFromCache(key);
         if (!soundAlive(gen, tok)) return false;
@@ -2020,6 +2105,7 @@
         }
       } catch {}
       if (!soundAlive(gen, tok)) return false;
+      // پخش مستقیم URL با HTML (بکگراند هم همین)
       try {
         const a = makeHtmlAudio(url);
         if (!soundAlive(gen, tok)) {
@@ -2028,7 +2114,11 @@
           } catch {}
           return false;
         }
-        const ok = await playHtmlAudioEl(a, vol == null ? 1 : vol, 10000);
+        const ok = await playHtmlAudioEl(
+          a,
+          vol == null ? 1 : vol,
+          document.hidden ? 14000 : 10000
+        );
         if (ok && soundAlive(gen, tok)) {
           cacheCloudEdgeBlob(key, voice).catch(() => {});
           return true;
@@ -2397,19 +2487,23 @@
 
   async function playPrimedWorkName(name, vol) {
     const nm = normSpeakKey(name);
-    if (
-      !nm ||
-      primedWorkName !== nm ||
-      !primedWorkAudioBuffer ||
-      !audioCtx
-    ) {
+    if (!nm || primedWorkName !== nm) return false;
+    const gen = soundGen;
+    // در بکگراند WebAudio غالباً ساکت است — از بلاب HTML بگو
+    if (document.hidden || !audioCtx || !primedWorkAudioBuffer) {
+      if (primedWorkName === nm && primedWorkBlob) {
+        return playBlobFa(primedWorkBlob, vol == null ? 1 : vol);
+      }
       return false;
     }
-    const gen = soundGen;
     try {
       unlockAudio();
       if (audioCtx.state === "suspended") await audioCtx.resume();
       if (gen !== soundGen) return false;
+      if (audioCtx.state !== "running") {
+        if (primedWorkBlob) return playBlobFa(primedWorkBlob, vol == null ? 1 : vol);
+        return false;
+      }
       stopVoiceFile();
       await new Promise((resolve) => {
         let done = false;
@@ -2505,7 +2599,7 @@
       // برای کار: اسم را زود گرم کن
       const warmWork =
         step.kind === "work" && step.name ? warmFaTts(step.name) : Promise.resolve();
-      buzz(step.kind === "work" ? [80, 35, 90] : [55, 30, 70]);
+      buzzHeavy();
       if (step.kind === "work") {
         // بوق، ~۲ث، بعد همان اسمی که در استراحت گفته شد را دوباره بگو
         startBgKeepAlive();
@@ -2974,7 +3068,7 @@
     if (run.phaseDur > 5 && !run.announced[softKey] && prev > 4 && cur <= 4) {
       run.announced[softKey] = true;
       beepSoftDouble();
-      buzz([90, 40, 120, 40, 140]);
+      buzzHeavy();
     }
   }
 
@@ -3308,7 +3402,7 @@
       if (!soundMuted) {
         // پیش‌نمایش کوتاه زنگ
         beepWhite(300, false);
-        buzz([80, 40, 100]);
+        buzzHeavy();
       }
     });
   }
