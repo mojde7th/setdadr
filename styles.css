@@ -135,36 +135,38 @@ html, body {
 }
 .add-set-form {
   display: grid;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: 6px;
+  margin-bottom: 10px;
 }
 .field-block {
   display: grid;
-  gap: 4px;
+  gap: 3px;
   margin: 0;
 }
 .field-k {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 900;
   color: var(--muted);
 }
 .add-set-form select,
 .add-set-form input[type="text"] {
   width: 100%;
-  min-height: 32px;
-  border-radius: 10px;
+  min-height: 28px;
+  height: 28px;
+  border-radius: 8px;
   border: 1px solid var(--line);
   background: var(--bg2, #17130e);
   color: inherit;
   font: inherit;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
-  padding: 4px 10px;
+  padding: 2px 8px;
   box-sizing: border-box;
+  line-height: 1.2;
 }
 .add-set-form input[type="text"]::placeholder {
-  font-size: 11px;
-  opacity: 0.55;
+  font-size: 10px;
+  opacity: 0.5;
 }
 .num-step.with-unit {
   grid-template-columns: 44px 1fr 44px auto;
@@ -606,30 +608,33 @@ input[type="text"], input[type="number"] {
 .pick-select,
 #pickFromLib.pick-select {
   width: 100%;
-  min-height: 32px !important;
-  border-radius: 10px !important;
+  min-height: 28px !important;
+  height: 28px !important;
+  border-radius: 8px !important;
   border: 1px solid var(--line) !important;
   background: var(--bg2, #17130e) !important;
   color: inherit !important;
   font: inherit !important;
-  font-size: 12px !important;
+  font-size: 11px !important;
   font-weight: 700 !important;
-  padding: 4px 32px 4px 8px !important;
+  padding: 2px 28px 2px 8px !important;
   box-sizing: border-box;
   appearance: none;
   -webkit-appearance: none;
   cursor: pointer;
+  line-height: 1.2;
 }
 #pickMoveName {
-  font-size: 12px !important;
+  font-size: 11px !important;
   font-weight: 700 !important;
-  min-height: 32px !important;
-  padding: 4px 8px !important;
-  border-radius: 10px !important;
+  min-height: 28px !important;
+  height: 28px !important;
+  padding: 2px 8px !important;
+  border-radius: 8px !important;
 }
 #pickMoveName::placeholder {
-  font-size: 11px !important;
-  opacity: 0.55;
+  font-size: 10px !important;
+  opacity: 0.5;
 }
 .pick-select:focus {
   outline: none;
@@ -638,7 +643,7 @@ input[type="text"], input[type="number"] {
 }
 .select-chev {
   position: absolute;
-  inset-inline-end: 12px;
+  inset-inline-end: 8px;
   top: 50%;
   transform: translateY(-50%);
   color: #fff;
@@ -650,8 +655,8 @@ input[type="text"], input[type="number"] {
 }
 .select-chev svg {
   display: block;
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   color: #fff;
   stroke: #fff;
 }
