@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "119";
+  const APP_VER = "120";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -67,7 +67,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=119";
+  const VOICE_Q = "?v=120";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -275,125 +275,71 @@
   function fireVibrate(pattern) {
     if (!canVibrateApi()) return false;
     try {
+      const p = pattern && pattern.length ? pattern : [240, 80, 320];
       navigator.vibrate(0);
-      const ok = navigator.vibrate(pattern);
+      const ok = navigator.vibrate(p);
       return ok !== false;
     } catch {
       return false;
     }
   }
 
-  // ضربه بدنی از بلندگو — برای آیفون و هر جایی که vibrate نیست
+  // ضربه بدنی از اسپیکر — همیشه، چون خیلی گوشی‌ها vibrate وب ندارند
   function playHapticThump(level) {
-    const amp = level == null ? 1 : level;
+    const amp = Math.max(0.5, level == null ? 1 : level);
     try {
       unlockAudio();
-      if (audioCtx) {
-        try {
-          if (audioCtx.state === "suspended") audioCtx.resume();
-        } catch {}
-        if (audioCtx.state === "running" || audioCtx.state === "suspended") {
-          const t0 = audioCtx.currentTime;
-          const osc = audioCtx.createOscillator();
-          const g = audioCtx.createGain();
-          const lp = audioCtx.createBiquadFilter();
-          lp.type = "lowpass";
-          lp.frequency.value = 180;
-          osc.type = "square";
-          osc.frequency.setValueAtTime(75, t0);
-          osc.frequency.exponentialRampToValueAtTime(45, t0 + 0.12);
-          g.gain.setValueAtTime(0.0001, t0);
-          g.gain.exponentialRampToValueAtTime(Math.min(1.4, 1.15 * amp), t0 + 0.012);
-          g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
-          osc.connect(g);
-          g.connect(lp);
-          lp.connect(audioCtx.destination);
-          osc.start(t0);
-          osc.stop(t0 + 0.18);
-          return;
-        }
+      if (!audioCtx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (AC) audioCtx = new AC();
       }
-    } catch {}
-    // HTML fallback
-    try {
-      const sr = 16000;
-      const n = Math.floor(sr * 0.14);
-      const data = new ArrayBuffer(44 + n * 2);
-      const view = new DataView(data);
-      const w = (o, s) => {
-        for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i));
+      if (!audioCtx) return;
+      if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+      const t0 = audioCtx.currentTime;
+      const burst = (at, freq, dur, gain) => {
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        const lp = audioCtx.createBiquadFilter();
+        lp.type = "lowpass";
+        lp.frequency.value = 220;
+        osc.type = "square";
+        osc.frequency.setValueAtTime(freq, t0 + at);
+        g.gain.setValueAtTime(0.0001, t0 + at);
+        g.gain.exponentialRampToValueAtTime(gain * amp, t0 + at + 0.008);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + dur);
+        osc.connect(g);
+        g.connect(lp);
+        lp.connect(audioCtx.destination);
+        osc.start(t0 + at);
+        osc.stop(t0 + at + dur + 0.02);
       };
-      w(0, "RIFF");
-      view.setUint32(4, 36 + n * 2, true);
-      w(8, "WAVE");
-      w(12, "fmt ");
-      view.setUint32(16, 16, true);
-      view.setUint16(20, 1, true);
-      view.setUint16(22, 1, true);
-      view.setUint32(24, sr, true);
-      view.setUint32(28, sr * 2, true);
-      view.setUint16(32, 2, true);
-      view.setUint16(34, 16, true);
-      w(36, "data");
-      view.setUint32(40, n * 2, true);
-      for (let i = 0; i < n; i++) {
-        const x = i / sr;
-        const env = Math.min(1, x * 50) * Math.max(0, 1 - x / 0.14);
-        const sample = Math.sin(2 * Math.PI * 70 * x) * 0.95 * env * amp;
-        let v = (sample * 32767) | 0;
-        if (v > 32767) v = 32767;
-        if (v < -32768) v = -32768;
-        view.setInt16(44 + i * 2, v, true);
-      }
-      const a = makeHtmlAudio(URL.createObjectURL(new Blob([data], { type: "audio/wav" })));
-      a.volume = 1;
-      const p = a.play();
-      if (p && typeof p.then === "function") p.catch(() => {});
+      burst(0, 70, 0.11, 1.2);
+      burst(0.12, 55, 0.13, 1.35);
+      burst(0.28, 48, 0.16, 1.15);
     } catch {}
   }
 
   function buzz(pattern) {
-    // همیشه حس بدنی — جدا از قطع‌صدا
-    let p = pattern && pattern.length
-      ? pattern.slice()
-      : [280, 100, 350, 100, 450];
-    // فاصله‌ها (۰) را حفظ کن؛ فقط ضربه‌ها را قوی کن
-    p = p.map((n) => {
-      if (!n || n <= 0) return 0;
-      return Math.min(800, Math.max(80, Math.round(Number(n) * 1.8)));
-    });
-    // اگر الگوی فقط‌ضربه بود، ریتم قوی بساز
-    if (p.filter((n) => n > 0).length < 2) {
-      p = [400, 120, 500, 120, 600];
-    }
-    const ok = fireVibrate(p);
-    // اگر API نبود یا رد شد (آیفون/دسکتاپ) — ضربه صوتی قوی
-    if (!ok) {
-      playHapticThump(1.2);
-      setTimeout(() => playHapticThump(1), 140);
-      setTimeout(() => playHapticThump(1.15), 300);
-    } else {
-      // اندروید: ویبره + یک ضربه کوتاه برای حس بیشتر
-      playHapticThump(0.55);
-      setTimeout(() => {
-        try {
-          if (!run || run.paused) return;
-          fireVibrate([450, 100, 550]);
-        } catch {}
-      }, 700);
-    }
+    // ویبره سخت‌افزاری + همیشه ضربه صوتی
+    const p = pattern && pattern.length ? pattern : [220, 70, 280, 70, 360];
+    fireVibrate(p);
+    playHapticThump(1.15);
+    setTimeout(() => {
+      try {
+        fireVibrate([280, 60, 400]);
+        playHapticThump(0.95);
+      } catch {}
+    }, 380);
   }
 
   function buzzHeavy() {
-    const ok = fireVibrate([400, 100, 500, 100, 650, 120, 800]);
-    playHapticThump(1.25);
-    setTimeout(() => playHapticThump(1.1), 150);
-    setTimeout(() => playHapticThump(1.2), 320);
-    if (ok) {
-      setTimeout(() => fireVibrate([500, 80, 700]), 750);
-    } else {
-      setTimeout(() => playHapticThump(1.3), 500);
-    }
+    fireVibrate([300, 80, 400, 80, 500, 100, 650]);
+    playHapticThump(1.35);
+    setTimeout(() => playHapticThump(1.2), 140);
+    setTimeout(() => {
+      fireVibrate([450, 80, 600]);
+      playHapticThump(1.25);
+    }, 400);
   }
 
   function paintMuteBtn() {
@@ -674,8 +620,8 @@
 
   function makeBeepUrl() {
     try {
-      const sr = 16000;
-      const sec = 0.42;
+      const sr = 22050;
+      const sec = 0.32;
       const n = Math.floor(sr * sec);
       const data = new ArrayBuffer(44 + n * 2);
       const view = new DataView(data);
@@ -697,13 +643,9 @@
       view.setUint32(40, n * 2, true);
       for (let i = 0; i < n; i++) {
         const x = i / sr;
-        const env = Math.min(1, x * 25) * Math.max(0, 1 - x / sec);
-        const f = 520 + x * 420;
-        const sample =
-          (Math.sin(2 * Math.PI * f * x) * 0.7 +
-            Math.sin(2 * Math.PI * f * 2 * x) * 0.28 +
-            Math.sin(2 * Math.PI * f * 3 * x) * 0.12) *
-          env;
+        const env = Math.min(1, x * 35) * Math.max(0, 1 - x / sec);
+        const f = 587 + Math.min(1, x * 4) * 197;
+        const sample = Math.sin(2 * Math.PI * f * x) * 0.55 * env;
         let v = (sample * 32767) | 0;
         if (v > 32767) v = 32767;
         if (v < -32768) v = -32768;
@@ -720,8 +662,8 @@
 
   function makeWarnBeepUrl() {
     try {
-      const sr = 16000;
-      const sec = 0.22;
+      const sr = 22050;
+      const sec = 0.1;
       const n = Math.floor(sr * sec);
       const data = new ArrayBuffer(44 + n * 2);
       const view = new DataView(data);
@@ -743,11 +685,8 @@
       view.setUint32(40, n * 2, true);
       for (let i = 0; i < n; i++) {
         const x = i / sr;
-        const env = Math.min(1, x * 45) * Math.max(0, 1 - x / sec);
-        const sample =
-          (Math.sin(2 * Math.PI * 175 * x) * 0.75 +
-            Math.sin(2 * Math.PI * 260 * x) * 0.35) *
-          env;
+        const env = Math.min(1, x * 60) * Math.max(0, 1 - x / sec);
+        const sample = Math.sin(2 * Math.PI * 988 * x) * 0.6 * env;
         let v = (sample * 32767) | 0;
         if (v > 32767) v = 32767;
         if (v < -32768) v = -32768;
@@ -939,49 +878,38 @@
         if (gen !== soundGen) return;
         const t0 = audioCtx.currentTime + (o.atMs || 0) / 1000;
         const master = audioCtx.createGain();
+        // فیلتر باز — صدای گرفته/مخملی ندهد
         const lp = audioCtx.createBiquadFilter();
         lp.type = "lowpass";
-        lp.frequency.setValueAtTime(o.bright ? 2600 : 1100, t0);
-        lp.Q.setValueAtTime(0.55, t0);
-        const peak = o.peak != null ? o.peak : 1.2;
-        const total = o.total != null ? o.total : 0.7;
+        lp.frequency.setValueAtTime(o.bright ? 7000 : 4500, t0);
+        lp.Q.setValueAtTime(0.4, t0);
+        const peak = o.peak != null ? o.peak : 0.95;
+        const total = o.total != null ? o.total : 0.55;
         master.gain.setValueAtTime(0.0001, t0);
-        master.gain.exponentialRampToValueAtTime(peak, t0 + 0.04);
-        master.gain.setValueAtTime(peak * 0.88, t0 + total * 0.5);
+        master.gain.exponentialRampToValueAtTime(peak, t0 + 0.02);
+        master.gain.setValueAtTime(peak * 0.75, t0 + total * 0.45);
         master.gain.exponentialRampToValueAtTime(0.0001, t0 + total);
         master.connect(lp);
         lp.connect(audioCtx.destination);
         const notes = o.notes || [
-          { f: 392.0, at: 0, dur: 0.38, g: 0.95 },
-          { f: 523.25, at: 0.14, dur: 0.42, g: 1.05 },
-          { f: 659.25, at: 0.3, dur: 0.45, g: 0.85 }
+          { f: 523.25, at: 0, dur: 0.28, g: 0.7 },
+          { f: 659.25, at: 0.1, dur: 0.32, g: 0.8 }
         ];
         const oscs = [];
         notes.forEach((n) => {
-          const o1 = audioCtx.createOscillator();
-          const o2 = audioCtx.createOscillator();
-          const g1 = audioCtx.createGain();
-          const g2 = audioCtx.createGain();
-          o1.type = "sine";
-          o2.type = "sine";
           const gt = t0 + n.at;
-          o1.frequency.setValueAtTime(n.f, gt);
-          o2.frequency.setValueAtTime(n.f * 2, gt);
-          g1.gain.setValueAtTime(0.0001, gt);
-          g1.gain.exponentialRampToValueAtTime(n.g * 0.75, gt + 0.045);
-          g1.gain.exponentialRampToValueAtTime(0.0001, gt + n.dur);
-          g2.gain.setValueAtTime(0.0001, gt);
-          g2.gain.exponentialRampToValueAtTime(n.g * 0.14, gt + 0.05);
-          g2.gain.exponentialRampToValueAtTime(0.0001, gt + n.dur);
-          o1.connect(g1);
-          o2.connect(g2);
-          g1.connect(master);
-          g2.connect(master);
-          o1.start(gt);
-          o2.start(gt);
-          o1.stop(gt + n.dur + 0.03);
-          o2.stop(gt + n.dur + 0.03);
-          oscs.push(o1, o2);
+          const osc = audioCtx.createOscillator();
+          const g = audioCtx.createGain();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(n.f, gt);
+          g.gain.setValueAtTime(0.0001, gt);
+          g.gain.exponentialRampToValueAtTime(n.g, gt + 0.015);
+          g.gain.exponentialRampToValueAtTime(0.0001, gt + n.dur);
+          osc.connect(g);
+          g.connect(master);
+          osc.start(gt);
+          osc.stop(gt + n.dur + 0.02);
+          oscs.push(osc);
         });
         const entry = { osc: oscs[0], gain: master, oscs };
         activeBeep = entry;
@@ -993,8 +921,8 @@
   }
 
   function beepSoftRing(atMs) {
-    // شروع حرکت: یک زنگ بالارونده روشن
-    buzz([400, 120, 550]);
+    // شروع حرکت: زنگ نرم و تمیز — بدون تیزی و بدون گرفتگی
+    buzz([180, 60, 220]);
     if (document.hidden || !audioOutputOk()) {
       setTimeout(() => playHtmlBeep(), atMs || 0);
     }
@@ -1002,19 +930,33 @@
       atMs: atMs || 0,
       stack: false,
       bright: true,
-      peak: 1.2,
-      total: 0.65,
+      peak: 0.85,
+      total: 0.55,
       notes: [
-        { f: 523.25, at: 0, dur: 0.24, g: 0.9 },
-        { f: 659.25, at: 0.12, dur: 0.3, g: 1.05 },
-        { f: 783.99, at: 0.28, dur: 0.38, g: 1.15 }
+        { f: 587.33, at: 0, dur: 0.2, g: 0.55 },
+        { f: 783.99, at: 0.14, dur: 0.32, g: 0.7 }
       ]
     });
   }
 
+  function beepMidChime() {
+    // وسط فاز: یک دینگ نرم جدا از شروع و ۴ث
+    buzz([140, 50, 160]);
+    if (document.hidden || !audioOutputOk()) {
+      playHtmlBeep();
+    }
+    playWarmChime({
+      stack: false,
+      bright: true,
+      peak: 0.7,
+      total: 0.35,
+      notes: [{ f: 698.46, at: 0, dur: 0.22, g: 0.6 }]
+    });
+  }
+
   function beepSoftDouble() {
-    // ۴ ثانیه مانده: سه تیک بم — جدا از زنگ شروع
-    buzz([120, 70, 120, 70, 120, 70, 200]);
+    // ۴ ثانیه: سه تیک شفاف و کوتاه — بم گرفته نیست
+    buzz([100, 50, 100, 50, 100, 50, 160]);
     const tick = (at) => {
       if (document.hidden || !audioOutputOk()) {
         setTimeout(() => playHtmlWarnBeep(), at);
@@ -1022,15 +964,15 @@
       playWarmChime({
         atMs: at,
         stack: true,
-        bright: false,
-        peak: 1.15,
-        total: 0.26,
-        notes: [{ f: 196.0, at: 0, dur: 0.18, g: 1.2 }]
+        bright: true,
+        peak: 0.75,
+        total: 0.16,
+        notes: [{ f: 987.77, at: 0, dur: 0.1, g: 0.65 }]
       });
     };
     tick(0);
-    setTimeout(() => tick(0), 280);
-    setTimeout(() => tick(0), 560);
+    setTimeout(() => tick(0), 220);
+    setTimeout(() => tick(0), 440);
   }
 
   function beepWhite(ms, soft) {
@@ -3509,6 +3451,7 @@
         cur <= fireLeft
       ) {
         run.announced[midKey] = true;
+        beepMidChime();
         speakDoneAmount(done, total);
       }
     }
@@ -3849,10 +3792,19 @@
   document.addEventListener("resume", () => resumeBgIfNeeded());
 
   // Unlock audio on first tap (iOS/Android)
-  const unlockOnce = () => unlockAudio();
+  const unlockOnce = () => {
+    unlockAudio();
+    fireVibrate([40]);
+  };
   document.body.addEventListener("pointerdown", unlockOnce, { once: true });
   document.body.addEventListener("touchstart", unlockOnce, { once: true });
   document.body.addEventListener("click", unlockOnce, { once: true });
+  document.body.addEventListener("pointerdown", () => {
+    if (run && !run.paused) {
+      unlockAudio();
+      fireVibrate([30]);
+    }
+  });
 
   wireNumSteppers();
   const muteBtn = $("#btnMute");
