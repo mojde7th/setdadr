@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "106";
+  const APP_VER = "107";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -64,7 +64,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=106";
+  const VOICE_Q = "?v=107";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -394,7 +394,9 @@
   }
 
   function killAllHtmlAudio() {
+    const keep = bgKeepAudio;
     liveAudios.forEach((a) => {
+      if (keep && a === keep) return;
       try {
         a.onended = null;
         a.onerror = null;
@@ -405,6 +407,7 @@
       } catch {}
     });
     liveAudios.clear();
+    if (keep) liveAudios.add(keep);
   }
 
   function killAllSources() {
@@ -457,14 +460,29 @@
     try {
       if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
     } catch {}
-    if (!bgKeepAudio) {
+    let dead = false;
+    if (bgKeepAudio) {
+      try {
+        if (!bgKeepAudio.src && !bgKeepAudio.currentSrc) dead = true;
+      } catch {
+        dead = true;
+      }
+    }
+    if (!bgKeepAudio || dead) {
+      try {
+        if (bgKeepAudio) liveAudios.delete(bgKeepAudio);
+      } catch {}
       const a = makeHtmlAudio(VOICE_BASE + "silence.wav" + VOICE_Q);
       a.loop = true;
       a.volume = 0.001;
       bgKeepAudio = a;
     }
     const p = bgKeepAudio.play();
-    if (p && typeof p.then === "function") p.catch(() => {});
+    if (p && typeof p.then === "function") {
+      p.catch(() => {
+        bgKeepAudio = null;
+      });
+    }
     setMediaPlaying(true, (run && run.title) || "ست‌یار");
   }
 
@@ -1002,6 +1020,7 @@
     a.volume = Math.max(0.05, Math.min(1, vol == null ? 0.98 : vol));
     voicePlayer = a;
     const waitCap = maxWaitMs != null ? maxWaitMs : 12000;
+    const startCap = Math.min(2800, waitCap);
     return await new Promise((resolve) => {
       let done = false;
       let heard = false;
@@ -1045,7 +1064,10 @@
           return;
         }
         if (heard || (a.currentTime || 0) > 0.02) {
-          const left = Math.max(500, (isFinite(a.duration) ? a.duration * 1000 : 4000) + 800);
+          const left = Math.max(
+            500,
+            Math.min(waitCap, (isFinite(a.duration) ? a.duration * 1000 : 5000) + 800)
+          );
           setTimeout(() => {
             if (gen !== soundGen) {
               try {
@@ -1062,7 +1084,7 @@
           a.pause();
         } catch {}
         finish(false);
-      }, waitCap);
+      }, startCap);
     });
   }
 
@@ -1072,7 +1094,20 @@
     try {
       unlockAudio();
       if (gen !== soundGen) return false;
-      // اول با AudioContext (بعد از آنلاک روی آیفون پایدارتر است)
+      // اول HTML Audio — روی گوشی پایدارتر شنیده می‌شود
+      try {
+        const url = URL.createObjectURL(blob);
+        const a = makeHtmlAudio(url);
+        dynFaAudio.set(String(url), a);
+        const ok = await playHtmlAudioEl(a, vol, 10000);
+        setTimeout(() => {
+          try {
+            URL.revokeObjectURL(url);
+          } catch {}
+        }, 20000);
+        if (ok) return true;
+      } catch {}
+      if (gen !== soundGen) return false;
       if (audioCtx) {
         try {
           if (audioCtx.state === "suspended") await audioCtx.resume();
@@ -1080,7 +1115,6 @@
           const raw = await blob.arrayBuffer();
           if (gen !== soundGen) return false;
           const buf = await audioCtx.decodeAudioData(raw.slice(0));
-          if (gen !== soundGen) return false;
           if (gen !== soundGen) return false;
           stopVoiceFile();
           await new Promise((resolve) => {
@@ -1124,39 +1158,6 @@
           });
           return gen === soundGen;
         } catch {}
-      }
-      if (gen !== soundGen) return false;
-      const url = URL.createObjectURL(blob);
-      const a = makeHtmlAudio(url);
-      dynFaAudio.set(String(url), a);
-      const ok = await playHtmlAudioEl(a, vol);
-      setTimeout(() => {
-        try {
-          URL.revokeObjectURL(url);
-        } catch {}
-      }, 15000);
-      return ok;
-    } catch {
-      return false;
-    }
-  }
-
-  // هر متن فارسی دلخواه — اول از کش/دانلود، بعد پخش
-  async function playDynamicFa(text, vol) {
-    const key = String(text || "").trim().slice(0, 160);
-    if (!key) return false;
-    try {
-      const blob = await fetchFaTtsBlob(key);
-      if (blob) {
-        const ok = await playBlobFa(blob, vol);
-        if (ok) return true;
-      }
-      // آخرین تلاش: پخش مستقیم لینک
-      const urls = faTtsUrls(key).slice(0, 2);
-      for (let i = 0; i < urls.length; i++) {
-        const a = makeHtmlAudio(urls[i]);
-        const ok = await playHtmlAudioEl(a, vol);
-        if (ok) return true;
       }
       return false;
     } catch {
@@ -1815,30 +1816,40 @@
       voiceName || (hasFa ? EDGE_TTS_VOICE_FA : EDGE_TTS_VOICE_EN);
     const url = cloudEdgeUrl(key, voice);
     unlockAudio();
-    // اول کش محلی سریع؛ بعد Audio مستقیم (مثل نسخههایی که کار میکرد)
-    try {
-      const cached = await loadDynFaFromCache(key);
-      if (cached) {
-        const ok = await playBlobFa(cached, vol == null ? 1 : vol);
-        if (ok) return true;
-      }
-    } catch {}
-    try {
-      const a = makeHtmlAudio(url);
-      const ok = await playHtmlAudioEl(a, vol == null ? 1 : vol, 12000);
-      if (ok) {
-        cacheCloudEdgeBlob(key, voice).catch(() => {});
-        return true;
-      }
-    } catch {}
-    try {
-      const blob = await cacheCloudEdgeBlob(key, voice);
-      if (blob) {
-        const ok = await playBlobFa(blob, vol == null ? 1 : vol);
-        if (ok) return true;
-      }
-    } catch {}
-    return false;
+    startBgKeepAlive();
+
+    const tryOnce = async () => {
+      // ۱) کش محلی با HTML
+      try {
+        const cached = await loadDynFaFromCache(key);
+        if (cached) {
+          const ok = await playBlobFa(cached, vol == null ? 1 : vol);
+          if (ok) return true;
+        }
+      } catch {}
+      // ۲) پخش مستقیم URL — سریع، بدون منتظر fetch
+      try {
+        const a = makeHtmlAudio(url);
+        const ok = await playHtmlAudioEl(a, vol == null ? 1 : vol, 10000);
+        if (ok) {
+          cacheCloudEdgeBlob(key, voice).catch(() => {});
+          return true;
+        }
+      } catch {}
+      // ۳) fetch بلاب
+      try {
+        const blob = await cacheCloudEdgeBlob(key, voice);
+        if (blob) {
+          const ok = await playBlobFa(blob, vol == null ? 1 : vol);
+          if (ok) return true;
+        }
+      } catch {}
+      return false;
+    };
+
+    if (await tryOnce()) return true;
+    await sleep(120);
+    return tryOnce();
   }
 
   async function playGoogleQuick(text, vol, lang) {
@@ -2312,6 +2323,7 @@
         if (primedExpectName === nm) clearPrimedWork();
         return;
       }
+      startBgKeepAlive();
       beepSoftRing(0);
       await sleep(200);
       if (!announceAlive(seq)) return;
@@ -2742,6 +2754,8 @@
     const mySeq = announceSeq;
     setTimeout(() => {
       if (!run || soundGen !== myGen || announceSeq !== mySeq) return;
+      unlockAudio();
+      startBgKeepAlive();
       speakPhase(step);
     }, 40);
     loop();
