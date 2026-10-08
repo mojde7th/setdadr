@@ -1,2 +1,3 @@
-// Public Dilara TTS endpoint (updated by tools/start_tts_public.ps1).
-window.SETDADR_TTS_API = "https://honolulu-entry-apache-node.trycloudflare.com";
+// Permanent cloud Dilara TTS — no laptop required.
+// Optional override: set a self-hosted base (not trycloudflare) if you deploy tts-service.
+window.SETDADR_TTS_API = "";

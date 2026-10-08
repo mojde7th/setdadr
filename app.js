@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "93";
+  const APP_VER = "94";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,18 +41,19 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=93";
+  const VOICE_Q = "?v=94";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
   let tickIv = 0;
   let bgKeepAudio = null;
   let bgKeepOn = false;
-  // سرور دیلارا — هر جمله/کلمه؛ نتیجه در کش گوشی می‌ماند
+  // سرور دیلارا ابری دائمی (بدون لپ‌تاپ) + اختیاری تونل محلی
   const TTS_API_LS = "setdadr-tts-api";
+  const CLOUD_EDGE_TTS = "https://edge-tts.vercel.app/api/tts";
   function rememberTtsApi(base) {
     const u = String(base || "").replace(/\/$/, "");
-    if (!u) return;
+    if (!u || /trycloudflare\.com/i.test(u)) return;
     try {
       localStorage.setItem(TTS_API_LS, u);
     } catch {}
@@ -64,18 +65,24 @@
       if (localStorage.getItem(TTS_API_LS) === u) localStorage.removeItem(TTS_API_LS);
     } catch {}
   }
+  function scrubStaleTunnelCache() {
+    try {
+      const saved = localStorage.getItem(TTS_API_LS);
+      if (saved && /trycloudflare\.com/i.test(saved)) localStorage.removeItem(TTS_API_LS);
+    } catch {}
+  }
   function getTtsApiBases() {
-    // اول آدرس تازه از tts-endpoint.js — کش قدیمی localStorage را جلو نگذار
     const out = [];
     if (typeof window !== "undefined" && window.SETDADR_TTS_API) {
       const u = String(window.SETDADR_TTS_API || "").replace(/\/$/, "");
-      if (u) out.push(u);
+      // تونل موقت لپ‌تاپ را دیگر به‌عنوان مسیر اصلی نگیر
+      if (u && !/trycloudflare\.com/i.test(u)) out.push(u);
     }
     try {
       const saved = localStorage.getItem(TTS_API_LS);
       if (saved) {
         const u = saved.replace(/\/$/, "");
-        if (u && out.indexOf(u) === -1) out.push(u);
+        if (u && !/trycloudflare\.com/i.test(u) && out.indexOf(u) === -1) out.push(u);
       }
     } catch {}
     try {
@@ -83,6 +90,15 @@
       if (h === "localhost" || h === "127.0.0.1") out.push("http://127.0.0.1:8787");
     } catch {}
     return [...new Set(out.filter(Boolean))];
+  }
+  function cloudEdgeUrl(text, voice) {
+    return (
+      CLOUD_EDGE_TTS +
+      "?text=" +
+      encodeURIComponent(String(text || "").trim().slice(0, 400)) +
+      "&voice=" +
+      encodeURIComponent(voice || EDGE_TTS_VOICE_FA)
+    );
   }
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
@@ -812,7 +828,27 @@
     const hasFa = /[\u0600-\u06FF]/.test(key);
     const voice = hasFa ? EDGE_TTS_VOICE_FA : EDGE_TTS_VOICE_EN;
 
-    // ۱) سرور دیلارا — فارسی رندوم فقط از اینجا مطمئن است (گوگل‌فا معمولاً ۴۰۰ می‌دهد)
+    // ۱) ابر دائمی دیلارا/جنی — بدون لپ‌تاپ
+    try {
+      const url = cloudEdgeUrl(key, voice);
+      let res = await fetchWithTimeout(url, 12000, "no-store");
+      if (!res || !res.ok) {
+        res = await fetchWithTimeout(
+          "https://corsproxy.io/?" + encodeURIComponent(url),
+          12000,
+          "no-store"
+        );
+      }
+      if (res && res.ok) {
+        const blob = await res.blob();
+        if (blob && blob.size > 80) {
+          await saveDynFaToCache(key, blob);
+          return blob;
+        }
+      }
+    } catch {}
+
+    // ۲) سرور خودی اگر تنظیم شده باشد
     const bases = getTtsApiBases();
     for (let i = 0; i < bases.length; i++) {
       try {
@@ -833,7 +869,7 @@
       }
     }
 
-    // ۲) اج مستقیم گوشی
+    // ۳) اج مستقیم گوشی
     try {
       const edgeBlob = await synthesizeEdgeTts(key.slice(0, 160), voice);
       if (edgeBlob && edgeBlob.size > 80) {
@@ -842,7 +878,7 @@
       }
     } catch {}
 
-    // ۳) گوگل (انگلیسی؛ فارسی غالباً قطع)
+    // ۴) گوگل انگلیسی
     if (!hasFa) {
       const urls = faTtsUrls(key.slice(0, 160), "en").slice(0, 4);
       for (let i = 0; i < urls.length; i++) {
@@ -1601,6 +1637,48 @@
     }
   }
 
+  // دیلارای ابری دائمی — بدون لپ‌تاپ (Vercel Edge TTS)
+  async function playCloudEdgeTts(text, vol, voiceName) {
+    const key = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
+    if (!key || soundMuted) return false;
+    const hasFa = /[\u0600-\u06FF]/.test(key);
+    const voice =
+      voiceName || (hasFa ? EDGE_TTS_VOICE_FA : EDGE_TTS_VOICE_EN);
+    const url = cloudEdgeUrl(key, voice);
+    unlockAudio();
+    // ۱) fetch مستقیم (اگر CORS اجازه داد → کش گوشی)
+    try {
+      const res = await fetchWithTimeout(url, 12000, "no-store");
+      if (res && res.ok) {
+        const blob = await res.blob();
+        if (blob && blob.size > 80) {
+          await saveDynFaToCache(key, blob);
+          const ok = await playBlobFa(blob, vol == null ? 1 : vol);
+          if (ok) return true;
+        }
+      }
+    } catch {}
+    // ۲) پخش مستقیم با Audio — برای مدیا معمولاً CORS لازم نیست
+    try {
+      const a = makeHtmlAudio(url);
+      const ok = await playHtmlAudioEl(a, vol == null ? 1 : vol, 14000);
+      if (ok) return true;
+    } catch {}
+    // ۳) پروکسی برای گرفتن بلاب و کش
+    try {
+      const proxied = "https://corsproxy.io/?" + encodeURIComponent(url);
+      const res = await fetchWithTimeout(proxied, 12000, "no-store");
+      if (res && res.ok) {
+        const blob = await res.blob();
+        if (blob && blob.size > 80) {
+          await saveDynFaToCache(key, blob);
+          return playBlobFa(blob, vol == null ? 1 : vol);
+        }
+      }
+    } catch {}
+    return false;
+  }
+
   async function playGoogleQuick(text, vol, lang) {
     // گوگل‌فا اغلب ۴۰۰ است — برای فارسی وقت تلف نکن
     if (lang === "fa") return false;
@@ -1620,7 +1698,7 @@
     return false;
   }
 
-  // هر متن فارسی رندوم: دیلارا اول، بعد اج، بعد کش
+  // هر متن فارسی رندوم: ابر دائمی اول (بدون لپ‌تاپ)
   async function speakFaAny(text, vol) {
     const key = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
     if (!key || soundMuted) return false;
@@ -1635,12 +1713,24 @@
       if (ok) return true;
     }
     {
-      const ok = await playDilaraFa(key, v);
+      const ok = await playCloudEdgeTts(key, v, EDGE_TTS_VOICE_FA);
       if (ok) return true;
     }
     {
       const ok = await playEdgeTts(key, v, EDGE_TTS_VOICE_FA);
       if (ok) return true;
+    }
+    {
+      const ok = await playDilaraFa(key, v);
+      if (ok) return true;
+    }
+    // آخرین راه: آوانویسی لاتین با گوگل انگلیسی (سکوت نماند)
+    {
+      const roman = romanizeFaMachine(key);
+      if (roman) {
+        const ok = await playGoogleQuick(roman, v, "en");
+        if (ok) return true;
+      }
     }
     return false;
   }
@@ -1830,7 +1920,7 @@
     const isEn = hasLatin && !hasFa;
     const keyLow = raw.toLowerCase();
 
-    // انگلیسی مربی: کلیپ آفلاین → گوگل/پروکسی → اج جنی → سرور (سنتز گوشی حذف؛ سکوت جعلی می‌داد)
+    // انگلیسی مربی: آفلاین → ابر دائمی → گوگل → اج
     if (isEn) {
       {
         const ok = await playCachedFaOnly(speakText, v);
@@ -1841,19 +1931,15 @@
         if (ok) return true;
       }
       {
+        const ok = await playCloudEdgeTts(speakText, v, EDGE_TTS_VOICE_EN);
+        if (ok) return true;
+      }
+      {
         const ok = await playGoogleQuick(speakText, v, "en");
         if (ok) return true;
       }
       {
         const ok = await playEdgeTts(speakText, v, EDGE_TTS_VOICE_EN);
-        if (ok) return true;
-      }
-      {
-        const ok = await playDilaraFa(speakText, v);
-        if (ok) return true;
-      }
-      {
-        const ok = await playGoogleFaAudio(speakText, v, "en");
         if (ok) return true;
       }
       return false;
@@ -2642,24 +2728,12 @@
   paintMuteBtn();
   const verEl = $("#appVer");
   if (verEl) verEl.textContent = "v" + APP_VER;
-  // آدرس دیلارا را از فایل endpoint به کش گوشی بنویس و سلامت را چک کن
+  scrubStaleTunnelCache();
   try {
-    if (window.SETDADR_TTS_API) rememberTtsApi(window.SETDADR_TTS_API);
-  } catch {}
-  (async () => {
-    const bases = getTtsApiBases();
-    for (let i = 0; i < bases.length; i++) {
-      try {
-        const res = await fetchWithTimeout(bases[i] + "/health", 4000, "no-store");
-        if (res && res.ok) {
-          rememberTtsApi(bases[i]);
-          break;
-        }
-      } catch {
-        forgetTtsApi(bases[i]);
-      }
+    if (window.SETDADR_TTS_API && !/trycloudflare\.com/i.test(String(window.SETDADR_TTS_API))) {
+      rememberTtsApi(window.SETDADR_TTS_API);
     }
-  })().catch(() => {});
+  } catch {}
   renderMoves();
   renderPlans();
   show("home");
