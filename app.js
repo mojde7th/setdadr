@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "50";
+  const APP_VER = "51";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,7 +41,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=50";
+  const VOICE_Q = "?v=51";
   const VOICE_FILES = {
     count: { 10: true, 20: true, 30: true, 60: true },
     phase: {},
@@ -744,7 +744,7 @@
     });
   }
 
-  async function(rounds) {
+  async function speakDone(rounds) {
     return queueAnnounce(async () => {
       const n = Math.round(rounds);
       buzz([90, 50, 90, 50, 140]);
