@@ -151,13 +151,15 @@ html, body {
 .add-set-form select,
 .add-set-form input[type="text"] {
   width: 100%;
-  min-height: 44px;
+  min-height: 40px;
   border-radius: 12px;
   border: 1px solid var(--line);
   background: var(--bg2, #17130e);
   color: inherit;
   font: inherit;
-  padding: 8px 12px;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 7px 12px;
   box-sizing: border-box;
 }
 .num-step.with-unit {
@@ -283,8 +285,8 @@ input[type="text"], input[type="number"] {
   color: var(--accent);
   font-weight: 900;
 }
-.seq .nm { font-weight: 900; }
-.seq .mt { color: var(--muted); font-size: 13px; font-weight: 700; }
+.seq .nm { font-weight: 800; font-size: 14px; }
+.seq .mt { color: var(--muted); font-size: 12px; font-weight: 700; }
 
 #view-run {
   position: fixed;
@@ -600,18 +602,24 @@ input[type="text"], input[type="number"] {
 .pick-select,
 #pickFromLib.pick-select {
   width: 100%;
-  min-height: 44px;
+  min-height: 40px;
   border-radius: 12px;
   border: 1px solid var(--line) !important;
   background: var(--bg2, #17130e) !important;
   color: inherit !important;
   font: inherit !important;
+  font-size: 13px !important;
   font-weight: 700 !important;
-  padding: 8px 40px 8px 12px !important;
+  padding: 7px 36px 7px 10px !important;
   box-sizing: border-box;
   appearance: none;
   -webkit-appearance: none;
   cursor: pointer;
+}
+#pickMoveName {
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  min-height: 40px !important;
 }
 .pick-select:focus {
   outline: none;
