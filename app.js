@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "125";
+  const APP_VER = "126";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -67,7 +67,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=125";
+  const VOICE_Q = "?v=126";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -284,7 +284,8 @@
   }
 
   function playHapticThump(level) {
-    const amp = Math.max(0.7, level == null ? 1.2 : level);
+    // ضربه نرم سینوسی — نه مربع بمب‌مانند
+    const amp = Math.max(0.5, level == null ? 1 : level);
     try {
       unlockAudio();
       if (!audioCtx) {
@@ -297,46 +298,33 @@
       const hit = (at, freq, dur, g0) => {
         const osc = audioCtx.createOscillator();
         const g = audioCtx.createGain();
-        const lp = audioCtx.createBiquadFilter();
-        lp.type = "lowpass";
-        lp.frequency.value = 200;
-        osc.type = "square";
+        osc.type = "sine";
         osc.frequency.setValueAtTime(freq, t0 + at);
         g.gain.setValueAtTime(0.0001, t0 + at);
-        g.gain.exponentialRampToValueAtTime(g0 * amp, t0 + at + 0.006);
+        g.gain.exponentialRampToValueAtTime(g0 * amp, t0 + at + 0.01);
         g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + dur);
         osc.connect(g);
-        g.connect(lp);
-        lp.connect(audioCtx.destination);
+        g.connect(audioCtx.destination);
         osc.start(t0 + at);
         osc.stop(t0 + at + dur + 0.02);
       };
-      hit(0, 72, 0.1, 1.35);
-      hit(0.11, 52, 0.12, 1.45);
-      hit(0.26, 40, 0.15, 1.2);
+      hit(0, 95, 0.07, 0.9);
+      hit(0.09, 70, 0.08, 1.0);
     } catch {}
   }
 
-  // اجباری — گیر ندهد؛ ویبره API + ضربه اسپیکر
   function forceHaptic(kind) {
     const patterns = {
-      start: [180, 60, 220],
-      warn: [80, 40, 80, 40, 100, 40, 140],
-      mid: [120, 50, 140],
-      heavy: [300, 80, 400, 80, 500]
+      start: [200, 70, 260],
+      warn: [90, 40, 90, 40, 120, 40, 160],
+      mid: [130, 50, 150],
+      heavy: [300, 80, 400, 80, 520]
     };
     const p = patterns[kind] || patterns.heavy;
+    // فوری — setTimeout در بکگراند ممکن است نخوابد
     fireVibrate(p);
-    // ضربهٔ اسپیکر فقط برای heavy — روی بوق‌ها صدای بمب ندهد
-    if (kind === "heavy") {
-      playHapticThump(1.3);
-      setTimeout(() => {
-        fireVibrate(p);
-        playHapticThump(1.0);
-      }, 360);
-    } else {
-      setTimeout(() => fireVibrate(p), 300);
-    }
+    playHapticThump(kind === "heavy" ? 1.25 : 0.95);
+    fireVibrate(p);
   }
 
   function buzz(pattern) {
@@ -566,21 +554,8 @@
   }
 
   function startCtxKeepAlive() {
-    if (soundMuted || !audioCtx) return;
-    try {
-      if (audioCtx.state === "suspended") audioCtx.resume();
-      if (bgCtxKeep) return;
-      const osc = audioCtx.createOscillator();
-      const g = audioCtx.createGain();
-      // فراصوت خیلی ضعیف — وزوز شنیده نشود
-      g.gain.value = 0.00003;
-      osc.frequency.value = 18000;
-      osc.type = "sine";
-      osc.connect(g);
-      g.connect(audioCtx.destination);
-      osc.start();
-      bgCtxKeep = { osc, g };
-    } catch {}
+    // عمداً خاموش — اسیلاتور باعث وزوز می‌شد
+    stopCtxKeepAlive();
   }
 
   function stopCtxKeepAlive() {
@@ -620,28 +595,9 @@
     bgWatchIv = setInterval(() => {
       if (!run || run.paused || soundMuted) return;
       resumeBgIfNeeded();
-      startCtxKeepAlive();
       requestWakeLock();
-      // پخش‌کنندهٔ چسبان را زنده نگه دار
-      try {
-        const a = stickySpeakAudio;
-        if (a && a.paused) {
-          a.muted = true;
-          a.volume = 0.001;
-          if (!a.src) a.src = VOICE_BASE + "silence.wav" + VOICE_Q;
-          const p = a.play();
-          if (p && typeof p.then === "function") {
-            p.then(() => {
-              try {
-                a.pause();
-                a.muted = false;
-                a.volume = 1;
-              } catch {}
-            }).catch(() => {});
-          }
-        }
-      } catch {}
-    }, 3500);
+      // stickySpeak را اینجا دست نزن — بعد از اولین اعلام خرابش می‌کرد
+    }, 4000);
   }
 
   function stopBgWatch() {
@@ -764,38 +720,8 @@
   }
 
   function makeQuietKeepUrl() {
-    // نویز سفید خیلی ضعیف روی ۴۴٫۱ک — وزوز مورچه‌ای نمی‌آید
-    try {
-      const sr = 44100;
-      const sec = 2;
-      const n = sr * sec;
-      const data = new ArrayBuffer(44 + n * 2);
-      const view = new DataView(data);
-      const w = (o, s) => {
-        for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i));
-      };
-      w(0, "RIFF");
-      view.setUint32(4, 36 + n * 2, true);
-      w(8, "WAVE");
-      w(12, "fmt ");
-      view.setUint32(16, 16, true);
-      view.setUint16(20, 1, true);
-      view.setUint16(22, 1, true);
-      view.setUint32(24, sr, true);
-      view.setUint32(28, sr * 2, true);
-      view.setUint16(32, 2, true);
-      view.setUint16(34, 16, true);
-      w(36, "data");
-      view.setUint32(40, n * 2, true);
-      for (let i = 0; i < n; i++) {
-        const sample = (Math.random() * 2 - 1) * 0.00035;
-        let v = (sample * 32767) | 0;
-        view.setInt16(44 + i * 2, v, true);
-      }
-      return URL.createObjectURL(new Blob([data], { type: "audio/wav" }));
-    } catch {
-      return VOICE_BASE + "silence.wav" + VOICE_Q;
-    }
+    // فقط سکوت واقعی — بدون نویز و بدون وزوز
+    return VOICE_BASE + "silence.wav" + VOICE_Q;
   }
 
     function startBgKeepAlive() {
@@ -825,13 +751,13 @@
       } catch {}
       const a = makeHtmlAudio(makeQuietKeepUrl());
       a.loop = true;
-      a.volume = 0.004;
+      a.volume = 0.0001;
       a.muted = false;
       bgKeepAudio = a;
     } else {
       try {
         bgKeepAudio.muted = false;
-        bgKeepAudio.volume = 0.004;
+        bgKeepAudio.volume = 0.0001;
         bgKeepAudio.loop = true;
       } catch {}
     }
@@ -874,7 +800,7 @@
     if (bgKeepAudio) {
       try {
         bgKeepAudio.muted = false;
-        bgKeepAudio.volume = 0.004;
+        bgKeepAudio.volume = 0.0001;
       } catch {}
       const p = bgKeepAudio.play();
       if (p && typeof p.then === "function") {
@@ -978,13 +904,14 @@
         { f: 554.37, at: 0.1, dur: 0.36, g: 0.95 }
       ]
     });
-    setTimeout(() => forceHaptic("start"), 280);
+    forceHaptic("start");
   }
 
   function beepMidChime() {}
 
   function beepSoftDouble() {
     // ۴ث: دو تیک کوتاه زیرتر/تیزتر — با زنگ شروع فرق واضح دارد
+    forceHaptic("warn");
     const tick = (at, freq) => {
       if (document.hidden || !audioOutputOk()) {
         setTimeout(() => playHtmlWarnBeep(), at);
@@ -1000,7 +927,6 @@
     };
     tick(0, 988);
     setTimeout(() => tick(0, 1175), 200);
-    setTimeout(() => forceHaptic("warn"), 260);
   }
 
   function beepWhite(ms, soft) {
@@ -2367,6 +2293,21 @@
     return a;
   }
 
+  function resetStickySpeakAudio() {
+    try {
+      if (stickySpeakAudio) {
+        try {
+          stickySpeakAudio.onended = null;
+          stickySpeakAudio.onerror = null;
+          stickySpeakAudio.pause();
+        } catch {}
+        liveAudios.delete(stickySpeakAudio);
+      }
+    } catch {}
+    stickySpeakAudio = null;
+    return ensureStickySpeakAudio();
+  }
+
   async function unlockStickySpeakAudio() {
     try {
       const a = ensureStickySpeakAudio();
@@ -2395,7 +2336,8 @@
     if (!soundAlive(gen, tok)) return false;
     startBgKeepAlive();
     unlockAudio();
-    const a = ensureStickySpeakAudio();
+    // هر بار عنصر تازه — اعلام دوم/سوم در بکگراند قطع نشود
+    const a = resetStickySpeakAudio();
     try {
       a.onended = null;
       a.onerror = null;
@@ -2453,7 +2395,7 @@
     if (!soundAlive(gen, tok)) return false;
     startBgKeepAlive();
     unlockAudio();
-    const a = ensureStickySpeakAudio();
+    const a = resetStickySpeakAudio();
     const url = URL.createObjectURL(blob);
     try {
       a.onended = null;
@@ -3574,6 +3516,7 @@
     try {
       p.circuit.forEach((c) => {
         warmMoveVoice(c.name);
+        cacheCloudEdgeBlob(normSpeakKey(c.name)).catch(() => {});
       });
     } catch {}
     run = {
