@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "99";
+  const APP_VER = "100";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -32,6 +32,10 @@
   let voicePlayer = null;
   let announceSeq = 0;
   let announceChain = Promise.resolve();
+  let soundGen = 0;
+  const liveAudios = new Set();
+  let primedWorkName = "";
+  let primedWorkBlob = null;
   const MUTE_LS = "setdadr-mute";
   let soundMuted = false;
   try {
@@ -41,7 +45,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=99";
+  const VOICE_Q = "?v=100";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
@@ -352,6 +356,7 @@
       if (voicePlayer.pause) {
         voicePlayer.onended = null;
         voicePlayer.onerror = null;
+        voicePlayer.onplaying = null;
         voicePlayer.pause();
         voicePlayer.removeAttribute("src");
         voicePlayer.load();
@@ -360,13 +365,29 @@
     voicePlayer = null;
   }
 
+  function killAllHtmlAudio() {
+    liveAudios.forEach((a) => {
+      try {
+        a.onended = null;
+        a.onerror = null;
+        a.onplaying = null;
+        a.pause();
+        a.removeAttribute("src");
+        a.load();
+      } catch {}
+    });
+    liveAudios.clear();
+  }
+
   function stopAllSound() {
+    // نسل صدا را عوض کن تا هر پخش/اعلام قبلی بی‌اثر شود
+    soundGen += 1;
     announceSeq += 1;
     speakToken += 1;
-    // صف اعلام قبلی را رها کن تا با «بعدی» حرف قبلی نگوید
     announceChain = Promise.resolve();
     stopBeep();
     stopVoiceFile();
+    killAllHtmlAudio();
     if (window.speechSynthesis) {
       try {
         speechSynthesis.cancel();
@@ -597,6 +618,14 @@
     a.setAttribute("playsinline", "");
     a.setAttribute("webkit-playsinline", "");
     a.preload = "auto";
+    liveAudios.add(a);
+    const drop = () => {
+      try {
+        liveAudios.delete(a);
+      } catch {}
+    };
+    a.addEventListener("ended", drop);
+    a.addEventListener("error", drop);
     return a;
   }
 
@@ -917,15 +946,16 @@
 
   async function playHtmlAudioEl(a, vol, maxWaitMs) {
     if (soundMuted || !a) return false;
+    const gen = soundGen;
     unlockAudio();
     stopVoiceFile();
     try {
       a.pause();
       a.currentTime = 0;
     } catch {}
+    if (gen !== soundGen) return false;
     a.volume = Math.max(0.05, Math.min(1, vol == null ? 0.98 : vol));
     voicePlayer = a;
-    // گوشی ایران کند است؛ ۲ث کافی نیست (روی کامپیوتر زود می‌آمد، روی گوشی قطع می‌شد)
     const waitCap = maxWaitMs != null ? maxWaitMs : 12000;
     return await new Promise((resolve) => {
       let done = false;
@@ -938,23 +968,49 @@
           a.onended = null;
           a.onerror = null;
         } catch {}
-        resolve(!!ok);
+        resolve(!!ok && gen === soundGen);
       };
       a.onplaying = () => {
         heard = true;
       };
       a.onended = () => finish(true);
       a.onerror = () => finish(false);
+      if (gen !== soundGen) {
+        finish(false);
+        return;
+      }
       const p = a.play();
       if (p && typeof p.then === "function") {
-        p.then(() => {}).catch(() => finish(false));
+        p.then(() => {
+          if (gen !== soundGen) {
+            try {
+              a.pause();
+            } catch {}
+            finish(false);
+          }
+        }).catch(() => finish(false));
       }
-      // فقط اگر اصلاً شروع نشد؛ اگر شروع شد تا ته صبر کن
       setTimeout(() => {
         if (done) return;
+        if (gen !== soundGen) {
+          try {
+            a.pause();
+          } catch {}
+          finish(false);
+          return;
+        }
         if (heard || (a.currentTime || 0) > 0.02) {
           const left = Math.max(500, (isFinite(a.duration) ? a.duration * 1000 : 4000) + 800);
-          setTimeout(() => finish(true), left);
+          setTimeout(() => {
+            if (gen !== soundGen) {
+              try {
+                a.pause();
+              } catch {}
+              finish(false);
+              return;
+            }
+            finish(true);
+          }, left);
           return;
         }
         try {
@@ -967,14 +1023,20 @@
 
   async function playBlobFa(blob, vol) {
     if (!blob) return false;
+    const gen = soundGen;
     try {
       unlockAudio();
+      if (gen !== soundGen) return false;
       // اول با AudioContext (بعد از آنلاک روی آیفون پایدارتر است)
       if (audioCtx) {
         try {
           if (audioCtx.state === "suspended") await audioCtx.resume();
+          if (gen !== soundGen) return false;
           const raw = await blob.arrayBuffer();
+          if (gen !== soundGen) return false;
           const buf = await audioCtx.decodeAudioData(raw.slice(0));
+          if (gen !== soundGen) return false;
+          if (gen !== soundGen) return false;
           stopVoiceFile();
           await new Promise((resolve) => {
             let done = false;
@@ -983,6 +1045,10 @@
               done = true;
               resolve();
             };
+            if (gen !== soundGen) {
+              finish();
+              return;
+            }
             const src = audioCtx.createBufferSource();
             const g = audioCtx.createGain();
             g.gain.value = Math.max(0.05, Math.min(1, vol == null ? 0.98 : vol));
@@ -992,11 +1058,19 @@
             voicePlayer = src;
             src.onended = finish;
             src.start();
-            setTimeout(finish, Math.min(8000, (buf.duration + 0.4) * 1000));
+            setTimeout(() => {
+              if (gen !== soundGen) {
+                try {
+                  src.stop();
+                } catch {}
+              }
+              finish();
+            }, Math.min(8000, (buf.duration + 0.4) * 1000));
           });
-          return true;
+          return gen === soundGen;
         } catch {}
       }
+      if (gen !== soundGen) return false;
       const url = URL.createObjectURL(blob);
       const a = makeHtmlAudio(url);
       dynFaAudio.set(String(url), a);
@@ -2006,21 +2080,47 @@
 
   async function speakNextMoveName(name, seq) {
     const nm = String(name || "").replace(/\s+/g, " ").trim();
-    // هم‌زمان بلاب اسم را کش کن تا در «خود حرکت» بعد از ۲ث قطع نشود
+    // هم‌زمان بلاب اسم را کش کن تا در «خود حرکت» قطعی پخش شود
     const warmP = nm
-      ? Promise.all([warmFaTts(nm), cacheCloudEdgeBlob(nm)]).then(() => {})
+      ? cacheCloudEdgeBlob(nm).then(async (blob) => {
+          if (blob) {
+            primedWorkName = nm;
+            primedWorkBlob = blob;
+          } else {
+            await warmFaTts(nm);
+            const b2 = await loadDynFaFromCache(nm);
+            if (b2) {
+              primedWorkName = nm;
+              primedWorkBlob = b2;
+            }
+          }
+        })
       : Promise.resolve();
     let pref = await playVoiceFile("phrase-next.mp3", 1);
     if (!pref) pref = await speakFaAny("حرکت بعد", 1);
     if (seq != null && !announceAlive(seq)) return !!pref;
     try {
-      await Promise.race([warmP, sleep(1200)]);
+      await Promise.race([warmP, sleep(1500)]);
     } catch {}
     if (seq != null && !announceAlive(seq)) return false;
     if (!nm) return !!pref;
     const said = await speakMoveNameOnly(nm, 1);
-    // اگر فقط با لینک پخش شد، باز هم بلاب را برای فاز کار بکش
-    if (nm) cacheCloudEdgeBlob(nm).catch(() => {});
+    try {
+      const b = await loadDynFaFromCache(nm);
+      if (b) {
+        primedWorkName = nm;
+        primedWorkBlob = b;
+      } else {
+        cacheCloudEdgeBlob(nm)
+          .then((blob) => {
+            if (blob) {
+              primedWorkName = nm;
+              primedWorkBlob = blob;
+            }
+          })
+          .catch(() => {});
+      }
+    } catch {}
     return said;
   }
 
@@ -2041,11 +2141,21 @@
         step.kind === "work" && step.name ? warmFaTts(step.name) : Promise.resolve();
       buzz(step.kind === "work" ? [80, 35, 90] : [55, 30, 70]);
       if (step.kind === "work") {
-        // بوق اول، بعد حدود ۲ ثانیه اسم — صدا را زنده نگه دار تا گوشی پخش را قفل نکند
+        // بوق اول، بعد حدود ۲ ثانیه اسم حرکت (حتماً)
         startBgKeepAlive();
         beepSoftRing(0);
+        const nm = String(step.name || "").replace(/\s+/g, " ").trim();
         warmWork.catch(() => {});
-        if (step.name) cacheCloudEdgeBlob(step.name).catch(() => {});
+        if (nm) {
+          cacheCloudEdgeBlob(nm)
+            .then((blob) => {
+              if (blob) {
+                primedWorkName = nm;
+                primedWorkBlob = blob;
+              }
+            })
+            .catch(() => {});
+        }
         const t0 = Date.now();
         while (Date.now() - t0 < 2000) {
           if (!announceAlive(seq)) return;
@@ -2060,14 +2170,36 @@
         try {
           if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
         } catch {}
-        if (!step.name) return;
-        // اول کش/بلاب (AudioContext)، بعد بقیه — دوبار تلاش
-        let ok = await playCachedFaOnly(step.name, 1);
-        if (!ok) ok = await speakMoveName(step.name, 1);
-        if (!ok) {
+        if (!nm) return;
+        const gen = soundGen;
+        let ok = false;
+        // بلاب آماده‌شده از «حرکت بعد»
+        if (
+          !ok &&
+          primedWorkName === nm &&
+          primedWorkBlob &&
+          gen === soundGen
+        ) {
+          ok = await playBlobFa(primedWorkBlob, 1);
+        }
+        if (!ok && gen === soundGen && announceAlive(seq)) {
+          ok = await playCachedFaOnly(nm, 1);
+        }
+        if (!ok && gen === soundGen && announceAlive(seq)) {
+          const blob = await cacheCloudEdgeBlob(nm);
+          if (blob && gen === soundGen && announceAlive(seq)) {
+            primedWorkName = nm;
+            primedWorkBlob = blob;
+            ok = await playBlobFa(blob, 1);
+          }
+        }
+        if (!ok && gen === soundGen && announceAlive(seq)) {
+          ok = await speakMoveName(nm, 1);
+        }
+        if (!ok && gen === soundGen && announceAlive(seq)) {
           unlockAudio();
-          await sleep(80);
-          await speakMoveName(step.name, 1);
+          await sleep(60);
+          if (announceAlive(seq) && soundGen === gen) await speakMoveName(nm, 1);
         }
         return;
       }
@@ -2720,7 +2852,8 @@
 
   $("#btnSkip").addEventListener("click", () => {
     if (!run) return;
-    stopAllSound();
+    // لمس کاربر = آنلاک؛ advance خودش همه صدای قبلی را می‌کشد
+    unlockAudio();
     run.skipped = (run.skipped || 0) + 1;
     advance();
   });
