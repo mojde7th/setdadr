@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "149";
+  const APP_VER = "150";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -2412,7 +2412,7 @@
     return p;
   }
 
-  // عین کلیپ ثابت — همیشه اول WebAudio (بعدی و خودکار؛ ژست لمس زود می‌میرد)
+  // همیشه اول WebAudio — هم بعدی هم خودکار (ژست لمس زود می‌میرد)
   async function playBlobLikeClip(blob, vol) {
     if (!blob || soundMuted) return false;
     {
@@ -2427,7 +2427,7 @@
     try {
       const a = makeHtmlAudio(url);
       a._setdadrGen = soundGen;
-      const ok = await playHtmlAudioEl(a, vol == null ? 1 : vol, 8000);
+      const ok = await playHtmlAudioEl(a, vol == null ? 1 : vol, 6000);
       if (ok) return true;
       return await playBlobViaCtx(blob, vol);
     } catch {
@@ -2711,7 +2711,6 @@
     }
     if (blob) {
       readySpeakBlobs.set(key, blob);
-      // اول WebAudio — بعدی و خودکار هر دو
       {
         const ok = await playBlobViaCtx(blob, v);
         if (ok) return true;
@@ -3159,7 +3158,6 @@
       if (!alive()) return false;
       if (ok) return true;
     }
-    // تلفظ سخت: بلاب + WebAudio (بدون لمس)
     {
       let blob = readySpeakBlobs.get(speakText) || null;
       if (!blob) {
@@ -3244,7 +3242,6 @@
     if (!nm || primedWorkName !== nm) return false;
     const gen = soundGen;
     const v = vol == null ? 1 : vol;
-    // بلاب پرایم — اول WebAudio (عبور خودکار)
     if (!audioCtx || !primedWorkAudioBuffer) {
       if (primedWorkName === nm && primedWorkBlob) {
         let ok = await playBlobViaCtx(primedWorkBlob, v);
@@ -3443,7 +3440,7 @@
         } catch {}
         if (!announceAlive(seq)) return;
         let ok = false;
-        // بافر پرایم — مخصوص عبور خودکار
+        // بعدی و خودکار یکی: پرایم → speakNameNow → moveName → viaCtx → ابر
         ok = await playPrimedWorkName(nm, 1);
         if (!ok && announceAlive(seq)) {
           ok = await speakNameNow(nm, 1);
@@ -3475,7 +3472,7 @@
         ensureReadySpeak(normSpeakKey(nextEarly)).catch(() => {});
       }
       if (step.kind === "rest-set") {
-        // بین ست: بوق → حرکت بعد (زود) → عالی → آمار ست
+        // بین ست: حرکت بعد زود → عالی → آمار
         const doneSets = Math.max(1, Math.round(Number(step.round) || 1));
         const totalSets = Math.max(
           doneSets,
@@ -3489,11 +3486,9 @@
         await speakNextMoveName(next, seq);
         if (!announceAlive(seq)) return;
         await sleep(120);
-        if (!announceAlive(seq)) return;
         await speakCheerOnly(seq);
         if (!announceAlive(seq)) return;
         await sleep(140);
-        if (!announceAlive(seq)) return;
         const midStats =
           run && run.steps
             ? workStatsFromSteps(run.steps, Math.max(0, run.i - 1))
@@ -3542,7 +3537,6 @@
   }
 
   function setCountPhrase(n) {
-    // «ست» کوتاه را کامل بگو — با «تا» و «کامل» تا تلفظ نخورد
     const k = Math.max(0, Math.round(Number(n) || 0));
     return faNum(k) + " تا ست کامل";
   }
@@ -3553,13 +3547,11 @@
   }
 
   function estimateCalories(workSec) {
-    // تمرین مداری تقریبی — حدود هفت و نیم کالری در دقیقه کار
     const sec = Math.max(0, Math.round(Number(workSec) || 0));
     return Math.max(0, Math.round((sec / 60) * 7.5));
   }
 
   function estimateWalkMinutes(kcal) {
-    // پیاده‌روی معمولی حدود چهار کالری در دقیقه
     return Math.max(0, Math.round((Number(kcal) || 0) / 4));
   }
 
@@ -3578,7 +3570,6 @@
       ? Math.round(Number(allWorks[0].moveCount) || 0)
       : 0;
     const totalMoves = works.length;
-    // فقط زمان تمرین — استراحت حساب نشود
     const workSec = works.reduce(
       (a, s) => a + Math.max(0, Math.round(Number(s.dur) || 0)),
       0
@@ -3603,7 +3594,6 @@
     unlockAudio();
     startBgKeepAlive();
     await ensureAudioCtxRunning();
-    // آمار را بلند و بدون وابستگی به لمس بگو
     let blob = readySpeakBlobs.get(key) || null;
     if (!blob) {
       try {
@@ -3654,7 +3644,6 @@
     unlockAudio();
     startBgKeepAlive();
     await ensureAudioCtxRunning();
-    // عالی و حرکت بعد قبلاً گفته شده — اینجا آمار ست
     await speakSetPhrase("آفرین", seq);
     if (seq != null && !announceAlive(seq)) return;
     await sleep(120);
@@ -3711,7 +3700,6 @@
       beepCheerFinal();
       await sleep(1000);
       if (seq != null && !announceAlive(seq)) return;
-      // آمار کامل و بلند
       await speakSetPhrase("آفرین، تمرین تمام شد", seq);
       if (seq != null && !announceAlive(seq)) return;
       await sleep(260);
