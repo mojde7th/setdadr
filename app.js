@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "142";
+  const APP_VER = "143";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -3416,9 +3416,10 @@
         // استراحت ست: اول تبریک ست تمام‌شده، بعد حرکت بعد
         if (step.kind === "rest-set") {
           const doneSets = Math.max(1, Math.round(Number(step.round) || 1));
-          await speakSetCompletedMid(doneSets, seq);
+          const totalSets = Math.max(doneSets, Math.round(Number(step.rounds) || doneSets));
+          await speakSetCompletedMid(doneSets, totalSets, seq);
           if (!announceAlive(seq)) return;
-          await sleep(160);
+          await sleep(200);
           if (!announceAlive(seq)) return;
         }
         const next = step.nextName || "";
@@ -3480,32 +3481,33 @@
     return { rounds, perSet, totalMoves, moveCount: totalMoves, workSec };
   }
 
-  async function speakSetPhrase(text, seq) {
+  async function speakSetPhrase(text, seq, vol) {
     const key = String(text || "").replace(/\s+/g, " ").trim();
     if (!key) return false;
     if (seq != null && !announceAlive(seq)) return false;
-    // اول بلاب+WebAudio (عبور خودکار بدون لمس)
-    let ok = await speakNameNow(key, 1);
+    const v = vol == null ? 1 : Math.max(0.85, Math.min(1, vol));
+    // اول بلاب+WebAudio (عبور خودکار بدون لمس) — بلند
+    let ok = await speakNameNow(key, v);
     if (!ok && (seq == null || announceAlive(seq))) {
-      ok = await playCloudEdgeTts(key, 1, EDGE_TTS_VOICE_FA);
+      ok = await playCloudEdgeTts(key, v, EDGE_TTS_VOICE_FA);
     }
-    if (!ok && (seq == null || announceAlive(seq)) && recentGesture(2500)) {
-      ok = await speakFaAny(key, 1);
+    if (!ok && (seq == null || announceAlive(seq))) {
+      ok = await speakFaAny(key, v);
     }
     return !!ok;
   }
 
-  async function speakSetCompletedMid(completed, seq) {
-    // وسط ست‌ها: بوق تبریک متفاوت + تعداد ست تمام‌شده با تلفظ کامل
+  async function speakSetCompletedMid(completed, totalSets, seq) {
+    // وسط ست‌ها: مثلاً «آفرین. یک ست از چهار ست را رفتی»
     const n = Math.max(1, Math.round(Number(completed) || 0));
+    const total = Math.max(n, Math.round(Number(totalSets) || n));
     if (seq != null && !announceAlive(seq)) return;
     beepCheerMid();
-    await sleep(300);
+    await sleep(320);
     if (seq != null && !announceAlive(seq)) return;
-    await speakSetPhrase("آفرین", seq);
-    if (seq != null && !announceAlive(seq)) return;
-    await sleep(140);
-    await speakSetPhrase(setCountPhrase(n) + " تمام شد", seq);
+    const phrase =
+      "آفرین. " + faNum(n) + " ست از " + faNum(total) + " ست را رفتی";
+    await speakSetPhrase(phrase, seq, 1);
   }
 
   async function speakDone(stats) {
@@ -3516,27 +3518,41 @@
         0,
         Math.round(Number(s.totalMoves != null ? s.totalMoves : s.moveCount) || 0)
       );
+      const perSet = Math.max(0, Math.round(Number(s.perSet) || 0));
       const workSec = Math.max(0, Math.round(Number(s.workSec) || 0));
       unlockAudio();
       startBgKeepAlive();
       await ensureAudioCtxRunning();
       beepCheerFinal();
-      await sleep(900);
+      await sleep(1000);
       if (seq != null && !announceAlive(seq)) return;
-      await speakSetPhrase("آفرین، تمام شد", seq);
+      // آمار کامل، تکه‌تکه و بلند
+      await speakSetPhrase("آفرین، تمرین تمام شد", seq, 1);
       if (seq != null && !announceAlive(seq)) return;
-      await sleep(220);
-      await speakSetPhrase(setCountPhrase(n), seq);
+      await sleep(280);
+      await speakSetPhrase("شما " + setCountPhrase(n) + " انجام دادید", seq, 1);
       if (seq != null && !announceAlive(seq)) return;
       if (moves > 0) {
-        await sleep(200);
-        await speakSetPhrase(moveCountPhrase(moves), seq);
+        await sleep(260);
+        let moveLine = "و " + moveCountPhrase(moves);
+        if (perSet > 0 && n > 1) {
+          moveLine +=
+            ". یعنی " + faNum(n) + " ست، هر ست " + faNum(perSet) + " حرکت";
+        }
+        await speakSetPhrase(moveLine, seq, 1);
       }
       if (seq != null && !announceAlive(seq)) return;
       if (workSec > 0) {
-        await sleep(200);
-        await speakSetPhrase("مجموعاً " + timePhrase(workSec) + " تمرین کردید", seq);
+        await sleep(260);
+        await speakSetPhrase(
+          "مجموعاً " + timePhrase(workSec) + " تمرین کردید",
+          seq,
+          1
+        );
       }
+      if (seq != null && !announceAlive(seq)) return;
+      await sleep(240);
+      await speakSetPhrase("خیلی عالی بود. آفرین", seq, 1);
     });
   }
 
