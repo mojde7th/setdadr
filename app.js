@@ -4036,8 +4036,6 @@
     startBgKeepAlive();
     armStickySilenceLoop().catch(() => {});
     const phaseIndex = run.i;
-    const myGen = soundGen;
-    const myTok = speakToken;
     const mySeq = announceSeq;
     speakAfterAdvanceTimer = setTimeout(() => {
       speakAfterAdvanceTimer = 0;
