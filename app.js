@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "153";
+  const APP_VER = "154";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -72,6 +72,8 @@
   let tickIv = 0;
   let bgKeepAudio = null;
   let bgKeepOn = false;
+  let silentCtxKeep = null;
+  let silentCtxGain = null;
   // سرور دیلارا ابری دائمی (بدون لپ‌تاپ) + اختیاری تونل محلی
   const TTS_API_LS = "setdadr-tts-api";
   const CLOUD_EDGE_TTS = "https://edge-tts.vercel.app/api/tts";
@@ -431,6 +433,71 @@
       } catch {}
     });
     liveSources.clear();
+    // silentCtxKeep را نکش — عبور خودکار به AudioContext زنده نیاز دارد
+  }
+
+  function startSilentCtxKeep() {
+    try {
+      unlockAudio();
+      if (!audioCtx) return false;
+      if (audioCtx.state === "suspended") {
+        audioCtx.resume().catch(() => {});
+      }
+      if (silentCtxKeep) return true;
+      const g = audioCtx.createGain();
+      g.gain.value = 0.00008;
+      g.connect(audioCtx.destination);
+      const o = audioCtx.createOscillator();
+      o.frequency.value = 28;
+      o.connect(g);
+      o.start();
+      silentCtxKeep = o;
+      silentCtxGain = g;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function stopSilentCtxKeep() {
+    try {
+      if (silentCtxKeep) {
+        try {
+          silentCtxKeep.stop();
+        } catch {}
+        try {
+          silentCtxKeep.disconnect();
+        } catch {}
+      }
+      if (silentCtxGain) {
+        try {
+          silentCtxGain.disconnect();
+        } catch {}
+      }
+    } catch {}
+    silentCtxKeep = null;
+    silentCtxGain = null;
+  }
+
+  // عبور خودکار: HTML آنلاک را نکش
+  function softCutForAdvance() {
+    soundGen += 1;
+    announceSeq += 1;
+    speakToken += 1;
+    announceChain = Promise.resolve();
+    stopBeep();
+    stopVoiceFile();
+    killAllSources();
+    if (window.speechSynthesis) {
+      try {
+        speechSynthesis.cancel();
+      } catch {}
+    }
+    try {
+      if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+    } catch {}
+    startBgKeepAlive();
+    startSilentCtxKeep();
   }
 
   function stopAllSound() {
@@ -501,6 +568,7 @@
   function stopBgKeepAlive() {
     bgKeepOn = false;
     setMediaPlaying(false);
+    stopSilentCtxKeep();
     if (!bgKeepAudio) return;
     try {
       bgKeepAudio.onended = null;
@@ -1197,13 +1265,14 @@
     const gen = soundGen;
     try {
       unlockAudio();
+      startSilentCtxKeep();
       if (!audioCtx) {
         const AC = window.AudioContext || window.webkitAudioContext;
         if (AC) audioCtx = new AC();
       }
       if (!audioCtx) return false;
       if (audioCtx.state === "suspended") await audioCtx.resume().catch(() => {});
-      if (gen !== soundGen || audioCtx.state !== "running") return false;
+      if (gen !== soundGen) return false;
       const raw = await blob.arrayBuffer();
       if (gen !== soundGen) return false;
       const buf = await audioCtx.decodeAudioData(raw.slice(0));
@@ -1247,7 +1316,62 @@
     }
   }
 
-  // تلفظ سخت بدون لمس — کش/ابر + WebAudio (مسیر خودکار)
+  // روی HTML آنلاک‌شده از شروع تمرین — عبور خودکار بدون لمس تازه
+  async function playBlobOnBgKeep(blob, vol) {
+    if (!blob || soundMuted) return false;
+    const gen = soundGen;
+    const tok = speakToken;
+    startBgKeepAlive();
+    if (!bgKeepAudio || !soundAlive(gen, tok)) return false;
+    const a = bgKeepAudio;
+    const url = URL.createObjectURL(blob);
+    try {
+      a.onended = null;
+      a.onerror = null;
+      a.loop = false;
+      a.muted = false;
+      a.volume = Math.max(0.55, Math.min(1, vol == null ? 1 : vol));
+      a.src = url;
+      try {
+        a.load();
+      } catch {}
+      const p = a.play();
+      if (p && typeof p.then === "function") {
+        await p.catch(() => {});
+      }
+      if (!soundAlive(gen, tok)) return false;
+      await new Promise((resolve) => {
+        let done = false;
+        const fin = () => {
+          if (done) return;
+          done = true;
+          resolve();
+        };
+        a.onended = () => fin();
+        a.onerror = () => fin();
+        setTimeout(fin, 12000);
+      });
+      return soundAlive(gen, tok);
+    } catch {
+      return false;
+    } finally {
+      setTimeout(() => {
+        try {
+          URL.revokeObjectURL(url);
+        } catch {}
+      }, 20000);
+      try {
+        if (bgKeepOn && bgKeepAudio === a) {
+          a.loop = true;
+          a.volume = 0.001;
+          a.src = VOICE_BASE + "silence.wav" + VOICE_Q;
+          a.play().catch(() => {});
+        }
+      } catch {}
+    }
+  }
+
+  // تلفظ سخت بدون لمس — WebAudio + HTML نگه‌دارنده
   async function speakHardNameViaCtx(name, vol) {
     const nm = normSpeakKey(name);
     if (!nm || soundMuted) return false;
@@ -1257,6 +1381,7 @@
     const alive = () => soundAlive(gen, tok);
     unlockAudio();
     startBgKeepAlive();
+    startSilentCtxKeep();
     try {
       if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
     } catch {}
@@ -1269,7 +1394,7 @@
       try {
         blob = await Promise.race([
           cacheCloudEdgeBlob(nm),
-          sleep(4000).then(() => null)
+          sleep(4500).then(() => null)
         ]);
       } catch {}
     }
@@ -1280,7 +1405,9 @@
     primedExpectName = nm;
     await primeMoveAudio(nm, blob).catch(() => {});
     if (!alive()) return false;
-    let ok = await playBlobViaCtx(blob, v);
+    // اول HTML آنلاک (مثل دکمهٔ بعدی پایدار می‌ماند)، بعد WebAudio
+    let ok = await playBlobOnBgKeep(blob, v);
+    if (!ok && alive()) ok = await playBlobViaCtx(blob, v);
     if (!ok && alive() && primedWorkName === nm) {
       ok = await playPrimedWorkName(nm, v);
     }
@@ -2828,6 +2955,7 @@
     const steps = buildTimeline(p);
     unlockAudio();
     startBgKeepAlive();
+    startSilentCtxKeep();
     // صدا را در پس‌زمینه گرم کن؛ شروع را معطل نکن
     try {
       p.circuit.forEach((c) => {
@@ -2925,9 +3053,17 @@
     }
   }
 
-  function advance() {
+  function advance(fromSkip) {
     if (!run) return;
-    stopAllSound();
+    const skip = !!fromSkip;
+    // بعدی: قطع سخت؛ خودکار: قطع نرم تا HTML آنلاک برای تلفظ سخت بماند
+    if (skip) {
+      stopAllSound();
+      startBgKeepAlive();
+      startSilentCtxKeep();
+    } else {
+      softCutForAdvance();
+    }
     run.i += 1;
     if (run.i >= run.steps.length) {
       finishRun();
@@ -2950,21 +3086,26 @@
     }
     unlockAudio();
     startBgKeepAlive();
+    startSilentCtxKeep();
     try {
       if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
     } catch {}
     const myGen = soundGen;
     const mySeq = announceSeq;
     const phaseIndex = run.i;
-    const delay = step.kind === "rest-set" ? 140 : 280;
+    // بعدی زودتر (ژست زنده)؛ خودکار کمی بعد از قطع نرم
+    const delay = skip ? 160 : step.kind === "rest-set" ? 140 : 220;
     setTimeout(() => {
       if (!run || run.i !== phaseIndex) return;
       if (soundGen !== myGen || announceSeq !== mySeq) return;
       stopBeep();
-      killAllSources();
-      stopVoiceFile();
+      if (skip) {
+        killAllSources();
+        stopVoiceFile();
+      }
       unlockAudio();
       startBgKeepAlive();
+      startSilentCtxKeep();
       try {
         if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
       } catch {}
@@ -3208,12 +3349,13 @@
       if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
     } catch {}
     run.skipped = (run.skipped || 0) + 1;
-    advance();
+    advance(true);
   });
 
   $("#btnAbort").addEventListener("click", () => {
     stopLoop();
     stopAllSound();
+    stopSilentCtxKeep();
     stopBgKeepAlive();
     run = null;
     show("home");
