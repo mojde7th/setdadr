@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "148";
+  const APP_VER = "149";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -3464,26 +3464,47 @@
         if (primedExpectName === nm) clearPrimedWork();
         return;
       }
+      unlockAudio();
       startBgKeepAlive();
+      await ensureAudioCtxRunning();
+      armStickySilenceLoop().catch(() => {});
       const nextEarly = isRest ? step.nextName || "" : "";
       if (nextEarly) {
         cacheCloudEdgeBlob(normSpeakKey(nextEarly)).catch(() => {});
         warmFaTts(nextEarly).catch(() => {});
+        ensureReadySpeak(normSpeakKey(nextEarly)).catch(() => {});
+      }
+      if (step.kind === "rest-set") {
+        // بین ست: بوق → حرکت بعد (زود) → عالی → آمار ست
+        const doneSets = Math.max(1, Math.round(Number(step.round) || 1));
+        const totalSets = Math.max(
+          doneSets,
+          Math.round(Number(step.rounds) || doneSets)
+        );
+        beepCheerMid();
+        await sleep(140);
+        if (!announceAlive(seq)) return;
+        const next = step.nextName || "";
+        if (next) warmFaTts(next).catch(() => {});
+        await speakNextMoveName(next, seq);
+        if (!announceAlive(seq)) return;
+        await sleep(120);
+        if (!announceAlive(seq)) return;
+        await speakCheerOnly(seq);
+        if (!announceAlive(seq)) return;
+        await sleep(140);
+        if (!announceAlive(seq)) return;
+        const midStats =
+          run && run.steps
+            ? workStatsFromSteps(run.steps, Math.max(0, run.i - 1))
+            : null;
+        await speakSetCompletedMid(doneSets, totalSets, midStats, seq);
+        return;
       }
       beepSoftRing(0);
-      const restGap = step.kind === "rest-set" ? 200 : 120;
-      await sleep(restGap);
+      await sleep(120);
       if (!announceAlive(seq)) return;
       if (isRest) {
-        // استراحت ست: اول تبریک ست تمام‌شده، بعد حرکت بعد
-        if (step.kind === "rest-set") {
-          const doneSets = Math.max(1, Math.round(Number(step.round) || 1));
-          const totalSets = Math.max(doneSets, Math.round(Number(step.rounds) || doneSets));
-          await speakSetCompletedMid(doneSets, totalSets, seq);
-          if (!announceAlive(seq)) return;
-          await sleep(180);
-          if (!announceAlive(seq)) return;
-        }
         const next = step.nextName || "";
         if (next) warmFaTts(next).catch(() => {});
         await speakNextMoveName(next, seq);
@@ -3528,77 +3549,210 @@
 
   function moveCountPhrase(n) {
     const k = Math.max(0, Math.round(Number(n) || 0));
-    return faNum(k) + " حرکت";
+    return faNum(k) + " تا حرکت کامل";
   }
 
-  function workStatsFromSteps(steps) {
+  function estimateCalories(workSec) {
+    // تمرین مداری تقریبی — حدود هفت و نیم کالری در دقیقه کار
+    const sec = Math.max(0, Math.round(Number(workSec) || 0));
+    return Math.max(0, Math.round((sec / 60) * 7.5));
+  }
+
+  function estimateWalkMinutes(kcal) {
+    // پیاده‌روی معمولی حدود چهار کالری در دقیقه
+    return Math.max(0, Math.round((Number(kcal) || 0) / 4));
+  }
+
+  function workStatsFromSteps(steps, upToIndex) {
     const list = Array.isArray(steps) ? steps : [];
-    const works = list.filter((s) => s && s.kind === "work");
-    const rounds = works.length ? Math.round(Number(works[0].rounds) || 0) : 0;
-    const moveCount = works.length ? Math.round(Number(works[0].moveCount) || 0) : 0;
+    const slice =
+      upToIndex == null
+        ? list
+        : list.slice(0, Math.max(0, Math.round(Number(upToIndex) || 0) + 1));
+    const works = slice.filter((s) => s && s.kind === "work");
+    const allWorks = list.filter((s) => s && s.kind === "work");
+    const rounds = allWorks.length
+      ? Math.round(Number(allWorks[0].rounds) || 0)
+      : 0;
+    const perSet = allWorks.length
+      ? Math.round(Number(allWorks[0].moveCount) || 0)
+      : 0;
+    const totalMoves = works.length;
     // فقط زمان تمرین — استراحت حساب نشود
-    const workSec = works.reduce((a, s) => a + Math.max(0, Math.round(Number(s.dur) || 0)), 0);
-    return { rounds, moveCount, workSec };
+    const workSec = works.reduce(
+      (a, s) => a + Math.max(0, Math.round(Number(s.dur) || 0)),
+      0
+    );
+    const calories = estimateCalories(workSec);
+    const walkMin = estimateWalkMinutes(calories);
+    return {
+      rounds,
+      perSet,
+      totalMoves,
+      moveCount: totalMoves,
+      workSec,
+      calories,
+      walkMin
+    };
   }
 
   async function speakSetPhrase(text, seq) {
     const key = String(text || "").replace(/\s+/g, " ").trim();
     if (!key) return false;
     if (seq != null && !announceAlive(seq)) return false;
-    // اول بلاب+WebAudio (عبور خودکار بدون لمس)
+    unlockAudio();
+    startBgKeepAlive();
+    await ensureAudioCtxRunning();
+    // آمار را بلند و بدون وابستگی به لمس بگو
+    let blob = readySpeakBlobs.get(key) || null;
+    if (!blob) {
+      try {
+        blob = await loadDynFaFromCache(key);
+      } catch {}
+    }
+    if (!blob) {
+      try {
+        blob = await Promise.race([
+          cacheCloudEdgeBlob(key),
+          sleep(3500).then(() => null)
+        ]);
+      } catch {}
+    }
+    if (blob && (seq == null || announceAlive(seq))) {
+      readySpeakBlobs.set(key, blob);
+      let ok = await playBlobViaCtx(blob, 1);
+      if (ok) return true;
+      ok = await playBlobSticky(blob, 1);
+      if (ok) return true;
+    }
+    if (seq != null && !announceAlive(seq)) return false;
     let ok = await speakNameNow(key, 1);
     if (!ok && (seq == null || announceAlive(seq))) {
       ok = await playCloudEdgeTts(key, 1, EDGE_TTS_VOICE_FA);
     }
-    if (!ok && (seq == null || announceAlive(seq)) && recentGesture(2500)) {
+    if (!ok && (seq == null || announceAlive(seq))) {
       ok = await speakFaAny(key, 1);
     }
     return !!ok;
   }
 
-  async function speakSetCompletedMid(completed, totalSets, seq) {
+  async function speakSetCompletedMid(completed, totalSets, stats, seq) {
     const n = Math.max(1, Math.round(Number(completed) || 0));
     const total = Math.max(n, Math.round(Number(totalSets) || n));
+    const s = stats || {};
+    const moves = Math.max(0, Math.round(Number(s.totalMoves || s.moveCount) || 0));
+    const workSec = Math.max(0, Math.round(Number(s.workSec) || 0));
+    const calories = Math.max(
+      0,
+      Math.round(Number(s.calories != null ? s.calories : estimateCalories(workSec)) || 0)
+    );
+    const walkMin = Math.max(
+      0,
+      Math.round(Number(s.walkMin != null ? s.walkMin : estimateWalkMinutes(calories)) || 0)
+    );
     if (seq != null && !announceAlive(seq)) return;
     unlockAudio();
     startBgKeepAlive();
     await ensureAudioCtxRunning();
-    beepCheerMid();
-    await sleep(280);
-    if (seq != null && !announceAlive(seq)) return;
+    // عالی و حرکت بعد قبلاً گفته شده — اینجا آمار ست
     await speakSetPhrase("آفرین", seq);
     if (seq != null && !announceAlive(seq)) return;
     await sleep(120);
-    await speakSetPhrase(faNum(n) + " ست از " + faNum(total) + " ست را رفتی", seq);
+    await speakSetPhrase(
+      faNum(n) + " ست از " + faNum(total) + " ست تمام شد",
+      seq
+    );
+    if (seq != null && !announceAlive(seq)) return;
+    if (moves > 0) {
+      await sleep(140);
+      await speakSetPhrase("تا اینجا " + moveCountPhrase(moves), seq);
+    }
+    if (seq != null && !announceAlive(seq)) return;
+    if (workSec > 0) {
+      await sleep(140);
+      await speakSetPhrase("جمع تمرین " + timePhrase(workSec), seq);
+    }
+    if (seq != null && !announceAlive(seq)) return;
+    if (calories > 0) {
+      await sleep(140);
+      await speakSetPhrase("حدود " + faNum(calories) + " کالری", seq);
+    }
+    if (seq != null && !announceAlive(seq)) return;
+    if (walkMin > 0) {
+      await sleep(140);
+      await speakSetPhrase(
+        "معادل حدود " + faNum(walkMin) + " دقیقه پیاده‌روی",
+        seq
+      );
+    }
   }
 
   async function speakDone(stats) {
     return queueAnnounce(async (seq) => {
       const s = stats || {};
       const n = Math.max(1, Math.round(Number(s.rounds) || 0));
-      const moves = Math.max(0, Math.round(Number(s.moveCount) || 0));
+      const moves = Math.max(
+        0,
+        Math.round(Number(s.totalMoves != null ? s.totalMoves : s.moveCount) || 0)
+      );
+      const perSet = Math.max(0, Math.round(Number(s.perSet) || 0));
       const workSec = Math.max(0, Math.round(Number(s.workSec) || 0));
+      const calories = Math.max(
+        0,
+        Math.round(Number(s.calories != null ? s.calories : estimateCalories(workSec)) || 0)
+      );
+      const walkMin = Math.max(
+        0,
+        Math.round(Number(s.walkMin != null ? s.walkMin : estimateWalkMinutes(calories)) || 0)
+      );
       unlockAudio();
       startBgKeepAlive();
       await ensureAudioCtxRunning();
       beepCheerFinal();
-      await sleep(900);
+      await sleep(1000);
       if (seq != null && !announceAlive(seq)) return;
-      // تکه‌تکه تا آخر «ست» نخورد
-      await speakSetPhrase("آفرین، تمام شد", seq);
+      // آمار کامل و بلند
+      await speakSetPhrase("آفرین، تمرین تمام شد", seq);
       if (seq != null && !announceAlive(seq)) return;
-      await sleep(220);
-      await speakSetPhrase(setCountPhrase(n), seq);
+      await sleep(260);
+      await speakSetPhrase("شما " + setCountPhrase(n) + " انجام دادید", seq);
       if (seq != null && !announceAlive(seq)) return;
       if (moves > 0) {
-        await sleep(180);
-        await speakSetPhrase(moveCountPhrase(moves), seq);
+        await sleep(240);
+        let moveLine = "و " + moveCountPhrase(moves);
+        if (perSet > 0 && n > 1) {
+          moveLine +=
+            ". یعنی " + faNum(n) + " ست، هر ست " + faNum(perSet) + " حرکت";
+        }
+        await speakSetPhrase(moveLine, seq);
       }
       if (seq != null && !announceAlive(seq)) return;
       if (workSec > 0) {
-        await sleep(180);
-        await speakSetPhrase("جمع تمرین " + timePhrase(workSec), seq);
+        await sleep(240);
+        await speakSetPhrase(
+          "مجموعاً " + timePhrase(workSec) + " تمرین کردید",
+          seq
+        );
       }
+      if (seq != null && !announceAlive(seq)) return;
+      if (calories > 0) {
+        await sleep(240);
+        await speakSetPhrase(
+          "حدود " + faNum(calories) + " کالری سوزاندید",
+          seq
+        );
+      }
+      if (seq != null && !announceAlive(seq)) return;
+      if (walkMin > 0) {
+        await sleep(240);
+        await speakSetPhrase(
+          "معادل حدود " + faNum(walkMin) + " دقیقه پیاده‌روی",
+          seq
+        );
+      }
+      if (seq != null && !announceAlive(seq)) return;
+      await sleep(220);
+      await speakSetPhrase("خیلی عالی بود. آفرین", seq);
     });
   }
 
@@ -4161,8 +4315,14 @@
     const msg = $("#doneMsg");
     if (msg) {
       const bits = ["آفرین، تمام شد", toFaDigits(rounds) + " ست"];
-      if (stats.moveCount) bits.push(toFaDigits(stats.moveCount) + " حرکت");
+      if (stats.totalMoves || stats.moveCount) {
+        bits.push(toFaDigits(stats.totalMoves || stats.moveCount) + " حرکت");
+      }
       if (stats.workSec) bits.push(timePhrase(stats.workSec));
+      if (stats.calories) bits.push("حدود " + toFaDigits(stats.calories) + " کالری");
+      if (stats.walkMin) {
+        bits.push("معادل " + toFaDigits(stats.walkMin) + " دقیقه پیاده‌روی");
+      }
       msg.textContent = bits.join(" · ");
     }
     speakDone(stats).finally(() => {
