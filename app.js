@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "145";
+  const APP_VER = "146";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -3235,6 +3235,37 @@
     }
   }
 
+  async function speakNameViaCtx(name, vol) {
+    const nm = normSpeakKey(name);
+    if (!nm || soundMuted) return false;
+    const v = vol == null ? 1 : vol;
+    unlockAudio();
+    startBgKeepAlive();
+    await ensureAudioCtxRunning();
+    let blob = readySpeakBlobs.get(nm) || null;
+    if (!blob) {
+      try {
+        blob = await loadDynFaFromCache(nm);
+      } catch {}
+    }
+    if (!blob) {
+      try {
+        blob = await Promise.race([
+          cacheCloudEdgeBlob(nm),
+          sleep(4000).then(() => null)
+        ]);
+      } catch {}
+    }
+    if (blob) {
+      readySpeakBlobs.set(nm, blob);
+      let ok = await playBlobViaCtx(blob, v);
+      if (ok) return true;
+      ok = await playBlobSticky(blob, v);
+      if (ok) return true;
+    }
+    return false;
+  }
+
   async function speakNextMoveName(name, seq) {
     const raw = String(name || "").replace(/\s+/g, " ").trim();
     const nm = normSpeakKey(raw);
@@ -3243,47 +3274,38 @@
     const alive = () =>
       soundAlive(gen, tok) && (seq == null || announceAlive(seq));
     if (!alive()) return false;
+    unlockLikeNextButton();
+    await ensureAudioCtxRunning();
     startBgKeepAlive();
     if (nm) {
       primedExpectName = nm;
       cacheCloudEdgeBlob(nm).catch(() => {});
     }
 
-    // بکگراند: فقط مسیر چسبان (فایل محلی + بلاب کش)
+    // بکگراند: چسبان + WebAudio
     if (document.hidden) {
       let pref = await playUrlSticky(VOICE_BASE + "phrase-next.mp3" + VOICE_Q, 1);
-      if (!alive()) return false;
-      if (!pref) pref = await speakNameNow("حرکت بعد", 1);
+      if (!pref && alive()) pref = await playVoiceFile("phrase-next.mp3", 1);
       if (!alive()) return false;
       if (!nm) return !!pref;
       await sleep(100);
       if (!alive()) return false;
-      let blob = null;
-      try {
-        blob = await loadDynFaFromCache(nm);
-      } catch {}
-      if (!blob) {
-        try {
-          blob = await cacheCloudEdgeBlob(nm);
-        } catch {}
-      }
-      if (!alive()) return false;
-      let said = false;
-      if (blob) said = await playBlobSticky(blob, 1);
-      if (!said && alive()) said = await speakNameNow(nm, 1);
+      let said = await speakNameViaCtx(nm, 1);
+      if (!said && alive()) said = await speakMoveNameOnly(nm, 1);
       return !!said;
     }
 
+    // پیش‌زمینه / عبور خودکار: اول کلیپ آفلاین (WebAudio)، بعد اسم
     let pref = await playVoiceFile("phrase-next.mp3", 1);
     if (!alive()) return false;
-    if (!pref) pref = await speakFaAny("حرکت بعد", 1);
+    if (!pref) pref = await speakSetPhrase("حرکت بعد", seq, 1);
     if (!alive()) return false;
     if (!nm) return !!pref;
     await sleep(90);
     if (!alive()) return false;
-    unlockLikeNextButton();
-    let said = await speakNameNow(nm, 1);
+    let said = await speakNameViaCtx(nm, 1);
     if (!said && alive()) said = await speakMoveNameOnly(nm, 1);
+    if (!said && alive()) said = await speakSetPhrase(nm, seq, 1);
     if (alive() && nm) {
       cacheCloudEdgeBlob(nm).catch(() => {});
       ensurePrimedFor(nm).catch(() => {});
@@ -3378,26 +3400,32 @@
         if (primedExpectName === nm) clearPrimedWork();
         return;
       }
+      unlockLikeNextButton();
+      await ensureAudioCtxRunning();
       startBgKeepAlive();
       const nextEarly = isRest ? step.nextName || "" : "";
       if (nextEarly) {
         cacheCloudEdgeBlob(normSpeakKey(nextEarly)).catch(() => {});
         warmFaTts(nextEarly).catch(() => {});
+        ensureReadySpeak(normSpeakKey(nextEarly)).catch(() => {});
+      }
+      if (step.kind === "rest-set") {
+        // بین ست: بوق تبریک + آفرین + تعداد ست + حرکت بعد (حتماً WebAudio)
+        const doneSets = Math.max(1, Math.round(Number(step.round) || 1));
+        const totalSets = Math.max(doneSets, Math.round(Number(step.rounds) || doneSets));
+        await speakSetCompletedMid(doneSets, totalSets, seq);
+        if (!announceAlive(seq)) return;
+        await sleep(180);
+        if (!announceAlive(seq)) return;
+        const next = step.nextName || "";
+        if (next) warmFaTts(next).catch(() => {});
+        await speakNextMoveName(next, seq);
+        return;
       }
       beepSoftRing(0);
-      const restGap = step.kind === "rest-set" ? 200 : 120;
-      await sleep(restGap);
+      await sleep(120);
       if (!announceAlive(seq)) return;
       if (isRest) {
-        // استراحت ست: اول تبریک ست تمام‌شده، بعد حرکت بعد
-        if (step.kind === "rest-set") {
-          const doneSets = Math.max(1, Math.round(Number(step.round) || 1));
-          const totalSets = Math.max(doneSets, Math.round(Number(step.rounds) || doneSets));
-          await speakSetCompletedMid(doneSets, totalSets, seq);
-          if (!announceAlive(seq)) return;
-          await sleep(200);
-          if (!announceAlive(seq)) return;
-        }
         const next = step.nextName || "";
         if (next) warmFaTts(next).catch(() => {});
         await speakNextMoveName(next, seq);
@@ -3462,28 +3490,69 @@
     if (!key) return false;
     if (seq != null && !announceAlive(seq)) return false;
     const v = vol == null ? 1 : Math.max(0.85, Math.min(1, vol));
-    // اول بلاب+WebAudio (عبور خودکار بدون لمس) — بلند
-    let ok = await speakNameNow(key, v);
-    if (!ok && (seq == null || announceAlive(seq))) {
-      ok = await playCloudEdgeTts(key, v, EDGE_TTS_VOICE_FA);
+    unlockAudio();
+    startBgKeepAlive();
+    await ensureAudioCtxRunning();
+    // بین ست‌ها لمس نیست — فقط کش/ابر + WebAudio (نه HTML تازه، نه انتظار ۹ ثانیه‌ای)
+    let blob = readySpeakBlobs.get(key) || null;
+    if (!blob) {
+      try {
+        blob = await loadDynFaFromCache(key);
+      } catch {}
     }
-    if (!ok && (seq == null || announceAlive(seq))) {
-      ok = await speakFaAny(key, v);
+    if (blob) {
+      readySpeakBlobs.set(key, blob);
+      let ok = await playBlobViaCtx(blob, v);
+      if (ok) return true;
+      if (seq != null && !announceAlive(seq)) return false;
+      ok = await playBlobSticky(blob, v);
+      if (ok) return true;
     }
+    if (seq != null && !announceAlive(seq)) return false;
+    try {
+      const fetched = await Promise.race([
+        cacheCloudEdgeBlob(key),
+        sleep(3500).then(() => null)
+      ]);
+      if (fetched && (seq == null || announceAlive(seq))) {
+        readySpeakBlobs.set(key, fetched);
+        let ok = await playBlobViaCtx(fetched, v);
+        if (ok) return true;
+        ok = await playBlobSticky(fetched, v);
+        if (ok) return true;
+      }
+    } catch {}
+    ensureReadySpeak(key).catch(() => {});
+    if (seq != null && !announceAlive(seq)) return false;
+    let ok = await speakFaAny(key, v);
+    if (ok) return true;
+    if (seq != null && !announceAlive(seq)) return false;
+    ok = await speakSynthLang(key, v, "fa");
     return !!ok;
   }
 
   async function speakSetCompletedMid(completed, totalSets, seq) {
-    // وسط ست‌ها: مثلاً «آفرین. یک ست از چهار ست را رفتی»
+    // وسط ست‌ها — تکه‌تکه تا بدون لمس هم شنیده شود
     const n = Math.max(1, Math.round(Number(completed) || 0));
     const total = Math.max(n, Math.round(Number(totalSets) || n));
     if (seq != null && !announceAlive(seq)) return;
+    unlockLikeNextButton();
+    await ensureAudioCtxRunning();
     beepCheerMid();
-    await sleep(320);
+    await sleep(280);
     if (seq != null && !announceAlive(seq)) return;
-    const phrase =
-      "آفرین. " + faNum(n) + " ست از " + faNum(total) + " ست را رفتی";
-    await speakSetPhrase(phrase, seq, 1);
+    // کلیپ آفلاین اول — حتماً چیزی پخش شود
+    let heard = await playVoiceFile("cheer-ali.mp3", 1);
+    if (!heard && (seq == null || announceAlive(seq))) {
+      heard = await speakSetPhrase("آفرین", seq, 1);
+    }
+    if (seq != null && !announceAlive(seq)) return;
+    await sleep(140);
+    await speakSetPhrase(
+      faNum(n) + " ست از " + faNum(total) + " ست را رفتی",
+      seq,
+      1
+    );
   }
 
   async function speakDone(stats) {
@@ -3973,7 +4042,7 @@
     speakAfterAdvanceTimer = setTimeout(() => {
       speakAfterAdvanceTimer = 0;
       if (!run || run.i !== phaseIndex) return;
-      if (soundGen !== myGen || speakToken !== myTok || announceSeq !== mySeq) return;
+      if (announceSeq !== mySeq) return;
       stopBeep();
       killAllSources();
       stopVoiceFile();
@@ -3981,8 +4050,8 @@
       startBgKeepAlive();
       armStickySilenceLoop().catch(() => {});
       if (!run || run.i !== phaseIndex) return;
-      if (soundGen !== myGen || speakToken !== myTok || announceSeq !== mySeq) return;
-      speakPhase(step);
+      if (announceSeq !== mySeq) return;
+      speakPhase(run.steps[run.i] || step);
     }, 220);
     loop();
   }
