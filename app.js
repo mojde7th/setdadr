@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "156";
+  const APP_VER = "157";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -1320,9 +1320,9 @@
   async function playBlobOnBgKeep(blob, vol) {
     if (!blob || soundMuted) return false;
     const gen = soundGen;
-    const alive = () => gen === soundGen && !soundMuted;
+    const tok = speakToken;
     startBgKeepAlive();
-    if (!bgKeepAudio || !alive()) return false;
+    if (!bgKeepAudio || !soundAlive(gen, tok)) return false;
     const a = bgKeepAudio;
     const url = URL.createObjectURL(blob);
     try {
@@ -1339,7 +1339,7 @@
       if (p && typeof p.then === "function") {
         await p.catch(() => {});
       }
-      if (!alive()) return false;
+      if (!soundAlive(gen, tok)) return false;
       await new Promise((resolve) => {
         let done = false;
         const fin = () => {
@@ -1351,7 +1351,7 @@
         a.onerror = () => fin();
         setTimeout(fin, 12000);
       });
-      return alive();
+      return soundAlive(gen, tok);
     } catch {
       return false;
     } finally {
@@ -1371,13 +1371,14 @@
     }
   }
 
-  // تلفظ سخت بدون لمس — فقط با soundGen باطل شود، نه speakToken
+  // تلفظ سخت بدون لمس — WebAudio + HTML نگه‌دارنده
   async function speakHardNameViaCtx(name, vol) {
     const nm = normSpeakKey(name);
     if (!nm || soundMuted) return false;
     const v = vol == null ? 1 : vol;
     const gen = soundGen;
-    const alive = () => gen === soundGen && !soundMuted;
+    const tok = speakToken;
+    const alive = () => soundAlive(gen, tok);
     unlockAudio();
     startBgKeepAlive();
     startSilentCtxKeep();
@@ -1404,13 +1405,12 @@
     primedExpectName = nm;
     await primeMoveAudio(nm, blob).catch(() => {});
     if (!alive()) return false;
-    // اول بافر پرایم (WebAudio)، بعد نگه‌دارنده، بعد viaCtx
-    let ok = false;
-    if (primedWorkName === nm && primedWorkAudioBuffer) {
+    // اول HTML آنلاک (مثل دکمهٔ بعدی پایدار می‌ماند)، بعد WebAudio
+    let ok = await playBlobOnBgKeep(blob, v);
+    if (!ok && alive()) ok = await playBlobViaCtx(blob, v);
+    if (!ok && alive() && primedWorkName === nm) {
       ok = await playPrimedWorkName(nm, v);
     }
-    if (!ok && alive()) ok = await playBlobViaCtx(blob, v);
-    if (!ok && alive()) ok = await playBlobOnBgKeep(blob, v);
     return !!ok;
   }
 
@@ -1499,15 +1499,15 @@
       const ios = isIOSLike();
       const o = opts || {};
       const wantEn = lang === "en";
-      // توکن سراسری را عوض نکن — وگرنه تلفظ خودکار قطع می‌شود
-      const gen = soundGen;
+      speakToken += 1;
+      const tok = speakToken;
       if (!ios && !o.noCancel) {
         try {
           speechSynthesis.cancel();
         } catch {}
       }
       setTimeout(() => {
-        if (gen !== soundGen || soundMuted) {
+        if (tok !== speakToken) {
           resolve(false);
           return;
         }
@@ -2564,46 +2564,43 @@
         step.kind === "work" && step.name ? warmFaTts(step.name) : Promise.resolve();
       buzz(step.kind === "work" ? [80, 35, 90] : [55, 30, 70]);
       if (step.kind === "work") {
-        // بوق کوتاه، بعد تلفظ سخت — فقط announceSeq/soundGen باطل کند
+        // بوق کوتاه، بعد تلفظ سخت (WebAudio) — بعدی و خودکار یکی
         startBgKeepAlive();
-        startSilentCtxKeep();
         beepSoftRing(0);
         const nm = normSpeakKey(step.name);
         const gen = soundGen;
+        const tok = speakToken;
         if (nm) {
           primedExpectName = nm;
           warmWork.catch(() => {});
           ensurePrimedFor(nm).catch(() => {});
           cacheCloudEdgeBlob(nm).catch(() => {});
         }
-        await sleep(280);
-        if (!announceAlive(seq) || gen !== soundGen) return;
+        await sleep(350);
+        if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
         unlockAudio();
-        startSilentCtxKeep();
         try {
           if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
         } catch {}
         if (!nm) return;
+        // صبر کوتاه برای پرایم
         try {
-          await Promise.race([ensurePrimedFor(nm), sleep(2200)]);
+          await Promise.race([ensurePrimedFor(nm), sleep(2500)]);
         } catch {}
-        if (!announceAlive(seq) || gen !== soundGen) return;
+        if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
         let ok = false;
         if (primedWorkName === nm && primedWorkAudioBuffer) {
           ok = await playPrimedWorkName(nm, 1);
         }
-        if (!ok && announceAlive(seq) && gen === soundGen) {
+        if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
           ok = await speakHardNameViaCtx(nm, 1);
         }
-        if (!ok && announceAlive(seq) && gen === soundGen) {
+        if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
           ok = await speakMoveNameOnly(nm, 1);
         }
-        if (!ok && announceAlive(seq) && gen === soundGen) {
+        if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
           ok = await speakFaAny(nm, 1);
         }
-        try {
-          if (window.__setdadrTest) window.__setdadrTest.lastAutoSpeak = { nm, ok: !!ok };
-        } catch {}
         if (primedExpectName === nm) clearPrimedWork();
         return;
       }
@@ -3238,20 +3235,6 @@
       run.announced[softKey] = true;
       beepSoftDouble();
       buzz([90, 40, 120, 40, 140]);
-      // عبور خودکار نزدیک است — اسم فاز بعد را از قبل بکش
-      try {
-        const nxt = run.steps[run.i + 1];
-        if (nxt) {
-          const hint =
-            nxt.kind === "work"
-              ? normSpeakKey(nxt.name || "")
-              : normSpeakKey(nxt.nextName || "");
-          if (hint) {
-            cacheCloudEdgeBlob(hint).catch(() => {});
-            ensurePrimedFor(hint).catch(() => {});
-          }
-        }
-      } catch {}
     }
   }
 
@@ -3633,33 +3616,6 @@
   paintMuteBtn();
   const verEl = $("#appVer");
   if (verEl) verEl.textContent = "v" + APP_VER;
-  // هوک تست خودکار (بدون UI)
-  try {
-    window.__setdadrTest = {
-      ver: () => APP_VER,
-      hasRun: () => !!run,
-      audioState: () => ({
-        ctx: audioCtx ? audioCtx.state : "none",
-        soundGen,
-        speakToken,
-        bgKeep: !!(bgKeepAudio && !bgKeepAudio.paused),
-        silentKeep: !!silentCtxKeep,
-        primed: primedWorkName || ""
-      }),
-      speakHard: (n) => speakHardNameViaCtx(n, 1),
-      autoAdvance: () => {
-        if (!run) return false;
-        advance(false);
-        return true;
-      },
-      startFirstPlan: () => {
-        const p = state.plans && state.plans[0];
-        if (!p) return false;
-        startRun(p.id);
-        return true;
-      }
-    };
-  } catch {}
   scrubStaleTunnelCache();
   try {
     if (window.SETDADR_TTS_API && !/trycloudflare\.com/i.test(String(window.SETDADR_TTS_API))) {
