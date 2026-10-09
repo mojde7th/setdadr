@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "150";
+  const APP_VER = "151";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -3472,28 +3472,36 @@
         ensureReadySpeak(normSpeakKey(nextEarly)).catch(() => {});
       }
       if (step.kind === "rest-set") {
-        // بین ست: حرکت بعد زود → عالی → آمار
+        // شروع استراحت → عالی → آمار → حرکت بعد
         const doneSets = Math.max(1, Math.round(Number(step.round) || 1));
         const totalSets = Math.max(
           doneSets,
           Math.round(Number(step.rounds) || doneSets)
         );
-        beepCheerMid();
-        await sleep(140);
-        if (!announceAlive(seq)) return;
         const next = step.nextName || "";
-        if (next) warmFaTts(next).catch(() => {});
-        await speakNextMoveName(next, seq);
+        if (next) {
+          warmFaTts(next).catch(() => {});
+          ensureReadySpeak(normSpeakKey(next)).catch(() => {});
+        }
+        beepCheerMid();
+        await sleep(160);
+        if (!announceAlive(seq)) return;
+        await speakLoudPhrase("شروع استراحت بین ست", seq);
+        if (!announceAlive(seq)) return;
+        await sleep(100);
+        // عالی — کلیپ آفلاین اول
+        let ali = await playVoiceFile("cheer-ali.mp3", 1);
+        if (!ali) await speakCheerOnly(seq);
         if (!announceAlive(seq)) return;
         await sleep(120);
-        await speakCheerOnly(seq);
-        if (!announceAlive(seq)) return;
-        await sleep(140);
         const midStats =
           run && run.steps
             ? workStatsFromSteps(run.steps, Math.max(0, run.i - 1))
             : null;
         await speakSetCompletedMid(doneSets, totalSets, midStats, seq);
+        if (!announceAlive(seq)) return;
+        await sleep(120);
+        await speakNextMoveName(next, seq);
         return;
       }
       beepSoftRing(0);
@@ -3587,7 +3595,8 @@
     };
   }
 
-  async function speakSetPhrase(text, seq) {
+  // آمار / تبریک — کوتاه، WebAudio اول، بدون گیر ۹ ثانیه‌ای
+  async function speakLoudPhrase(text, seq) {
     const key = String(text || "").replace(/\s+/g, " ").trim();
     if (!key) return false;
     if (seq != null && !announceAlive(seq)) return false;
@@ -3604,7 +3613,7 @@
       try {
         blob = await Promise.race([
           cacheCloudEdgeBlob(key),
-          sleep(3500).then(() => null)
+          sleep(2200).then(() => null)
         ]);
       } catch {}
     }
@@ -3612,18 +3621,25 @@
       readySpeakBlobs.set(key, blob);
       let ok = await playBlobViaCtx(blob, 1);
       if (ok) return true;
+      if (seq != null && !announceAlive(seq)) return false;
       ok = await playBlobSticky(blob, 1);
       if (ok) return true;
     }
     if (seq != null && !announceAlive(seq)) return false;
-    let ok = await speakNameNow(key, 1);
-    if (!ok && (seq == null || announceAlive(seq))) {
-      ok = await playCloudEdgeTts(key, 1, EDGE_TTS_VOICE_FA);
-    }
-    if (!ok && (seq == null || announceAlive(seq))) {
-      ok = await speakFaAny(key, 1);
-    }
+    let ok = await speakSynthLang(key, 1, "fa");
+    if (ok) return true;
+    if (seq != null && !announceAlive(seq)) return false;
+    ok = await speakFaAny(key, 1);
+    if (ok) return true;
+    if (seq != null && !announceAlive(seq)) return false;
+    // آخرین تلاش — بدون انتظار طولانی ensureReadySpeak
+    ok = await playCloudEdgeTts(key, 1, EDGE_TTS_VOICE_FA);
+    ensureReadySpeak(key).catch(() => {});
     return !!ok;
+  }
+
+  async function speakSetPhrase(text, seq) {
+    return speakLoudPhrase(text, seq);
   }
 
   async function speakSetCompletedMid(completed, totalSets, stats, seq) {
@@ -3677,71 +3693,76 @@
   }
 
   async function speakDone(stats) {
-    return queueAnnounce(async (seq) => {
-      const s = stats || {};
-      const n = Math.max(1, Math.round(Number(s.rounds) || 0));
-      const moves = Math.max(
-        0,
-        Math.round(Number(s.totalMoves != null ? s.totalMoves : s.moveCount) || 0)
+    // پایان: بدون وابستگی شکننده به announceSeq قبلی
+    const s = stats || {};
+    const n = Math.max(1, Math.round(Number(s.rounds) || 0));
+    const moves = Math.max(
+      0,
+      Math.round(Number(s.totalMoves != null ? s.totalMoves : s.moveCount) || 0)
+    );
+    const perSet = Math.max(0, Math.round(Number(s.perSet) || 0));
+    const workSec = Math.max(0, Math.round(Number(s.workSec) || 0));
+    const calories = Math.max(
+      0,
+      Math.round(Number(s.calories != null ? s.calories : estimateCalories(workSec)) || 0)
+    );
+    const walkMin = Math.max(
+      0,
+      Math.round(Number(s.walkMin != null ? s.walkMin : estimateWalkMinutes(calories)) || 0)
+    );
+    const myGen = soundGen;
+    const alive = () => myGen === soundGen && !soundMuted;
+    unlockAudio();
+    startBgKeepAlive();
+    await ensureAudioCtxRunning();
+    armStickySilenceLoop().catch(() => {});
+    beepCheerFinal();
+    await sleep(900);
+    if (!alive()) return;
+    await speakLoudPhrase("آفرین، تمرین تمام شد", null);
+    if (!alive()) return;
+    await sleep(220);
+    await speakLoudPhrase("شما " + setCountPhrase(n) + " انجام دادید", null);
+    if (!alive()) return;
+    if (moves > 0) {
+      await sleep(200);
+      let moveLine = "و " + moveCountPhrase(moves);
+      if (perSet > 0 && n > 1) {
+        moveLine +=
+          ". یعنی " + faNum(n) + " ست، هر ست " + faNum(perSet) + " حرکت";
+      }
+      await speakLoudPhrase(moveLine, null);
+    }
+    if (!alive()) return;
+    if (workSec > 0) {
+      await sleep(200);
+      await speakLoudPhrase(
+        "مجموعاً " + timePhrase(workSec) + " تمرین کردید",
+        null
       );
-      const perSet = Math.max(0, Math.round(Number(s.perSet) || 0));
-      const workSec = Math.max(0, Math.round(Number(s.workSec) || 0));
-      const calories = Math.max(
-        0,
-        Math.round(Number(s.calories != null ? s.calories : estimateCalories(workSec)) || 0)
+    }
+    if (!alive()) return;
+    if (calories > 0) {
+      await sleep(200);
+      await speakLoudPhrase(
+        "حدود " + faNum(calories) + " کالری سوزاندید",
+        null
       );
-      const walkMin = Math.max(
-        0,
-        Math.round(Number(s.walkMin != null ? s.walkMin : estimateWalkMinutes(calories)) || 0)
+    }
+    if (!alive()) return;
+    if (walkMin > 0) {
+      await sleep(200);
+      await speakLoudPhrase(
+        "معادل حدود " + faNum(walkMin) + " دقیقه پیاده‌روی",
+        null
       );
-      unlockAudio();
-      startBgKeepAlive();
-      await ensureAudioCtxRunning();
-      beepCheerFinal();
-      await sleep(1000);
-      if (seq != null && !announceAlive(seq)) return;
-      await speakSetPhrase("آفرین، تمرین تمام شد", seq);
-      if (seq != null && !announceAlive(seq)) return;
-      await sleep(260);
-      await speakSetPhrase("شما " + setCountPhrase(n) + " انجام دادید", seq);
-      if (seq != null && !announceAlive(seq)) return;
-      if (moves > 0) {
-        await sleep(240);
-        let moveLine = "و " + moveCountPhrase(moves);
-        if (perSet > 0 && n > 1) {
-          moveLine +=
-            ". یعنی " + faNum(n) + " ست، هر ست " + faNum(perSet) + " حرکت";
-        }
-        await speakSetPhrase(moveLine, seq);
-      }
-      if (seq != null && !announceAlive(seq)) return;
-      if (workSec > 0) {
-        await sleep(240);
-        await speakSetPhrase(
-          "مجموعاً " + timePhrase(workSec) + " تمرین کردید",
-          seq
-        );
-      }
-      if (seq != null && !announceAlive(seq)) return;
-      if (calories > 0) {
-        await sleep(240);
-        await speakSetPhrase(
-          "حدود " + faNum(calories) + " کالری سوزاندید",
-          seq
-        );
-      }
-      if (seq != null && !announceAlive(seq)) return;
-      if (walkMin > 0) {
-        await sleep(240);
-        await speakSetPhrase(
-          "معادل حدود " + faNum(walkMin) + " دقیقه پیاده‌روی",
-          seq
-        );
-      }
-      if (seq != null && !announceAlive(seq)) return;
-      await sleep(220);
-      await speakSetPhrase("خیلی عالی بود. آفرین", seq);
-    });
+    }
+    if (!alive()) return;
+    await sleep(180);
+    let ali = await playVoiceFile("cheer-ali.mp3", 1);
+    if (!ali && alive()) {
+      await speakLoudPhrase("خیلی عالی بود. آفرین", null);
+    }
   }
 
   function bumpNumber(input, dir) {
@@ -4164,21 +4185,27 @@
     }
     unlockAudio();
     startBgKeepAlive();
+    armStickySilenceLoop().catch(() => {});
     const phaseIndex = run.i;
+    const isRestSet = step.kind === "rest-set";
     setTimeout(async () => {
       if (!run || run.i !== phaseIndex) return;
-      try {
-        await Promise.race([warmHint, sleep(2500)]);
-      } catch {}
+      // استراحت ست: زود اعلام کن؛ کار: کمی برای بلاب اسم صبر کن
+      if (!isRestSet) {
+        try {
+          await Promise.race([warmHint, sleep(1800)]);
+        } catch {}
+      }
       if (!run || run.i !== phaseIndex) return;
       stopBeep();
       killAllSources();
       stopVoiceFile();
       unlockAudio();
       startBgKeepAlive();
+      armStickySilenceLoop().catch(() => {});
       if (!run || run.i !== phaseIndex) return;
-      speakPhase(step);
-    }, 180);
+      speakPhase(run.steps[run.i] || step);
+    }, isRestSet ? 120 : 180);
     loop();
   }
 
@@ -4294,10 +4321,14 @@
     const steps = run && run.steps ? run.steps.slice() : [];
     const stats = workStatsFromSteps(steps);
     const rounds = stats.rounds || 0;
-    softCutForAdvance();
+    // فقط بوق/سورس قبلی را ببند — announceSeq را قبل از آمار نهایی نشکن
+    stopBeep();
+    stopVoiceFile();
+    killAllSources();
     unlockAudio();
     startBgKeepAlive();
     ensureAudioCtxRunning();
+    armStickySilenceLoop().catch(() => {});
     run = null;
     $("#doneFrac").innerHTML = toFaDigits(rounds) + "<span>/</span>" + toFaDigits(rounds);
     const msg = $("#doneMsg");
@@ -4313,10 +4344,14 @@
       }
       msg.textContent = bits.join(" · ");
     }
-    speakDone(stats).finally(() => {
-      setTimeout(() => stopBgKeepAlive(), 10000);
-    });
     show("done");
+    // آمار پایانی را جدا و بلند بخوان
+    Promise.resolve()
+      .then(() => speakDone(stats))
+      .catch(() => {})
+      .finally(() => {
+        setTimeout(() => stopBgKeepAlive(), 14000);
+      });
   }
 
   $("#btnNewPlan").addEventListener("click", () => openEdit(null));
