@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "135";
+  const APP_VER = "136";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -600,7 +600,6 @@
     speakAfterAdvanceTimer = setTimeout(async () => {
       speakAfterAdvanceTimer = 0;
       if (!run || run.i !== phaseIndex) return;
-      // یک‌بار قبل از اعلام نهایی تمیز کن — نه در هر ضربهٔ بعدی
       stopBeep();
       killAllSources();
       stopVoiceFile();
@@ -608,6 +607,10 @@
       startBgKeepAlive();
       try {
         await ensureAudioCtxRunning();
+      } catch {}
+      // عنصر چسبان را زنده نگه دار — پخش خودکار بدون لمس از همین می‌آید
+      try {
+        await armStickySilenceLoop();
       } catch {}
       if (warmHint) {
         try {
@@ -1047,7 +1050,8 @@
     try {
       if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
     } catch {}
-    if (document.hidden || !audioOutputOk()) {
+    // بدون لمس تازه (عبور خودکار): فقط چسبان — AudioContext اغلب معلق است
+    if (document.hidden || !audioOutputOk() || !recentGesture(4000)) {
       if (!cachedBeepUrl) cachedBeepUrl = makeBeepUrl();
       if (cachedBeepUrl) {
         playUrlSticky(cachedBeepUrl, 1).catch(() => {});
@@ -1778,8 +1782,15 @@
       if (!soundAlive(gen, tok)) return false;
       unlockAudio();
       await ensureAudioCtxRunning();
-      // بدون لمس تازه: اول بافر WebAudio (عبور خودکار)
-      if (!recentGesture(2500) && audioCtx) {
+      // بدون لمس: اول چسبان (همان مسیر پایدار بعدی)
+      if (!recentGesture(2500)) {
+        try {
+          await armStickySilenceLoop();
+        } catch {}
+        {
+          const okSt = await playUrlSticky(VOICE_BASE + rel + VOICE_Q, vol == null ? 1 : vol);
+          if (okSt && soundAlive(gen, tok)) return true;
+        }
         try {
           const buf = await loadVoiceBuffer(rel);
           if (buf && soundAlive(gen, tok)) {
@@ -1812,7 +1823,7 @@
           }
         } catch {}
       }
-      // با لمس یا اگر WebAudio نشد: HTML
+      // با لمس یا اگر چسبان نشد: HTML تازه
       {
         const htmlOk = await playVoiceFileHtml(rel, vol);
         if (!soundAlive(gen, tok)) return false;
@@ -2454,10 +2465,19 @@
   // عین کلیپ ثابت: Audio تازه در لحظهٔ پخش (نه عنصر پرایم‌شده با نسل قدیمی)
   async function playBlobLikeClip(blob, vol) {
     if (!blob || soundMuted) return false;
-    // عبور خودکار: اول WebAudio (لمس لازم ندارد)
+    // عبور خودکار: اول همان Audio چسبان آنلاک (مثل وقتی بعدی می‌زنی از قبل باز است)
     if (!recentGesture(2500)) {
-      const viaCtx = await playBlobViaCtx(blob, vol);
-      if (viaCtx) return true;
+      try {
+        await armStickySilenceLoop();
+      } catch {}
+      {
+        const okSticky = await playBlobSticky(blob, vol);
+        if (okSticky) return true;
+      }
+      {
+        const okCtx = await playBlobViaCtx(blob, vol);
+        if (okCtx) return true;
+      }
     }
     const url = URL.createObjectURL(blob);
     try {
@@ -2465,8 +2485,16 @@
       a._setdadrGen = soundGen;
       const ok = await playHtmlAudioEl(a, vol == null ? 1 : vol, 14000);
       if (ok) return true;
+      {
+        const okSticky = await playBlobSticky(blob, vol);
+        if (okSticky) return true;
+      }
       return await playBlobViaCtx(blob, vol);
     } catch {
+      try {
+        const okSticky = await playBlobSticky(blob, vol);
+        if (okSticky) return true;
+      } catch {}
       return await playBlobViaCtx(blob, vol);
     } finally {
       setTimeout(() => {
@@ -3976,14 +4004,10 @@
   function advance(fromSkip) {
     if (!run) return;
     const skip = !!fromSkip;
-    if (skip) {
-      // ضربه‌های پشت‌سرهم: فقط اعلام قبلی را باطل کن — لوله صدا را ۱۰ بار نکش
-      invalidateAnnounceOnly();
-      stopBeep();
-      skipBurstUntil = Date.now() + 700;
-    } else {
-      softCutForAdvance();
-    }
+    // خودکار و بعدی: یک مسیر — لولهٔ آنلاک را نکش (فرق قبلی همین بود)
+    invalidateAnnounceOnly();
+    stopBeep();
+    if (skip) skipBurstUntil = Date.now() + 700;
     run.i += 1;
     if (run.i >= run.steps.length) {
       clearSpeakAfterAdvance();
@@ -4009,9 +4033,9 @@
     }
     unlockAudio();
     startBgKeepAlive();
+    armStickySilenceLoop().catch(() => {});
     const phaseIndex = run.i;
-    // بعدی پشت‌سرهم: صبر کن تا ضربه تمام شود، بعد فقط برای فاز آخر حرف بزن
-    const delay = skip ? 520 : 200;
+    const delay = skip ? 520 : 120;
     schedulePhaseSpeak(step, phaseIndex, warmHint, delay);
     loop();
   }
