@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "143";
+  const APP_VER = "144";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -2566,14 +2566,17 @@
       a.loop = false;
       a.muted = false;
       a.volume = Math.max(0.35, Math.min(1, vol == null ? 1 : vol));
-      // همیشه src تازه — وگرنه صدای حرکت قبلی روی فاز جدید پخش می‌شود
-      try {
-        a.pause();
-      } catch {}
-      a.src = src;
-      try {
-        a.load();
-      } catch {}
+      // فقط وقتی آدرس عوض شده src بگذار — load هر بار آنلاک آی‌او‌اس را می‌کشد
+      if (a.src !== src) {
+        a.src = src;
+        try {
+          a.load();
+        } catch {}
+      } else {
+        try {
+          a.currentTime = 0;
+        } catch {}
+      }
     } catch {}
     return await new Promise((resolve) => {
       let done = false;
@@ -3068,15 +3071,23 @@
     armStickySilenceLoop().catch(() => {});
   }
 
-  // همان تلفظی که با دکمهٔ بعدی می‌آید — بعدی و خودکار یکی
-  async function pronounceLikeNextButton(name, vol) {
+  // مسیر پایدار دکمهٔ بعدی (نسخهٔ ۱۴۰) + بلاب چسبان برای عبور خودکار
+  async function pronounceMoveNow(name, vol) {
     const nm = normSpeakKey(name);
     if (!nm || soundMuted) return false;
     unlockLikeNextButton();
     const v = vol == null ? 1 : vol;
-    // اول بلاب/چسبان (بدون لمس هم می‌ماند)، بعد مسیر مستقیم بعدی
-    let ok = await speakNameNow(nm, v);
-    if (!ok) ok = await speakMoveNameOnly(nm, v);
+    const tapped = recentGesture(3000);
+    let ok = false;
+    if (document.hidden || !tapped) {
+      // خودکار / بکگراند: اول چسبان و بلاب آماده
+      ok = await speakNameNow(nm, v);
+      if (!ok) ok = await speakMoveNameOnly(nm, v);
+    } else {
+      // دکمهٔ بعدی: همان مسیر مستقیم قبلی
+      ok = await speakMoveNameOnly(nm, v);
+      if (!ok) ok = await speakNameNow(nm, v);
+    }
     if (!ok) ok = await playCloudEdgeTts(nm, v);
     if (!ok) ok = await speakFaAny(nm, v);
     return !!ok;
@@ -3319,7 +3330,7 @@
     if (!alive()) return false;
     // همان تلفظ دکمهٔ بعدی
     unlockLikeNextButton();
-    let said = await pronounceLikeNextButton(nm, 1);
+    let said = await pronounceMoveNow(nm, 1);
     if (alive() && nm) {
       cacheCloudEdgeBlob(nm).catch(() => {});
       ensurePrimedFor(nm).catch(() => {});
@@ -3377,28 +3388,23 @@
             }
           }
         } catch {}
-        // بعدی و خودکار: یک تابع تلفظ
+        // مثل نسخهٔ پایدار ۱۴۰: بوق، کمی صبر، تلفظ مستقیم
         if (nm) {
           cacheCloudEdgeBlob(nm).catch(() => {});
           warmFaTts(nm).catch(() => {});
           ensureReadySpeak(nm).catch(() => {});
         }
         unlockLikeNextButton();
-        await sleep(500);
+        await sleep(280);
         if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
         if (!nm) return;
-        try {
-          await Promise.race([ensureReadySpeak(nm), sleep(2000)]);
-        } catch {}
-        if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
         unlockLikeNextButton();
-        // اگر بین بوق و تلفظ دوباره بعدی زده شد، اسم فاز جاری را بگو
         const liveNm =
           run && run.steps[run.i] && run.steps[run.i].kind === "work"
             ? normSpeakKey(run.steps[run.i].name || "")
             : nm;
         if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
-        await pronounceLikeNextButton(liveNm || nm, 1);
+        await pronounceMoveNow(liveNm || nm, 1);
         if (primedExpectName === (liveNm || nm)) clearPrimedWork();
         return;
       }
@@ -3975,34 +3981,17 @@
       stopBeep();
       unlockLikeNextButton();
       speakPhase(step);
-    }, Math.max(120, delayMs || 380));
+    }, Math.max(80, delayMs || 280));
   }
 
   function advance(fromSkip) {
     if (!run) return;
     const skip = !!fromSkip;
-    // باطل کردن اعلام قبلی تا صدای حرکت عقب روی فاز جدید نماند
-    soundGen += 1;
-    announceSeq += 1;
-    speakToken += 1;
-    announceChain = Promise.resolve();
-    stopBeep();
-    stopVoiceFile();
-    killAllSources();
-    if (!skip) {
-      killAllHtmlAudio();
-    }
-    if (window.speechSynthesis) {
-      try {
-        speechSynthesis.cancel();
-      } catch {}
-    }
+    // قطع نرم: چسبان آنلاک‌شده را نکش (خودکار بدون لمس به آن نیاز دارد)
+    softCutForAdvance();
     clearPrimedWork();
     primedExpectName = "";
     clearSpeakAfterAdvance();
-    try {
-      armStickySilenceLoop();
-    } catch {}
 
     run.i += 1;
     if (run.i >= run.steps.length) {
@@ -4027,8 +4016,8 @@
       ensureReadySpeak(speakHint).catch(() => {});
     }
     unlockLikeNextButton();
-    // چندبار بعدی: صبر کن تا ضربه تمام شود، بعد فقط فاز آخر را بگو
-    scheduleSpeakCurrentPhase(skip ? 580 : 380);
+    // بعدی: زود بگو تا ژست لمس زنده بماند؛ چندضربه فقط آخرین فاز
+    scheduleSpeakCurrentPhase(skip ? 160 : 280);
     loop();
   }
 
