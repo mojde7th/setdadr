@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "134";
+  const APP_VER = "135";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -29,6 +29,8 @@
   let activeBeep = null;
   let startLock = false;
   let skipLock = false;
+  let speakAfterAdvanceTimer = 0;
+  let skipBurstUntil = 0;
   let speechWarmed = false;
   let voicePlayer = null;
   let announceSeq = 0;
@@ -559,25 +561,62 @@
     // keep-alive پس‌زمینه را قطع نکن — فقط با پایان/خروج/توقف
   }
 
-  // عبور فاز: HTML آنلاک را نکش — فقط منبع/بوق قبلی را ببند
-  function softCutForAdvance() {
+  // باطل کردن اعلام‌های در صف — بدون کشتن keep-alive
+  function invalidateAnnounceOnly() {
     soundGen += 1;
     announceSeq += 1;
     speakToken += 1;
     announceChain = Promise.resolve();
-    stopBeep();
-    stopVoiceFile();
-    killAllSources();
     if (window.speechSynthesis) {
       try {
         speechSynthesis.cancel();
       } catch {}
     }
+  }
+
+  // عبور فاز عادی: بوق/سورس قبلی را ببند، HTML آنلاک نمان
+  function softCutForAdvance() {
+    invalidateAnnounceOnly();
+    stopBeep();
+    stopVoiceFile();
+    killAllSources();
     try {
       if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
     } catch {}
     startBgKeepAlive();
     armStickySilenceLoop().catch(() => {});
+  }
+
+  function clearSpeakAfterAdvance() {
+    if (speakAfterAdvanceTimer) {
+      clearTimeout(speakAfterAdvanceTimer);
+      speakAfterAdvanceTimer = 0;
+    }
+  }
+
+  function schedulePhaseSpeak(step, phaseIndex, warmHint, delayMs) {
+    clearSpeakAfterAdvance();
+    const wait = Math.max(80, delayMs || 200);
+    speakAfterAdvanceTimer = setTimeout(async () => {
+      speakAfterAdvanceTimer = 0;
+      if (!run || run.i !== phaseIndex) return;
+      // یک‌بار قبل از اعلام نهایی تمیز کن — نه در هر ضربهٔ بعدی
+      stopBeep();
+      killAllSources();
+      stopVoiceFile();
+      unlockAudio();
+      startBgKeepAlive();
+      try {
+        await ensureAudioCtxRunning();
+      } catch {}
+      if (warmHint) {
+        try {
+          await Promise.race([warmHint, sleep(2000)]);
+        } catch {}
+      }
+      if (!run || run.i !== phaseIndex) return;
+      speakPhase(step);
+    }, wait);
   }
 
   async function playBlobViaCtx(blob, vol) {
@@ -3934,11 +3973,20 @@
     }
   }
 
-  function advance() {
+  function advance(fromSkip) {
     if (!run) return;
-    softCutForAdvance();
+    const skip = !!fromSkip;
+    if (skip) {
+      // ضربه‌های پشت‌سرهم: فقط اعلام قبلی را باطل کن — لوله صدا را ۱۰ بار نکش
+      invalidateAnnounceOnly();
+      stopBeep();
+      skipBurstUntil = Date.now() + 700;
+    } else {
+      softCutForAdvance();
+    }
     run.i += 1;
     if (run.i >= run.steps.length) {
+      clearSpeakAfterAdvance();
       finishRun();
       return;
     }
@@ -3949,7 +3997,6 @@
     run.prevLeftCeil = Math.ceil(step.dur);
     run.lastTick = performance.now();
     paintRun(false);
-    // نامی که باید گفته شود را فوری گرم کن (عبور خودکار بدون لمس)
     const speakHint =
       step.kind === "work"
         ? normSpeakKey(step.name || "")
@@ -3963,20 +4010,9 @@
     unlockAudio();
     startBgKeepAlive();
     const phaseIndex = run.i;
-    setTimeout(async () => {
-      if (!run || run.i !== phaseIndex) return;
-      try {
-        await Promise.race([warmHint, sleep(2500)]);
-      } catch {}
-      if (!run || run.i !== phaseIndex) return;
-      stopBeep();
-      killAllSources();
-      stopVoiceFile();
-      unlockAudio();
-      startBgKeepAlive();
-      if (!run || run.i !== phaseIndex) return;
-      speakPhase(step);
-    }, 180);
+    // بعدی پشت‌سرهم: صبر کن تا ضربه تمام شود، بعد فقط برای فاز آخر حرف بزن
+    const delay = skip ? 520 : 200;
+    schedulePhaseSpeak(step, phaseIndex, warmHint, delay);
     loop();
   }
 
@@ -4196,6 +4232,7 @@
     if (!run) return;
     run.paused = !run.paused;
     if (run.paused) {
+      clearSpeakAfterAdvance();
       stopLoop();
       stopAllSound();
       stopBgKeepAlive();
@@ -4220,18 +4257,20 @@
   $("#btnSkip").addEventListener("click", () => {
     if (!run || skipLock) return;
     skipLock = true;
+    // قفل کوتاه تا فاز جلو برود؛ اعلام صدا جمع می‌شود نه قطع‌قطع
     setTimeout(() => {
       skipLock = false;
-    }, 450);
+    }, 220);
     markGesture();
     unlockAudio();
     startBgKeepAlive();
     ensureAudioCtxRunning();
     run.skipped = (run.skipped || 0) + 1;
-    advance();
+    advance(true);
   });
 
   $("#btnAbort").addEventListener("click", () => {
+    clearSpeakAfterAdvance();
     stopLoop();
     stopAllSound();
     stopBgKeepAlive();
