@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "132";
+  const APP_VER = "133";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -516,6 +516,31 @@
     liveSources.clear();
   }
 
+  let lastGestureAt = 0;
+  function markGesture() {
+    lastGestureAt = Date.now();
+  }
+  function recentGesture(ms) {
+    return Date.now() - lastGestureAt < (ms != null ? ms : 2000);
+  }
+
+  async function ensureAudioCtxRunning() {
+    try {
+      unlockAudio();
+      if (!audioCtx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (AC) audioCtx = new AC();
+      }
+      if (!audioCtx) return false;
+      if (audioCtx.state === "suspended") {
+        await audioCtx.resume().catch(() => {});
+      }
+      return audioCtx.state === "running";
+    } catch {
+      return false;
+    }
+  }
+
   function stopAllSound() {
     // نسل صدا را عوض کن تا هر پخش/اعلام قبلی بی‌اثر شود
     soundGen += 1;
@@ -532,6 +557,75 @@
       } catch {}
     }
     // keep-alive پس‌زمینه را قطع نکن — فقط با پایان/خروج/توقف
+  }
+
+  // عبور فاز: HTML آنلاک را نکش — فقط منبع/بوق قبلی را ببند
+  function softCutForAdvance() {
+    soundGen += 1;
+    announceSeq += 1;
+    speakToken += 1;
+    announceChain = Promise.resolve();
+    stopBeep();
+    stopVoiceFile();
+    killAllSources();
+    if (window.speechSynthesis) {
+      try {
+        speechSynthesis.cancel();
+      } catch {}
+    }
+    try {
+      if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+    } catch {}
+    startBgKeepAlive();
+    armStickySilenceLoop().catch(() => {});
+  }
+
+  async function playBlobViaCtx(blob, vol) {
+    // بدون نیاز به لمس تازه — اگر AudioContext اول تمرین باز شده باشد
+    if (!blob || soundMuted) return false;
+    const gen = soundGen;
+    try {
+      const okCtx = await ensureAudioCtxRunning();
+      if (!okCtx || gen !== soundGen) return false;
+      const raw = await blob.arrayBuffer();
+      if (gen !== soundGen) return false;
+      const buf = await audioCtx.decodeAudioData(raw.slice(0));
+      if (gen !== soundGen) return false;
+      await new Promise((resolve) => {
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          resolve();
+        };
+        try {
+          const src = audioCtx.createBufferSource();
+          const g = audioCtx.createGain();
+          g.gain.value = Math.max(0.25, Math.min(1, vol == null ? 1 : vol));
+          src.buffer = buf;
+          src.connect(g);
+          g.connect(audioCtx.destination);
+          liveSources.add(src);
+          src.onended = () => {
+            liveSources.delete(src);
+            finish();
+          };
+          src.start();
+          setTimeout(() => {
+            try {
+              src.stop();
+            } catch {}
+            liveSources.delete(src);
+            finish();
+          }, Math.min(14000, (buf.duration + 0.35) * 1000));
+        } catch {
+          finish();
+        }
+      });
+      return gen === soundGen;
+    } catch {
+      return false;
+    }
   }
 
   function setMediaPlaying(on, title) {
@@ -911,6 +1005,9 @@
   function beepSoftRing(atMs) {
     // شروع: زنگ گرم ۱۱۰ — در بکگراند از HTML چسبان
     forceHaptic("start");
+    try {
+      if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+    } catch {}
     if (document.hidden || !audioOutputOk()) {
       if (!cachedBeepUrl) cachedBeepUrl = makeBeepUrl();
       if (cachedBeepUrl) {
@@ -1635,7 +1732,42 @@
       const tok = speakToken;
       if (!soundAlive(gen, tok)) return false;
       unlockAudio();
-      // گوشی: اول HTML Audio (قطعی‌تر از WebAudio روی اندروید/آیفون)
+      await ensureAudioCtxRunning();
+      // بدون لمس تازه: اول بافر WebAudio (عبور خودکار)
+      if (!recentGesture(2500) && audioCtx) {
+        try {
+          const buf = await loadVoiceBuffer(rel);
+          if (buf && soundAlive(gen, tok)) {
+            await new Promise((resolve) => {
+              try {
+                const src = audioCtx.createBufferSource();
+                const g = audioCtx.createGain();
+                g.gain.value = Math.max(0.05, Math.min(1, vol == null ? 0.98 : vol));
+                src.buffer = buf;
+                src.connect(g);
+                g.connect(audioCtx.destination);
+                liveSources.add(src);
+                src.onended = () => {
+                  liveSources.delete(src);
+                  resolve();
+                };
+                src.start();
+                setTimeout(() => {
+                  try {
+                    src.stop();
+                  } catch {}
+                  liveSources.delete(src);
+                  resolve();
+                }, Math.min(8000, (buf.duration + 0.4) * 1000));
+              } catch {
+                resolve();
+              }
+            });
+            if (soundAlive(gen, tok)) return true;
+          }
+        } catch {}
+      }
+      // با لمس یا اگر WebAudio نشد: HTML
       {
         const htmlOk = await playVoiceFileHtml(rel, vol);
         if (!soundAlive(gen, tok)) return false;
@@ -2277,14 +2409,20 @@
   // عین کلیپ ثابت: Audio تازه در لحظهٔ پخش (نه عنصر پرایم‌شده با نسل قدیمی)
   async function playBlobLikeClip(blob, vol) {
     if (!blob || soundMuted) return false;
+    // عبور خودکار: اول WebAudio (لمس لازم ندارد)
+    if (!recentGesture(2500)) {
+      const viaCtx = await playBlobViaCtx(blob, vol);
+      if (viaCtx) return true;
+    }
     const url = URL.createObjectURL(blob);
     try {
       const a = makeHtmlAudio(url);
       a._setdadrGen = soundGen;
       const ok = await playHtmlAudioEl(a, vol == null ? 1 : vol, 14000);
-      return !!ok;
+      if (ok) return true;
+      return await playBlobViaCtx(blob, vol);
     } catch {
-      return false;
+      return await playBlobViaCtx(blob, vol);
     } finally {
       setTimeout(() => {
         try {
@@ -2664,7 +2802,9 @@
         const cached = await loadDynFaFromCache(key);
         if (!soundAlive(gen, tok)) return false;
         if (cached) {
-          const ok = await playBlobFa(cached, vol == null ? 1 : vol);
+          readySpeakBlobs.set(key, cached);
+          let ok = await playBlobLikeClip(cached, vol == null ? 1 : vol);
+          if (!ok) ok = await playBlobFa(cached, vol == null ? 1 : vol);
           if (ok && soundAlive(gen, tok)) return true;
         }
       } catch {}
@@ -3226,38 +3366,38 @@
           cacheCloudEdgeBlob(nm).catch(() => {});
           primeHtmlSpeak(nm).catch(() => {});
         }
+        await ensureAudioCtxRunning();
         const t0 = Date.now();
-        while (Date.now() - t0 < 700) {
-          if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
+        while (Date.now() - t0 < 450) {
+          if (!announceAlive(seq)) return;
           unlockAudio();
           startBgKeepAlive();
-          try {
-            if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
-          } catch {}
-          await sleep(120);
+          await ensureAudioCtxRunning();
+          await sleep(100);
         }
-        if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
+        if (!announceAlive(seq)) return;
         unlockAudio();
         startBgKeepAlive();
-        try {
-          if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
-        } catch {}
+        await ensureAudioCtxRunning();
         if (!nm) return;
         try {
           await Promise.race([ensureReadySpeak(nm), sleep(2800)]);
         } catch {}
         if (!announceAlive(seq)) return;
         let ok = false;
-        // عین کلیپ: بلاب آماده + Audio تازه
         ok = await speakNameNow(nm, 1);
-        if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
+        if (!ok && announceAlive(seq)) {
           ok = await speakMoveNameOnly(nm, 1);
         }
-        if (!ok && announceAlive(seq) && soundAlive(gen, tok) && !document.hidden) {
-          ok = await speakFaAny(nm, 1);
+        if (!ok && announceAlive(seq)) {
+          const blob = await ensureReadySpeak(nm);
+          if (blob) ok = await playBlobViaCtx(blob, 1);
         }
-        if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
+        if (!ok && announceAlive(seq)) {
           ok = await playCloudEdgeTts(nm, 1);
+        }
+        if (!ok && announceAlive(seq) && recentGesture(2500)) {
+          ok = await speakFaAny(nm, 1);
         }
         if (primedExpectName === nm) clearPrimedWork();
         return;
@@ -3327,13 +3467,13 @@
     const key = String(text || "").replace(/\s+/g, " ").trim();
     if (!key) return false;
     if (seq != null && !announceAlive(seq)) return false;
-    let ok = false;
-    if (document.hidden) {
-      ok = await speakNameNow(key, 1);
-    } else {
+    // اول بلاب+WebAudio (عبور خودکار بدون لمس)
+    let ok = await speakNameNow(key, 1);
+    if (!ok && (seq == null || announceAlive(seq))) {
+      ok = await playCloudEdgeTts(key, 1, EDGE_TTS_VOICE_FA);
+    }
+    if (!ok && (seq == null || announceAlive(seq)) && recentGesture(2500)) {
       ok = await speakFaAny(key, 1);
-      if (!ok) ok = await speakNameNow(key, 1);
-      if (!ok) ok = await playCloudEdgeTts(key, 1, EDGE_TTS_VOICE_FA);
     }
     return !!ok;
   }
@@ -3633,8 +3773,10 @@
     unlockStickySpeakAudio()
       .then(() => armStickySilenceLoop())
       .catch(() => {});
+    markGesture();
     forceHaptic("heavy");
     startBgKeepAlive();
+    ensureAudioCtxRunning();
     // صدا را در پس‌زمینه گرم کن؛ شروع را معطل نکن
     try {
       p.circuit.forEach((c) => {
@@ -3682,6 +3824,9 @@
       const dt = (now - run.lastTick) / 1000;
       run.lastTick = now;
       run.left -= dt;
+      try {
+        if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+      } catch {}
       maybeAnnounce();
       if (run.left <= 0) {
         advance();
@@ -3755,7 +3900,7 @@
 
   function advance() {
     if (!run) return;
-    stopAllSound();
+    softCutForAdvance();
     run.i += 1;
     if (run.i >= run.steps.length) {
       finishRun();
@@ -4020,14 +4165,25 @@
     paintRun(false);
   });
 
+  document.addEventListener(
+    "pointerdown",
+    () => {
+      markGesture();
+      ensureAudioCtxRunning();
+    },
+    true
+  );
+
   $("#btnSkip").addEventListener("click", () => {
     if (!run || skipLock) return;
     skipLock = true;
     setTimeout(() => {
       skipLock = false;
     }, 450);
+    markGesture();
     unlockAudio();
     startBgKeepAlive();
+    ensureAudioCtxRunning();
     run.skipped = (run.skipped || 0) + 1;
     advance();
   });
