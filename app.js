@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "133";
+  const APP_VER = "134";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -1130,20 +1130,26 @@
   }
 
   function beepCheerFinal() {
-    // تبریک پایان کل تمرین — گرم‌تر و بلندتر از وسط
+    // بوق خط پایان — باشکوه و طولانی، فرق واضح با وسط ست
     forceHaptic("heavy");
+    setTimeout(() => forceHaptic("heavy"), 180);
+    setTimeout(() => forceHaptic("mid"), 360);
     const notes = [
-      { f: 392.0, at: 0, dur: 0.28, g: 0.9 },
-      { f: 523.25, at: 0.14, dur: 0.32, g: 1.0 },
-      { f: 659.25, at: 0.3, dur: 0.36, g: 1.05 },
-      { f: 783.99, at: 0.48, dur: 0.42, g: 1.0 }
+      { f: 261.63, at: 0, dur: 0.22, g: 0.75 },
+      { f: 329.63, at: 0.12, dur: 0.24, g: 0.85 },
+      { f: 392.0, at: 0.26, dur: 0.26, g: 0.95 },
+      { f: 523.25, at: 0.42, dur: 0.3, g: 1.05 },
+      { f: 659.25, at: 0.6, dur: 0.34, g: 1.1 },
+      { f: 783.99, at: 0.8, dur: 0.45, g: 1.15 },
+      { f: 1046.5, at: 1.05, dur: 0.55, g: 1.05 }
     ];
+    cachedCheerFinalUrl = null;
     if (document.hidden || !audioOutputOk()) {
-      if (!cachedCheerFinalUrl) cachedCheerFinalUrl = makeFanfareUrl(notes, 0.95, 0.8);
+      cachedCheerFinalUrl = makeFanfareUrl(notes, 1.7, 0.78);
       if (cachedCheerFinalUrl) playUrlSticky(cachedCheerFinalUrl, 1).catch(() => {});
       return;
     }
-    playWarmChime({ stack: false, bright: false, peak: 1.0, total: 0.95, notes });
+    playWarmChime({ stack: false, bright: true, peak: 1.15, total: 1.7, notes });
   }
 
   function beepWhite(ms, soft) {
@@ -3458,9 +3464,24 @@
   }
 
   function setCountPhrase(n) {
-    // تلفظ کامل عدد + کلمهٔ «ست»
+    // «ست» کوتاه را کامل بگو — با «تا» و «کامل» تا تلفظ نخورد
     const k = Math.max(0, Math.round(Number(n) || 0));
-    return faNum(k) + " ست";
+    return faNum(k) + " تا ست کامل";
+  }
+
+  function moveCountPhrase(n) {
+    const k = Math.max(0, Math.round(Number(n) || 0));
+    return faNum(k) + " حرکت";
+  }
+
+  function workStatsFromSteps(steps) {
+    const list = Array.isArray(steps) ? steps : [];
+    const works = list.filter((s) => s && s.kind === "work");
+    const rounds = works.length ? Math.round(Number(works[0].rounds) || 0) : 0;
+    const moveCount = works.length ? Math.round(Number(works[0].moveCount) || 0) : 0;
+    // فقط زمان تمرین — استراحت حساب نشود
+    const workSec = works.reduce((a, s) => a + Math.max(0, Math.round(Number(s.dur) || 0)), 0);
+    return { rounds, moveCount, workSec };
   }
 
   async function speakSetPhrase(text, seq) {
@@ -3479,29 +3500,44 @@
   }
 
   async function speakSetCompletedMid(completed, seq) {
-    // وسط ست‌ها: بوق تبریک متفاوت + تعداد ست تمام‌شده
+    // وسط ست‌ها: بوق تبریک متفاوت + تعداد ست تمام‌شده با تلفظ کامل
     const n = Math.max(1, Math.round(Number(completed) || 0));
     if (seq != null && !announceAlive(seq)) return;
     beepCheerMid();
-    await sleep(280);
+    await sleep(300);
     if (seq != null && !announceAlive(seq)) return;
-    const phrase = "آفرین. " + setCountPhrase(n) + " تمام شد";
-    await speakSetPhrase(phrase, seq);
+    await speakSetPhrase("آفرین", seq);
+    if (seq != null && !announceAlive(seq)) return;
+    await sleep(140);
+    await speakSetPhrase(setCountPhrase(n) + " تمام شد", seq);
   }
 
-  async function speakDone(rounds) {
+  async function speakDone(stats) {
     return queueAnnounce(async (seq) => {
-      const n = Math.max(1, Math.round(Number(rounds) || 0));
+      const s = stats || {};
+      const n = Math.max(1, Math.round(Number(s.rounds) || 0));
+      const moves = Math.max(0, Math.round(Number(s.moveCount) || 0));
+      const workSec = Math.max(0, Math.round(Number(s.workSec) || 0));
       unlockAudio();
       startBgKeepAlive();
+      await ensureAudioCtxRunning();
       beepCheerFinal();
-      await sleep(320);
+      await sleep(900);
       if (seq != null && !announceAlive(seq)) return;
-      // آخر: آفرین تمام شد + تعداد ست با تلفظ کامل
-      const phrase = "آفرین، تمام شد. " + setCountPhrase(n);
-      let ok = await speakSetPhrase(phrase, seq);
-      if (!ok && VOICE_FILES.done[n]) {
-        await playVoiceFile("done-" + n + ".mp3", 0.9);
+      // تکه‌تکه تا آخر «ست» نخورد
+      await speakSetPhrase("آفرین، تمام شد", seq);
+      if (seq != null && !announceAlive(seq)) return;
+      await sleep(220);
+      await speakSetPhrase(setCountPhrase(n), seq);
+      if (seq != null && !announceAlive(seq)) return;
+      if (moves > 0) {
+        await sleep(180);
+        await speakSetPhrase(moveCountPhrase(moves), seq);
+      }
+      if (seq != null && !announceAlive(seq)) return;
+      if (workSec > 0) {
+        await sleep(180);
+        await speakSetPhrase("جمع تمرین " + timePhrase(workSec), seq);
       }
     });
   }
@@ -4053,17 +4089,24 @@
 
   function finishRun() {
     stopLoop();
-    const last = run && run.steps.length ? run.steps[run.steps.length - 1] : null;
-    const rounds = last ? last.rounds : 0;
-    stopAllSound();
+    const steps = run && run.steps ? run.steps.slice() : [];
+    const stats = workStatsFromSteps(steps);
+    const rounds = stats.rounds || 0;
+    softCutForAdvance();
     unlockAudio();
     startBgKeepAlive();
+    ensureAudioCtxRunning();
     run = null;
     $("#doneFrac").innerHTML = toFaDigits(rounds) + "<span>/</span>" + toFaDigits(rounds);
     const msg = $("#doneMsg");
-    if (msg) msg.textContent = "آفرین، تمام شد · " + toFaDigits(rounds) + " ست";
-    speakDone(rounds).finally(() => {
-      setTimeout(() => stopBgKeepAlive(), 1200);
+    if (msg) {
+      const bits = ["آفرین، تمام شد", toFaDigits(rounds) + " ست"];
+      if (stats.moveCount) bits.push(toFaDigits(stats.moveCount) + " حرکت");
+      if (stats.workSec) bits.push(timePhrase(stats.workSec));
+      msg.textContent = bits.join(" · ");
+    }
+    speakDone(stats).finally(() => {
+      setTimeout(() => stopBgKeepAlive(), 10000);
     });
     show("done");
   }
