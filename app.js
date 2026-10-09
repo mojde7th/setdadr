@@ -1808,7 +1808,6 @@
       const o = opts || {};
       const wantEn = lang === "en";
       // سخن‌گو توکن سراسری را عوض نکند — وگرنه تلفظ بعدی/خودکار قطع می‌شود
-      const synthLocal = (speakToken || 0) + Math.random();
       if (!ios && !o.noCancel) {
         try {
           speechSynthesis.cancel();
