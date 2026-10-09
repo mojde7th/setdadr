@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "130";
+  const APP_VER = "131";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -25,6 +25,7 @@
   let faVoice = null;
   let enVoice = null;
   let speakToken = 0;
+  let synthEpoch = 0;
   let audioCtx = null;
   let activeBeep = null;
   let startLock = false;
@@ -519,6 +520,7 @@
     soundGen += 1;
     announceSeq += 1;
     speakToken += 1;
+    synthEpoch += 1;
     announceChain = Promise.resolve();
     stopBeep();
     stopVoiceFile();
@@ -1625,15 +1627,16 @@
       const ios = isIOSLike();
       const o = opts || {};
       const wantEn = lang === "en";
-      speakToken += 1;
-      const tok = speakToken;
+      // فقط دورهٔ سینث — speakToken را دست نزن تا اعلام HTML/چسبان قطع نشود
+      synthEpoch += 1;
+      const tok = synthEpoch;
       if (!ios && !o.noCancel) {
         try {
           speechSynthesis.cancel();
         } catch {}
       }
       setTimeout(() => {
-        if (tok !== speakToken) {
+        if (tok !== synthEpoch) {
           resolve(false);
           return;
         }
@@ -2992,25 +2995,40 @@
     const raw = String(name || "").replace(/\s+/g, " ").trim();
     const nm = normSpeakKey(raw);
     const gen = soundGen;
-    const tok = speakToken;
-    const alive = () =>
-      soundAlive(gen, tok) && (seq == null || announceAlive(seq));
+    // فقط نسل صدا + صف اعلام — speakToken را چک نکن (سینث آن را عوض می‌کرد)
+    const alive = () => gen === soundGen && (seq == null || announceAlive(seq));
     if (!alive()) return false;
     startBgKeepAlive();
+    unlockAudio();
     if (nm) {
       primedExpectName = nm;
       cacheCloudEdgeBlob(nm).catch(() => {});
+      primeHtmlSpeak(nm).catch(() => {});
     }
 
-    // بکگراند: فقط مسیر چسبان (فایل محلی + بلاب کش)
-    if (document.hidden) {
-      let pref = await playUrlSticky(VOICE_BASE + "phrase-next.mp3" + VOICE_Q, 1);
-      if (!alive()) return false;
-      if (!pref) pref = await speakNameNow("حرکت بعد", 1);
-      if (!alive()) return false;
-      if (!nm) return !!pref;
-      await sleep(100);
-      if (!alive()) return false;
+    // «حرکت بعد» اختیاری است؛ اگر شکست خورد باز هم اسم را بگو
+    try {
+      let pref = false;
+      if (document.hidden) {
+        pref = await playUrlSticky(VOICE_BASE + "phrase-next.mp3" + VOICE_Q, 1);
+        if (!pref && alive()) pref = await speakNameNow("حرکت بعد", 1);
+      } else {
+        pref = await playVoiceFile("phrase-next.mp3", 1);
+        if (!pref && alive()) {
+          pref = await playUrlSticky(VOICE_BASE + "phrase-next.mp3" + VOICE_Q, 1);
+        }
+        if (!pref && alive()) pref = await speakNameNow("حرکت بعد", 1);
+      }
+    } catch {}
+    if (!alive()) return false;
+    if (!nm) return true;
+
+    await sleep(80);
+    if (!alive()) return false;
+
+    // اسم حرکت بعد — اول چسبان/کش (عبور خودکار)
+    let said = false;
+    try {
       let blob = null;
       try {
         blob = await loadDynFaFromCache(nm);
@@ -3020,25 +3038,12 @@
           blob = await cacheCloudEdgeBlob(nm);
         } catch {}
       }
-      if (!alive()) return false;
-      let said = false;
-      if (blob) said = await playBlobSticky(blob, 1);
+      if (blob && alive()) said = await playBlobSticky(blob, 1);
       if (!said && alive()) said = await speakNameNow(nm, 1);
-      return !!said;
-    }
-
-    let pref = await playVoiceFile("phrase-next.mp3", 1);
-    if (!alive()) return false;
-    if (!pref) pref = await speakFaAny("حرکت بعد", 1);
-    if (!alive()) return false;
-    if (!nm) return !!pref;
-    await sleep(90);
-    if (!alive()) return false;
-    // اسم فارسی سخت: اول کش/چسبان (عبور خودکار بدون لمس)
-    let said = await speakNameNow(nm, 1);
-    if (!said && alive()) said = await speakMoveNameOnly(nm, 1);
-    if (!said && alive()) said = await speakFaAny(nm, 1);
-    if (!said && alive()) said = await playCloudEdgeTts(nm, 1);
+      if (!said && alive()) said = await speakMoveNameOnly(nm, 1);
+      if (!said && alive() && !document.hidden) said = await speakFaAny(nm, 1);
+      if (!said && alive()) said = await playCloudEdgeTts(nm, 1);
+    } catch {}
     if (alive() && nm) {
       cacheCloudEdgeBlob(nm).catch(() => {});
       ensurePrimedFor(nm).catch(() => {});
@@ -3076,7 +3081,7 @@
         beepSoftRing(0);
         const nm = normSpeakKey(step.name);
         const gen = soundGen;
-        const tok = speakToken;
+        const phaseOk = () => gen === soundGen && announceAlive(seq);
         if (nm) {
           primedExpectName = nm;
           warmWork.catch(() => {});
@@ -3103,7 +3108,7 @@
         }
         const t0 = Date.now();
         while (Date.now() - t0 < 700) {
-          if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
+          if (!phaseOk()) return;
           unlockAudio();
           startBgKeepAlive();
           try {
@@ -3111,7 +3116,7 @@
           } catch {}
           await sleep(120);
         }
-        if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
+        if (!phaseOk()) return;
         unlockAudio();
         startBgKeepAlive();
         try {
@@ -3119,17 +3124,11 @@
         } catch {}
         if (!nm) return;
         let ok = false;
-        // اول چسبان/کش — هم پیش‌زمینه هم پس‌زمینه (لمس لازم نیست)
+        // اول چسبان/کش — عبور خودکار هم بدون لمس
         ok = await speakNameNow(nm, 1);
-        if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
-          ok = await speakMoveNameOnly(nm, 1);
-        }
-        if (!ok && announceAlive(seq) && soundAlive(gen, tok) && !document.hidden) {
-          ok = await speakFaAny(nm, 1);
-        }
-        if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
-          ok = await playCloudEdgeTts(nm, 1);
-        }
+        if (!ok && phaseOk()) ok = await speakMoveNameOnly(nm, 1);
+        if (!ok && phaseOk() && !document.hidden) ok = await speakFaAny(nm, 1);
+        if (!ok && phaseOk()) ok = await playCloudEdgeTts(nm, 1);
         if (primedExpectName === nm) clearPrimedWork();
         return;
       }
@@ -3606,11 +3605,10 @@
     startBgKeepAlive();
     const phaseIndex = run.i;
     const myGen = soundGen;
-    const myTok = speakToken;
     const mySeq = announceSeq;
     setTimeout(() => {
       if (!run || run.i !== phaseIndex) return;
-      if (soundGen !== myGen || speakToken !== myTok || announceSeq !== mySeq) return;
+      if (soundGen !== myGen || announceSeq !== mySeq) return;
       stopBeep();
       // sticky و keep-alive را نکش — فقط بوق/سورس اضافی
       killAllSources();
@@ -3618,7 +3616,7 @@
       unlockAudio();
       startBgKeepAlive();
       if (!run || run.i !== phaseIndex) return;
-      if (soundGen !== myGen || speakToken !== myTok || announceSeq !== mySeq) return;
+      if (soundGen !== myGen || announceSeq !== mySeq) return;
       speakPhase(step);
     }, 220);
     loop();
