@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "144";
+  const APP_VER = "145";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -3071,28 +3071,7 @@
     armStickySilenceLoop().catch(() => {});
   }
 
-  // مسیر پایدار دکمهٔ بعدی (نسخهٔ ۱۴۰) + بلاب چسبان برای عبور خودکار
-  async function pronounceMoveNow(name, vol) {
-    const nm = normSpeakKey(name);
-    if (!nm || soundMuted) return false;
-    unlockLikeNextButton();
-    const v = vol == null ? 1 : vol;
-    const tapped = recentGesture(3000);
-    let ok = false;
-    if (document.hidden || !tapped) {
-      // خودکار / بکگراند: اول چسبان و بلاب آماده
-      ok = await speakNameNow(nm, v);
-      if (!ok) ok = await speakMoveNameOnly(nm, v);
-    } else {
-      // دکمهٔ بعدی: همان مسیر مستقیم قبلی
-      ok = await speakMoveNameOnly(nm, v);
-      if (!ok) ok = await speakNameNow(nm, v);
-    }
-    if (!ok) ok = await playCloudEdgeTts(nm, v);
-    if (!ok) ok = await speakFaAny(nm, v);
-    return !!ok;
-  }
-
+  // تلفظ سخت مثل نسخهٔ ۱۳۰: کلیپ، بعد speakFaAny (ابر/دیلارا) — بدون صف بلاب طولانی
   async function speakMoveNameOnly(name, vol) {
     const raw = String(name || "").replace(/\s+/g, " ").trim();
     if (!raw) return false;
@@ -3143,32 +3122,6 @@
       (said && MOVE_CLIP[said.text]);
     if (clip) {
       const ok = await playVoiceFile(clip, v);
-      if (!alive()) return false;
-      if (ok) return true;
-    }
-    // تلفظ سخت: اول بلاب آماده (خودکار)، بعد ابر، بعد سخن‌گو
-    {
-      let blob = readySpeakBlobs.get(speakText) || null;
-      if (!blob) {
-        try {
-          blob = await loadDynFaFromCache(speakText);
-        } catch {}
-      }
-      if (!blob) {
-        try {
-          blob = await ensureReadySpeak(speakText);
-        } catch {}
-      }
-      if (blob && alive()) {
-        readySpeakBlobs.set(speakText, blob);
-        let ok = await playBlobLikeClip(blob, v);
-        if (!ok && alive()) ok = await playBlobSticky(blob, v);
-        if (!ok && alive()) ok = await playBlobViaCtx(blob, v);
-        if (ok) return true;
-      }
-    }
-    {
-      const ok = await playCloudEdgeTts(speakText, v, EDGE_TTS_VOICE_FA);
       if (!alive()) return false;
       if (ok) return true;
     }
@@ -3328,9 +3281,9 @@
     if (!nm) return !!pref;
     await sleep(90);
     if (!alive()) return false;
-    // همان تلفظ دکمهٔ بعدی
     unlockLikeNextButton();
-    let said = await pronounceMoveNow(nm, 1);
+    let said = await speakNameNow(nm, 1);
+    if (!said && alive()) said = await speakMoveNameOnly(nm, 1);
     if (alive() && nm) {
       cacheCloudEdgeBlob(nm).catch(() => {});
       ensurePrimedFor(nm).catch(() => {});
@@ -3388,24 +3341,41 @@
             }
           }
         } catch {}
-        // مثل نسخهٔ پایدار ۱۴۰: بوق، کمی صبر، تلفظ مستقیم
+        // مثل نسخهٔ ۱۳۰: بوق بنشیند؛ اسم با چسبان، بعد تلفظ سخت
         if (nm) {
           cacheCloudEdgeBlob(nm).catch(() => {});
           warmFaTts(nm).catch(() => {});
-          ensureReadySpeak(nm).catch(() => {});
+          primeHtmlSpeak(nm).catch(() => {});
         }
-        unlockLikeNextButton();
-        await sleep(280);
+        const t0 = Date.now();
+        while (Date.now() - t0 < 700) {
+          if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
+          unlockAudio();
+          startBgKeepAlive();
+          try {
+            if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
+          } catch {}
+          await sleep(120);
+        }
         if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
+        unlockAudio();
+        startBgKeepAlive();
+        try {
+          if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
+        } catch {}
         if (!nm) return;
-        unlockLikeNextButton();
-        const liveNm =
-          run && run.steps[run.i] && run.steps[run.i].kind === "work"
-            ? normSpeakKey(run.steps[run.i].name || "")
-            : nm;
-        if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
-        await pronounceMoveNow(liveNm || nm, 1);
-        if (primedExpectName === (liveNm || nm)) clearPrimedWork();
+        let ok = false;
+        ok = await speakNameNow(nm, 1);
+        if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
+          ok = await speakMoveNameOnly(nm, 1);
+        }
+        if (!ok && announceAlive(seq) && soundAlive(gen, tok) && !document.hidden) {
+          ok = await speakFaAny(nm, 1);
+        }
+        if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
+          ok = await playCloudEdgeTts(nm, 1);
+        }
+        if (primedExpectName === nm) clearPrimedWork();
         return;
       }
       startBgKeepAlive();
@@ -3965,37 +3935,15 @@
     }
   }
 
-  function scheduleSpeakCurrentPhase(delayMs) {
+  function advance() {
+    if (!run) return;
+    // قطع سخت صداهای قبلی تا روی هم نیفتند (چسبان نگه داشته می‌شود)
     clearSpeakAfterAdvance();
-    if (!run) return;
-    const phaseIndex = run.i;
-    const myGen = soundGen;
-    const mySeq = announceSeq;
-    speakAfterAdvanceTimer = setTimeout(() => {
-      speakAfterAdvanceTimer = 0;
-      if (!run || run.i !== phaseIndex) return;
-      if (soundGen !== myGen || announceSeq !== mySeq) return;
-      // همیشه فاز جاری — نه step قدیمی از ضربهٔ قبلی
-      const step = run.steps[run.i];
-      if (!step) return;
-      stopBeep();
-      unlockLikeNextButton();
-      speakPhase(step);
-    }, Math.max(80, delayMs || 280));
-  }
-
-  function advance(fromSkip) {
-    if (!run) return;
-    const skip = !!fromSkip;
-    // قطع نرم: چسبان آنلاک‌شده را نکش (خودکار بدون لمس به آن نیاز دارد)
-    softCutForAdvance();
+    stopAllSound();
     clearPrimedWork();
     primedExpectName = "";
-    clearSpeakAfterAdvance();
-
     run.i += 1;
     if (run.i >= run.steps.length) {
-      clearSpeakAfterAdvance();
       finishRun();
       return;
     }
@@ -4013,11 +3961,29 @@
     if (speakHint) {
       cacheCloudEdgeBlob(speakHint).catch(() => {});
       warmFaTts(speakHint).catch(() => {});
-      ensureReadySpeak(speakHint).catch(() => {});
+      primeHtmlSpeak(speakHint).catch(() => {});
     }
-    unlockLikeNextButton();
-    // بعدی: زود بگو تا ژست لمس زنده بماند؛ چندضربه فقط آخرین فاز
-    scheduleSpeakCurrentPhase(skip ? 160 : 280);
+    unlockAudio();
+    startBgKeepAlive();
+    armStickySilenceLoop().catch(() => {});
+    const phaseIndex = run.i;
+    const myGen = soundGen;
+    const myTok = speakToken;
+    const mySeq = announceSeq;
+    speakAfterAdvanceTimer = setTimeout(() => {
+      speakAfterAdvanceTimer = 0;
+      if (!run || run.i !== phaseIndex) return;
+      if (soundGen !== myGen || speakToken !== myTok || announceSeq !== mySeq) return;
+      stopBeep();
+      killAllSources();
+      stopVoiceFile();
+      unlockAudio();
+      startBgKeepAlive();
+      armStickySilenceLoop().catch(() => {});
+      if (!run || run.i !== phaseIndex) return;
+      if (soundGen !== myGen || speakToken !== myTok || announceSeq !== mySeq) return;
+      speakPhase(step);
+    }, 220);
     loop();
   }
 
@@ -4264,11 +4230,13 @@
     skipLock = true;
     setTimeout(() => {
       skipLock = false;
-    }, 160);
+    }, 450);
     markGesture();
-    unlockLikeNextButton();
+    unlockAudio();
+    startBgKeepAlive();
+    armStickySilenceLoop().catch(() => {});
     run.skipped = (run.skipped || 0) + 1;
-    advance(true);
+    advance();
   });
 
   $("#btnAbort").addEventListener("click", () => {
