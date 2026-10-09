@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "131";
+  const APP_VER = "132";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -70,6 +70,8 @@
   const VOICE_Q = "?v=127";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
+  const readySpeakBlobs = new Map(); // متن → Blob آماده برای پخش مثل کلیپ
+  const readySpeakWait = new Map(); // متن → Promise آماده‌سازی
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
   let tickIv = 0;
   let bgKeepAudio = null;
@@ -1443,8 +1445,9 @@
 
   async function playHtmlAudioEl(a, vol, maxWaitMs) {
     if (soundMuted || !a) return false;
+    // نسل را به پخش فعلی بچسبان — پرایم قبل از advance نباید بی‌صدا بماند
+    a._setdadrGen = soundGen;
     const gen = soundGen;
-    if (a._setdadrGen != null && a._setdadrGen !== gen) return false;
     unlockAudio();
     stopVoiceFile();
     try {
@@ -2232,16 +2235,62 @@
     if (!key) return null;
     try {
       const hit = await loadDynFaFromCache(key);
-      if (hit) return hit;
+      if (hit) {
+        readySpeakBlobs.set(key, hit);
+        return hit;
+      }
     } catch {}
     const wait = maxMs != null ? maxMs : document.hidden ? 5000 : 3500;
     try {
-      return await Promise.race([
+      const blob = await Promise.race([
         cacheCloudEdgeBlob(key),
         sleep(wait).then(() => null)
       ]);
+      if (blob) readySpeakBlobs.set(key, blob);
+      return blob;
     } catch {
       return null;
+    }
+  }
+
+  function ensureReadySpeak(text) {
+    const key = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
+    if (!key) return Promise.resolve(null);
+    if (readySpeakBlobs.has(key)) return Promise.resolve(readySpeakBlobs.get(key));
+    if (readySpeakWait.has(key)) return readySpeakWait.get(key);
+    const p = (async () => {
+      try {
+        let b = await loadDynFaFromCache(key);
+        if (!b) b = await ensureSpeakBlob(key, 9000);
+        if (b) readySpeakBlobs.set(key, b);
+        return b || null;
+      } catch {
+        return null;
+      } finally {
+        readySpeakWait.delete(key);
+      }
+    })();
+    readySpeakWait.set(key, p);
+    return p;
+  }
+
+  // عین کلیپ ثابت: Audio تازه در لحظهٔ پخش (نه عنصر پرایم‌شده با نسل قدیمی)
+  async function playBlobLikeClip(blob, vol) {
+    if (!blob || soundMuted) return false;
+    const url = URL.createObjectURL(blob);
+    try {
+      const a = makeHtmlAudio(url);
+      a._setdadrGen = soundGen;
+      const ok = await playHtmlAudioEl(a, vol == null ? 1 : vol, 14000);
+      return !!ok;
+    } catch {
+      return false;
+    } finally {
+      setTimeout(() => {
+        try {
+          URL.revokeObjectURL(url);
+        } catch {}
+      }, 25000);
     }
   }
 
@@ -2481,9 +2530,6 @@
   async function speakNameNow(text, vol) {
     const key = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
     if (!key || soundMuted) return false;
-    const gen = soundGen;
-    const tok = speakToken;
-    if (!soundAlive(gen, tok)) return false;
     const v = vol == null ? 1 : vol;
     startBgKeepAlive();
     unlockAudio();
@@ -2497,33 +2543,36 @@
         const clip = MOVE_CLIP[key] || MOVE_CLIP[keyLow] || null;
         if (clip) {
           const ok = await playVoiceFile(clip, v);
-          if (!soundAlive(gen, tok)) return false;
           if (ok) return true;
         }
       }
     } catch {}
 
-    // بلاب از کش / پرایم / شبکه
-    let blob = null;
-    const slot = primedHtmlSpeak.get(key);
-    if (slot && slot.blob) blob = slot.blob;
+    // بلاب آماده — همان مسیر کلیپ (Audio تازه)، نه فقط چسبان
+    let blob = readySpeakBlobs.get(key) || null;
+    if (!blob) {
+      const slot = primedHtmlSpeak.get(key);
+      if (slot && slot.blob) blob = slot.blob;
+    }
     if (!blob) {
       try {
         blob = await loadDynFaFromCache(key);
       } catch {}
     }
     if (!blob) {
-      blob = await ensureSpeakBlob(key, document.hidden ? 7000 : 5000);
+      blob = await ensureReadySpeak(key);
     }
-    if (!soundAlive(gen, tok)) return false;
-
     if (blob) {
-      // عنصر چسبان — در بکگراند خیلی مطمئن‌تر از Audio جدید
+      readySpeakBlobs.set(key, blob);
+      // اول عین کلیپ — عبور خودکار همین را می‌فهمد
+      {
+        const ok = await playBlobLikeClip(blob, v);
+        if (ok) return true;
+      }
       {
         const ok = await playBlobSticky(blob, v);
         if (ok) return true;
       }
-      if (!soundAlive(gen, tok)) return false;
       if (!document.hidden) {
         try {
           const ok2 = await playBlobFa(blob, v);
@@ -2533,13 +2582,14 @@
       }
     }
 
-    if (!soundAlive(gen, tok)) return false;
     if (document.hidden) {
       try {
         blob = await cacheCloudEdgeBlob(key);
       } catch {}
-      if (blob && soundAlive(gen, tok)) {
-        const ok = await playBlobSticky(blob, v);
+      if (blob) {
+        readySpeakBlobs.set(key, blob);
+        let ok = await playBlobLikeClip(blob, v);
+        if (!ok) ok = await playBlobSticky(blob, v);
         if (ok) return true;
       }
       return false;
@@ -3193,8 +3243,12 @@
           if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
         } catch {}
         if (!nm) return;
+        try {
+          await Promise.race([ensureReadySpeak(nm), sleep(2800)]);
+        } catch {}
+        if (!announceAlive(seq)) return;
         let ok = false;
-        // اول چسبان/کش — هم پیش‌زمینه هم پس‌زمینه (لمس لازم نیست)
+        // عین کلیپ: بلاب آماده + Audio تازه
         ok = await speakNameNow(nm, 1);
         if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
           ok = await speakMoveNameOnly(nm, 1);
@@ -3584,8 +3638,11 @@
     // صدا را در پس‌زمینه گرم کن؛ شروع را معطل نکن
     try {
       p.circuit.forEach((c) => {
+        const nm = normSpeakKey(c.name);
         warmMoveVoice(c.name);
-        cacheCloudEdgeBlob(normSpeakKey(c.name)).catch(() => {});
+        ensureReadySpeak(nm).catch(() => {});
+        cacheCloudEdgeBlob(nm).catch(() => {});
+        primeHtmlSpeak(nm).catch(() => {});
       });
     } catch {}
     run = {
@@ -3648,6 +3705,7 @@
     const nm = upcomingSpeakText();
     if (!nm) return;
     try {
+      ensureReadySpeak(nm).catch(() => {});
       cacheCloudEdgeBlob(nm).catch(() => {});
       warmFaTts(nm).catch(() => {});
       primeHtmlSpeak(nm).catch(() => {});
@@ -3715,6 +3773,7 @@
       step.kind === "work"
         ? normSpeakKey(step.name || "")
         : normSpeakKey(step.nextName || "");
+    const warmHint = speakHint ? ensureReadySpeak(speakHint) : Promise.resolve(null);
     if (speakHint) {
       cacheCloudEdgeBlob(speakHint).catch(() => {});
       warmFaTts(speakHint).catch(() => {});
@@ -3723,22 +3782,20 @@
     unlockAudio();
     startBgKeepAlive();
     const phaseIndex = run.i;
-    const myGen = soundGen;
-    const myTok = speakToken;
-    const mySeq = announceSeq;
-    setTimeout(() => {
+    setTimeout(async () => {
       if (!run || run.i !== phaseIndex) return;
-      if (soundGen !== myGen || speakToken !== myTok || announceSeq !== mySeq) return;
+      try {
+        await Promise.race([warmHint, sleep(2500)]);
+      } catch {}
+      if (!run || run.i !== phaseIndex) return;
       stopBeep();
-      // sticky و keep-alive را نکش — فقط بوق/سورس اضافی
       killAllSources();
       stopVoiceFile();
       unlockAudio();
       startBgKeepAlive();
       if (!run || run.i !== phaseIndex) return;
-      if (soundGen !== myGen || speakToken !== myTok || announceSeq !== mySeq) return;
       speakPhase(step);
-    }, 220);
+    }, 180);
     loop();
   }
 
