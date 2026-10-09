@@ -25,7 +25,6 @@
   let faVoice = null;
   let enVoice = null;
   let speakToken = 0;
-  let synthEpoch = 0;
   let audioCtx = null;
   let activeBeep = null;
   let startLock = false;
@@ -520,7 +519,6 @@
     soundGen += 1;
     announceSeq += 1;
     speakToken += 1;
-    synthEpoch += 1;
     announceChain = Promise.resolve();
     stopBeep();
     stopVoiceFile();
@@ -966,21 +964,96 @@
     setTimeout(() => tick(0, 1175), 200);
   }
 
+  let cachedCheerMidUrl = null;
+  let cachedCheerFinalUrl = null;
+
+  function makeFanfareUrl(notes, sec, peak) {
+    try {
+      const sr = 22050;
+      const n = Math.floor(sr * sec);
+      const data = new ArrayBuffer(44 + n * 2);
+      const view = new DataView(data);
+      const w = (o, s) => {
+        for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i));
+      };
+      w(0, "RIFF");
+      view.setUint32(4, 36 + n * 2, true);
+      w(8, "WAVE");
+      w(12, "fmt ");
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true);
+      view.setUint32(24, sr, true);
+      view.setUint32(28, sr * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true);
+      w(36, "data");
+      view.setUint32(40, n * 2, true);
+      const tone = (x, f0, at, dur, g) => {
+        const tt = x - at;
+        if (tt < 0 || tt > dur) return 0;
+        const atk = Math.min(1, tt / 0.04);
+        const rel = Math.max(0, 1 - Math.max(0, tt - dur * 0.4) / (dur * 0.6));
+        return Math.sin(2 * Math.PI * f0 * x) * atk * rel * g;
+      };
+      for (let i = 0; i < n; i++) {
+        const x = i / sr;
+        let sample = 0;
+        notes.forEach((note) => {
+          sample += tone(x, note.f, note.at, note.dur, note.g);
+        });
+        sample *= peak;
+        let v = (sample * 32767) | 0;
+        if (v > 32767) v = 32767;
+        if (v < -32768) v = -32768;
+        view.setInt16(44 + i * 2, v, true);
+      }
+      return URL.createObjectURL(new Blob([data], { type: "audio/wav" }));
+    } catch {
+      return null;
+    }
+  }
+
+  function beepCheerMid() {
+    // تبریک وسط ست‌ها — کوتاه و روشن، فرق با آخر
+    forceHaptic("mid");
+    const notes = [
+      { f: 523.25, at: 0, dur: 0.16, g: 0.85 },
+      { f: 659.25, at: 0.12, dur: 0.18, g: 0.9 },
+      { f: 783.99, at: 0.26, dur: 0.22, g: 0.95 }
+    ];
+    if (document.hidden || !audioOutputOk()) {
+      if (!cachedCheerMidUrl) cachedCheerMidUrl = makeFanfareUrl(notes, 0.55, 0.72);
+      if (cachedCheerMidUrl) playUrlSticky(cachedCheerMidUrl, 1).catch(() => {});
+      return;
+    }
+    playWarmChime({ stack: false, bright: true, peak: 0.85, total: 0.55, notes });
+  }
+
+  function beepCheerFinal() {
+    // تبریک پایان کل تمرین — گرم‌تر و بلندتر از وسط
+    forceHaptic("heavy");
+    const notes = [
+      { f: 392.0, at: 0, dur: 0.28, g: 0.9 },
+      { f: 523.25, at: 0.14, dur: 0.32, g: 1.0 },
+      { f: 659.25, at: 0.3, dur: 0.36, g: 1.05 },
+      { f: 783.99, at: 0.48, dur: 0.42, g: 1.0 }
+    ];
+    if (document.hidden || !audioOutputOk()) {
+      if (!cachedCheerFinalUrl) cachedCheerFinalUrl = makeFanfareUrl(notes, 0.95, 0.8);
+      if (cachedCheerFinalUrl) playUrlSticky(cachedCheerFinalUrl, 1).catch(() => {});
+      return;
+    }
+    playWarmChime({ stack: false, bright: false, peak: 1.0, total: 0.95, notes });
+  }
+
   function beepWhite(ms, soft) {
     if (soundMuted) return;
     if (soft) {
       beepSoftDouble();
       return;
     }
-    playWarmChime({
-      peak: 1.2,
-      total: 0.75,
-      notes: [
-        { f: 349.23, at: 0, dur: 0.4, g: 1.0 },
-        { f: 440.0, at: 0.16, dur: 0.42, g: 1.1 },
-        { f: 523.25, at: 0.34, dur: 0.48, g: 0.9 }
-      ]
-    });
+    beepCheerFinal();
   }
 
   function nearestPhaseClip(n) {
@@ -1627,16 +1700,15 @@
       const ios = isIOSLike();
       const o = opts || {};
       const wantEn = lang === "en";
-      // فقط دورهٔ سینث — speakToken را دست نزن تا اعلام HTML/چسبان قطع نشود
-      synthEpoch += 1;
-      const tok = synthEpoch;
+      speakToken += 1;
+      const tok = speakToken;
       if (!ios && !o.noCancel) {
         try {
           speechSynthesis.cancel();
         } catch {}
       }
       setTimeout(() => {
-        if (tok !== synthEpoch) {
+        if (tok !== speakToken) {
           resolve(false);
           return;
         }
@@ -2995,40 +3067,25 @@
     const raw = String(name || "").replace(/\s+/g, " ").trim();
     const nm = normSpeakKey(raw);
     const gen = soundGen;
-    // فقط نسل صدا + صف اعلام — speakToken را چک نکن (سینث آن را عوض می‌کرد)
-    const alive = () => gen === soundGen && (seq == null || announceAlive(seq));
+    const tok = speakToken;
+    const alive = () =>
+      soundAlive(gen, tok) && (seq == null || announceAlive(seq));
     if (!alive()) return false;
     startBgKeepAlive();
-    unlockAudio();
     if (nm) {
       primedExpectName = nm;
       cacheCloudEdgeBlob(nm).catch(() => {});
-      primeHtmlSpeak(nm).catch(() => {});
     }
 
-    // «حرکت بعد» اختیاری است؛ اگر شکست خورد باز هم اسم را بگو
-    try {
-      let pref = false;
-      if (document.hidden) {
-        pref = await playUrlSticky(VOICE_BASE + "phrase-next.mp3" + VOICE_Q, 1);
-        if (!pref && alive()) pref = await speakNameNow("حرکت بعد", 1);
-      } else {
-        pref = await playVoiceFile("phrase-next.mp3", 1);
-        if (!pref && alive()) {
-          pref = await playUrlSticky(VOICE_BASE + "phrase-next.mp3" + VOICE_Q, 1);
-        }
-        if (!pref && alive()) pref = await speakNameNow("حرکت بعد", 1);
-      }
-    } catch {}
-    if (!alive()) return false;
-    if (!nm) return true;
-
-    await sleep(80);
-    if (!alive()) return false;
-
-    // اسم حرکت بعد — اول چسبان/کش (عبور خودکار)
-    let said = false;
-    try {
+    // بکگراند: فقط مسیر چسبان (فایل محلی + بلاب کش)
+    if (document.hidden) {
+      let pref = await playUrlSticky(VOICE_BASE + "phrase-next.mp3" + VOICE_Q, 1);
+      if (!alive()) return false;
+      if (!pref) pref = await speakNameNow("حرکت بعد", 1);
+      if (!alive()) return false;
+      if (!nm) return !!pref;
+      await sleep(100);
+      if (!alive()) return false;
       let blob = null;
       try {
         blob = await loadDynFaFromCache(nm);
@@ -3038,12 +3095,25 @@
           blob = await cacheCloudEdgeBlob(nm);
         } catch {}
       }
-      if (blob && alive()) said = await playBlobSticky(blob, 1);
+      if (!alive()) return false;
+      let said = false;
+      if (blob) said = await playBlobSticky(blob, 1);
       if (!said && alive()) said = await speakNameNow(nm, 1);
-      if (!said && alive()) said = await speakMoveNameOnly(nm, 1);
-      if (!said && alive() && !document.hidden) said = await speakFaAny(nm, 1);
-      if (!said && alive()) said = await playCloudEdgeTts(nm, 1);
-    } catch {}
+      return !!said;
+    }
+
+    let pref = await playVoiceFile("phrase-next.mp3", 1);
+    if (!alive()) return false;
+    if (!pref) pref = await speakFaAny("حرکت بعد", 1);
+    if (!alive()) return false;
+    if (!nm) return !!pref;
+    await sleep(90);
+    if (!alive()) return false;
+    // اسم فارسی سخت: اول کش/چسبان (عبور خودکار بدون لمس)
+    let said = await speakNameNow(nm, 1);
+    if (!said && alive()) said = await speakMoveNameOnly(nm, 1);
+    if (!said && alive()) said = await speakFaAny(nm, 1);
+    if (!said && alive()) said = await playCloudEdgeTts(nm, 1);
     if (alive() && nm) {
       cacheCloudEdgeBlob(nm).catch(() => {});
       ensurePrimedFor(nm).catch(() => {});
@@ -3081,7 +3151,7 @@
         beepSoftRing(0);
         const nm = normSpeakKey(step.name);
         const gen = soundGen;
-        const phaseOk = () => gen === soundGen && announceAlive(seq);
+        const tok = speakToken;
         if (nm) {
           primedExpectName = nm;
           warmWork.catch(() => {});
@@ -3108,7 +3178,7 @@
         }
         const t0 = Date.now();
         while (Date.now() - t0 < 700) {
-          if (!phaseOk()) return;
+          if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
           unlockAudio();
           startBgKeepAlive();
           try {
@@ -3116,7 +3186,7 @@
           } catch {}
           await sleep(120);
         }
-        if (!phaseOk()) return;
+        if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
         unlockAudio();
         startBgKeepAlive();
         try {
@@ -3124,11 +3194,17 @@
         } catch {}
         if (!nm) return;
         let ok = false;
-        // اول چسبان/کش — عبور خودکار هم بدون لمس
+        // اول چسبان/کش — هم پیش‌زمینه هم پس‌زمینه (لمس لازم نیست)
         ok = await speakNameNow(nm, 1);
-        if (!ok && phaseOk()) ok = await speakMoveNameOnly(nm, 1);
-        if (!ok && phaseOk() && !document.hidden) ok = await speakFaAny(nm, 1);
-        if (!ok && phaseOk()) ok = await playCloudEdgeTts(nm, 1);
+        if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
+          ok = await speakMoveNameOnly(nm, 1);
+        }
+        if (!ok && announceAlive(seq) && soundAlive(gen, tok) && !document.hidden) {
+          ok = await speakFaAny(nm, 1);
+        }
+        if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
+          ok = await playCloudEdgeTts(nm, 1);
+        }
         if (primedExpectName === nm) clearPrimedWork();
         return;
       }
@@ -3143,6 +3219,14 @@
       await sleep(restGap);
       if (!announceAlive(seq)) return;
       if (isRest) {
+        // استراحت ست: اول تبریک ست تمام‌شده، بعد حرکت بعد
+        if (step.kind === "rest-set") {
+          const doneSets = Math.max(1, Math.round(Number(step.round) || 1));
+          await speakSetCompletedMid(doneSets, seq);
+          if (!announceAlive(seq)) return;
+          await sleep(160);
+          if (!announceAlive(seq)) return;
+        }
         const next = step.nextName || "";
         if (next) warmFaTts(next).catch(() => {});
         await speakNextMoveName(next, seq);
@@ -3179,17 +3263,52 @@
     });
   }
 
+  function setCountPhrase(n) {
+    // تلفظ کامل عدد + کلمهٔ «ست»
+    const k = Math.max(0, Math.round(Number(n) || 0));
+    return faNum(k) + " ست";
+  }
+
+  async function speakSetPhrase(text, seq) {
+    const key = String(text || "").replace(/\s+/g, " ").trim();
+    if (!key) return false;
+    if (seq != null && !announceAlive(seq)) return false;
+    let ok = false;
+    if (document.hidden) {
+      ok = await speakNameNow(key, 1);
+    } else {
+      ok = await speakFaAny(key, 1);
+      if (!ok) ok = await speakNameNow(key, 1);
+      if (!ok) ok = await playCloudEdgeTts(key, 1, EDGE_TTS_VOICE_FA);
+    }
+    return !!ok;
+  }
+
+  async function speakSetCompletedMid(completed, seq) {
+    // وسط ست‌ها: بوق تبریک متفاوت + تعداد ست تمام‌شده
+    const n = Math.max(1, Math.round(Number(completed) || 0));
+    if (seq != null && !announceAlive(seq)) return;
+    beepCheerMid();
+    await sleep(280);
+    if (seq != null && !announceAlive(seq)) return;
+    const phrase = "آفرین. " + setCountPhrase(n) + " تمام شد";
+    await speakSetPhrase(phrase, seq);
+  }
+
   async function speakDone(rounds) {
-    return queueAnnounce(async () => {
-      const n = Math.round(rounds);
-      buzz([90, 50, 90, 50, 140]);
-      beepWhite(300);
-      await sleep(180);
-      if (VOICE_FILES.done[n]) {
-        const ok = await playVoiceFile("done-" + n + ".mp3", 0.88);
-        if (ok) return;
+    return queueAnnounce(async (seq) => {
+      const n = Math.max(1, Math.round(Number(rounds) || 0));
+      unlockAudio();
+      startBgKeepAlive();
+      beepCheerFinal();
+      await sleep(320);
+      if (seq != null && !announceAlive(seq)) return;
+      // آخر: آفرین تمام شد + تعداد ست با تلفظ کامل
+      const phrase = "آفرین، تمام شد. " + setCountPhrase(n);
+      let ok = await speakSetPhrase(phrase, seq);
+      if (!ok && VOICE_FILES.done[n]) {
+        await playVoiceFile("done-" + n + ".mp3", 0.9);
       }
-      await speakFaAny(faNum(n) + " ست", 0.95);
     });
   }
 
@@ -3605,10 +3724,11 @@
     startBgKeepAlive();
     const phaseIndex = run.i;
     const myGen = soundGen;
+    const myTok = speakToken;
     const mySeq = announceSeq;
     setTimeout(() => {
       if (!run || run.i !== phaseIndex) return;
-      if (soundGen !== myGen || announceSeq !== mySeq) return;
+      if (soundGen !== myGen || speakToken !== myTok || announceSeq !== mySeq) return;
       stopBeep();
       // sticky و keep-alive را نکش — فقط بوق/سورس اضافی
       killAllSources();
@@ -3616,7 +3736,7 @@
       unlockAudio();
       startBgKeepAlive();
       if (!run || run.i !== phaseIndex) return;
-      if (soundGen !== myGen || announceSeq !== mySeq) return;
+      if (soundGen !== myGen || speakToken !== myTok || announceSeq !== mySeq) return;
       speakPhase(step);
     }, 220);
     loop();
@@ -3731,15 +3851,18 @@
 
   function finishRun() {
     stopLoop();
-    stopAllSound();
-    stopBgKeepAlive();
     const last = run && run.steps.length ? run.steps[run.steps.length - 1] : null;
     const rounds = last ? last.rounds : 0;
+    stopAllSound();
+    unlockAudio();
+    startBgKeepAlive();
     run = null;
     $("#doneFrac").innerHTML = toFaDigits(rounds) + "<span>/</span>" + toFaDigits(rounds);
     const msg = $("#doneMsg");
-    if (msg) msg.textContent = "تمام شد · " + toFaDigits(rounds) + " ست";
-    speakDone(rounds);
+    if (msg) msg.textContent = "آفرین، تمام شد · " + toFaDigits(rounds) + " ست";
+    speakDone(rounds).finally(() => {
+      setTimeout(() => stopBgKeepAlive(), 1200);
+    });
     show("done");
   }
 
