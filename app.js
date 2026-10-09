@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "140";
+  const APP_VER = "141";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -1807,15 +1807,15 @@
       const ios = isIOSLike();
       const o = opts || {};
       const wantEn = lang === "en";
-      speakToken += 1;
-      const tok = speakToken;
+      // سخن‌گو توکن سراسری را عوض نکند — وگرنه تلفظ بعدی/خودکار قطع می‌شود
+      const synthLocal = (speakToken || 0) + Math.random();
       if (!ios && !o.noCancel) {
         try {
           speechSynthesis.cancel();
         } catch {}
       }
       setTimeout(() => {
-        if (tok !== speakToken) {
+        if (soundMuted) {
           resolve(false);
           return;
         }
@@ -3060,6 +3060,30 @@
     return false;
   }
 
+  function unlockLikeNextButton() {
+    // همان آماده‌سازی دکمهٔ بعدی — برای عبور خودکار هم
+    unlockAudio();
+    startBgKeepAlive();
+    try {
+      ensureAudioCtxRunning();
+    } catch {}
+    armStickySilenceLoop().catch(() => {});
+  }
+
+  // همان تلفظی که با دکمهٔ بعدی می‌آید — بعدی و خودکار یکی
+  async function pronounceLikeNextButton(name, vol) {
+    const nm = normSpeakKey(name);
+    if (!nm || soundMuted) return false;
+    unlockLikeNextButton();
+    const v = vol == null ? 1 : vol;
+    // اول بلاب/چسبان (بدون لمس هم می‌ماند)، بعد مسیر مستقیم بعدی
+    let ok = await speakNameNow(nm, v);
+    if (!ok) ok = await speakMoveNameOnly(nm, v);
+    if (!ok) ok = await playCloudEdgeTts(nm, v);
+    if (!ok) ok = await speakFaAny(nm, v);
+    return !!ok;
+  }
+
   async function speakMoveNameOnly(name, vol) {
     const raw = String(name || "").replace(/\s+/g, " ").trim();
     if (!raw) return false;
@@ -3113,10 +3137,26 @@
       if (!alive()) return false;
       if (ok) return true;
     }
+    // تلفظ سخت: اول بلاب آماده (خودکار)، بعد ابر، بعد سخن‌گو
     {
-      const ok = await speakFaAny(speakText, v);
-      if (!alive()) return false;
-      if (ok) return true;
+      let blob = readySpeakBlobs.get(speakText) || null;
+      if (!blob) {
+        try {
+          blob = await loadDynFaFromCache(speakText);
+        } catch {}
+      }
+      if (!blob) {
+        try {
+          blob = await ensureReadySpeak(speakText);
+        } catch {}
+      }
+      if (blob && alive()) {
+        readySpeakBlobs.set(speakText, blob);
+        let ok = await playBlobLikeClip(blob, v);
+        if (!ok && alive()) ok = await playBlobSticky(blob, v);
+        if (!ok && alive()) ok = await playBlobViaCtx(blob, v);
+        if (ok) return true;
+      }
     }
     {
       const ok = await playCloudEdgeTts(speakText, v, EDGE_TTS_VOICE_FA);
@@ -3124,7 +3164,7 @@
       if (ok) return true;
     }
     {
-      const ok = await speakNameNow(speakText, v);
+      const ok = await speakFaAny(speakText, v);
       if (!alive()) return false;
       if (ok) return true;
     }
@@ -3279,11 +3319,9 @@
     if (!nm) return !!pref;
     await sleep(90);
     if (!alive()) return false;
-    // تلفظ کاربر: اول مسیر مستقیم (مثل قبلی که با بعدی کار می‌کرد)
-    let said = await speakMoveNameOnly(nm, 1);
-    if (!said && alive()) said = await speakFaAny(nm, 1);
-    if (!said && alive()) said = await playCloudEdgeTts(nm, 1);
-    if (!said && alive()) said = await speakNameNow(nm, 1);
+    // همان تلفظ دکمهٔ بعدی
+    unlockLikeNextButton();
+    let said = await pronounceLikeNextButton(nm, 1);
     if (alive() && nm) {
       cacheCloudEdgeBlob(nm).catch(() => {});
       ensurePrimedFor(nm).catch(() => {});
@@ -3341,32 +3379,22 @@
             }
           }
         } catch {}
-        // مثل نسخه‌های پایدار: بوق، کمی صبر، بعد تلفظ مستقیم
+        // بعدی و خودکار: یک تابع تلفظ
         if (nm) {
           cacheCloudEdgeBlob(nm).catch(() => {});
           warmFaTts(nm).catch(() => {});
+          ensureReadySpeak(nm).catch(() => {});
         }
-        unlockAudio();
-        startBgKeepAlive();
-        await sleep(550);
+        unlockLikeNextButton();
+        await sleep(500);
         if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
-        unlockAudio();
         if (!nm) return;
-        let ok = false;
-        if (document.hidden) {
-          ok = await speakNameNow(nm, 1);
-        } else {
-          ok = await speakMoveNameOnly(nm, 1);
-          if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
-            ok = await speakFaAny(nm, 1);
-          }
-          if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
-            ok = await playCloudEdgeTts(nm, 1);
-          }
-          if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
-            ok = await speakNameNow(nm, 1);
-          }
-        }
+        try {
+          await Promise.race([ensureReadySpeak(nm), sleep(2000)]);
+        } catch {}
+        if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
+        unlockLikeNextButton();
+        await pronounceLikeNextButton(nm, 1);
         if (primedExpectName === nm) clearPrimedWork();
         return;
       }
@@ -3895,8 +3923,12 @@
     if (run.phaseDur > 5 && !run.announced[softKey] && prev > 4 && cur <= 4) {
       run.announced[softKey] = true;
       beepSoftDouble();
-      // عبور خودکار نزدیک است — اسم بعدی را از قبل بکش
+      // عبور خودکار نزدیک است — تلفظ بعدی را مثل دکمهٔ بعدی آماده کن
       prewarmUpcomingSpeak();
+      try {
+        const up = upcomingSpeakText();
+        if (up) ensureReadySpeak(up).catch(() => {});
+      } catch {}
     }
   }
 
@@ -3932,8 +3964,8 @@
       if (!run || run.i !== phaseIndex) return;
       if (soundGen !== myGen || announceSeq !== mySeq) return;
       stopBeep();
-      unlockAudio();
-      startBgKeepAlive();
+      // ته عبور خودکار = همان آماده‌سازی دکمهٔ بعدی
+      unlockLikeNextButton();
       speakPhase(step);
     }, 380);
     loop();
@@ -4183,11 +4215,8 @@
       skipLock = false;
     }, 450);
     markGesture();
-    unlockAudio();
-    startBgKeepAlive();
-    ensureAudioCtxRunning();
+    unlockLikeNextButton();
     run.skipped = (run.skipped || 0) + 1;
-    // advance خودش stopAllSound می‌کند — اینجا دوباره نکش
     advance();
   });
 
