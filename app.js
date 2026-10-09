@@ -3475,9 +3475,10 @@
         // استراحت ست: اول تبریک ست تمام‌شده، بعد حرکت بعد
         if (step.kind === "rest-set") {
           const doneSets = Math.max(1, Math.round(Number(step.round) || 1));
-          await speakSetCompletedMid(doneSets, seq);
+          const totalSets = Math.max(doneSets, Math.round(Number(step.rounds) || doneSets));
+          await speakSetCompletedMid(doneSets, totalSets, seq);
           if (!announceAlive(seq)) return;
-          await sleep(160);
+          await sleep(180);
           if (!announceAlive(seq)) return;
         }
         const next = step.nextName || "";
@@ -3552,17 +3553,20 @@
     return !!ok;
   }
 
-  async function speakSetCompletedMid(completed, seq) {
-    // وسط ست‌ها: بوق تبریک متفاوت + تعداد ست تمام‌شده با تلفظ کامل
+  async function speakSetCompletedMid(completed, totalSets, seq) {
     const n = Math.max(1, Math.round(Number(completed) || 0));
+    const total = Math.max(n, Math.round(Number(totalSets) || n));
     if (seq != null && !announceAlive(seq)) return;
+    unlockAudio();
+    startBgKeepAlive();
+    await ensureAudioCtxRunning();
     beepCheerMid();
-    await sleep(300);
+    await sleep(280);
     if (seq != null && !announceAlive(seq)) return;
     await speakSetPhrase("آفرین", seq);
     if (seq != null && !announceAlive(seq)) return;
-    await sleep(140);
-    await speakSetPhrase(setCountPhrase(n) + " تمام شد", seq);
+    await sleep(120);
+    await speakSetPhrase(faNum(n) + " ست از " + faNum(total) + " ست را رفتی", seq);
   }
 
   async function speakDone(stats) {
