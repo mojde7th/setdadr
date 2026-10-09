@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "141";
+  const APP_VER = "142";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -29,6 +29,7 @@
   let activeBeep = null;
   let startLock = false;
   let skipLock = false;
+  let speakAfterAdvanceTimer = 0;
   let speechWarmed = false;
   let voicePlayer = null;
   let announceSeq = 0;
@@ -2565,16 +2566,14 @@
       a.loop = false;
       a.muted = false;
       a.volume = Math.max(0.35, Math.min(1, vol == null ? 1 : vol));
-      if (a.src !== src) {
-        a.src = src;
-        try {
-          a.load();
-        } catch {}
-      } else {
-        try {
-          a.currentTime = 0;
-        } catch {}
-      }
+      // همیشه src تازه — وگرنه صدای حرکت قبلی روی فاز جدید پخش می‌شود
+      try {
+        a.pause();
+      } catch {}
+      a.src = src;
+      try {
+        a.load();
+      } catch {}
     } catch {}
     return await new Promise((resolve) => {
       let done = false;
@@ -3393,8 +3392,14 @@
         } catch {}
         if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
         unlockLikeNextButton();
-        await pronounceLikeNextButton(nm, 1);
-        if (primedExpectName === nm) clearPrimedWork();
+        // اگر بین بوق و تلفظ دوباره بعدی زده شد، اسم فاز جاری را بگو
+        const liveNm =
+          run && run.steps[run.i] && run.steps[run.i].kind === "work"
+            ? normSpeakKey(run.steps[run.i].name || "")
+            : nm;
+        if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
+        await pronounceLikeNextButton(liveNm || nm, 1);
+        if (primedExpectName === (liveNm || nm)) clearPrimedWork();
         return;
       }
       startBgKeepAlive();
@@ -3931,11 +3936,61 @@
     }
   }
 
-  function advance() {
+  function clearSpeakAfterAdvance() {
+    if (speakAfterAdvanceTimer) {
+      clearTimeout(speakAfterAdvanceTimer);
+      speakAfterAdvanceTimer = 0;
+    }
+  }
+
+  function scheduleSpeakCurrentPhase(delayMs) {
+    clearSpeakAfterAdvance();
     if (!run) return;
-    stopAllSound();
+    const phaseIndex = run.i;
+    const myGen = soundGen;
+    const mySeq = announceSeq;
+    speakAfterAdvanceTimer = setTimeout(() => {
+      speakAfterAdvanceTimer = 0;
+      if (!run || run.i !== phaseIndex) return;
+      if (soundGen !== myGen || announceSeq !== mySeq) return;
+      // همیشه فاز جاری — نه step قدیمی از ضربهٔ قبلی
+      const step = run.steps[run.i];
+      if (!step) return;
+      stopBeep();
+      unlockLikeNextButton();
+      speakPhase(step);
+    }, Math.max(120, delayMs || 380));
+  }
+
+  function advance(fromSkip) {
+    if (!run) return;
+    const skip = !!fromSkip;
+    // باطل کردن اعلام قبلی تا صدای حرکت عقب روی فاز جدید نماند
+    soundGen += 1;
+    announceSeq += 1;
+    speakToken += 1;
+    announceChain = Promise.resolve();
+    stopBeep();
+    stopVoiceFile();
+    killAllSources();
+    if (!skip) {
+      killAllHtmlAudio();
+    }
+    if (window.speechSynthesis) {
+      try {
+        speechSynthesis.cancel();
+      } catch {}
+    }
+    clearPrimedWork();
+    primedExpectName = "";
+    clearSpeakAfterAdvance();
+    try {
+      armStickySilenceLoop();
+    } catch {}
+
     run.i += 1;
     if (run.i >= run.steps.length) {
+      clearSpeakAfterAdvance();
       finishRun();
       return;
     }
@@ -3953,20 +4008,11 @@
     if (speakHint) {
       cacheCloudEdgeBlob(speakHint).catch(() => {});
       warmFaTts(speakHint).catch(() => {});
+      ensureReadySpeak(speakHint).catch(() => {});
     }
-    unlockAudio();
-    startBgKeepAlive();
-    const myGen = soundGen;
-    const mySeq = announceSeq;
-    const phaseIndex = run.i;
-    setTimeout(() => {
-      if (!run || run.i !== phaseIndex) return;
-      if (soundGen !== myGen || announceSeq !== mySeq) return;
-      stopBeep();
-      // ته عبور خودکار = همان آماده‌سازی دکمهٔ بعدی
-      unlockLikeNextButton();
-      speakPhase(step);
-    }, 380);
+    unlockLikeNextButton();
+    // چندبار بعدی: صبر کن تا ضربه تمام شود، بعد فقط فاز آخر را بگو
+    scheduleSpeakCurrentPhase(skip ? 580 : 380);
     loop();
   }
 
@@ -4186,6 +4232,7 @@
     if (!run) return;
     run.paused = !run.paused;
     if (run.paused) {
+      clearSpeakAfterAdvance();
       stopLoop();
       stopAllSound();
       stopBgKeepAlive();
@@ -4212,14 +4259,15 @@
     skipLock = true;
     setTimeout(() => {
       skipLock = false;
-    }, 450);
+    }, 160);
     markGesture();
     unlockLikeNextButton();
     run.skipped = (run.skipped || 0) + 1;
-    advance();
+    advance(true);
   });
 
   $("#btnAbort").addEventListener("click", () => {
+    clearSpeakAfterAdvance();
     stopLoop();
     stopAllSound();
     stopBgKeepAlive();
