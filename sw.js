@@ -1,4 +1,4 @@
-const CACHE = "setdadr-v157";
+const CACHE = "setdadr-v158";
 const ASSETS = [
   "./",
   "./index.html",
@@ -194,6 +194,25 @@ self.addEventListener("fetch", (e) => {
   const isJS = path.endsWith(".js");
   const isCSS = path.endsWith(".css");
   const isNav = e.request.mode === "navigate" || path.endsWith("/") || path.endsWith(".html");
+
+  // صدای ابری (پاسخ مات): اول شبکه تا یک پاسخ خراب برای همیشه کش نماند؛ کش فقط برای آفلاین
+  const isVoice = /(^|\.)(edge-tts\.vercel\.app|corsproxy\.(io|org)|api\.allorigins\.win|translate\.google(apis)?\.com)$/.test(url.hostname);
+  if (isVoice) {
+    e.respondWith(
+      fetch(e.request)
+        .then((res) => {
+          if (res && (res.ok || res.type === "opaque")) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
+          }
+          return res;
+        })
+        .catch(() =>
+          caches.open(CACHE).then((c) => c.match(e.request).then((hit) => hit || Response.error()))
+        )
+    );
+    return;
+  }
 
   // Ã˜Â´Ã™â€ž Ã˜Â§Ã™Â¾: Ã˜Â§Ã™Ë†Ã™â€ž Ã˜Â´Ã˜Â¨ÃšÂ©Ã™â€¡Ã˜â€º Ã™ÂÃ™â€šÃ˜Â· ÃšÂ©Ã˜Â´ Ã™â€ Ã˜Â³Ã˜Â®Ã™â€¡Ã™â€ Ã™ÂÃ˜Â¹Ã™â€žÃ›Å’ (Ã˜Â¨Ã˜Â¯Ã™Ë†Ã™â€  ignoreSearch Ã˜ÂªÃ˜Â§ Ã™ÂÃ˜Â§Ã›Å’Ã™â€ž Ã™â€šÃ˜Â¯Ã›Å’Ã™â€¦Ã›Å’ Ã›Â¶Ã›Â¹ Ã˜Â¨Ã˜Â±Ã™â€ ÃšÂ¯Ã˜Â±Ã˜Â¯Ã˜Â¯)
   if (isNav || isJS || isCSS) {
