@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "152";
+  const APP_VER = "153";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -1192,6 +1192,101 @@
     }
   }
 
+  async function playBlobViaCtx(blob, vol) {
+    if (!blob || soundMuted) return false;
+    const gen = soundGen;
+    try {
+      unlockAudio();
+      if (!audioCtx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (AC) audioCtx = new AC();
+      }
+      if (!audioCtx) return false;
+      if (audioCtx.state === "suspended") await audioCtx.resume().catch(() => {});
+      if (gen !== soundGen || audioCtx.state !== "running") return false;
+      const raw = await blob.arrayBuffer();
+      if (gen !== soundGen) return false;
+      const buf = await audioCtx.decodeAudioData(raw.slice(0));
+      if (gen !== soundGen) return false;
+      stopVoiceFile();
+      await new Promise((resolve) => {
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          resolve();
+        };
+        try {
+          const src = audioCtx.createBufferSource();
+          const g = audioCtx.createGain();
+          g.gain.value = Math.max(0.35, Math.min(1, vol == null ? 1 : vol));
+          src.buffer = buf;
+          src.connect(g);
+          g.connect(audioCtx.destination);
+          liveSources.add(src);
+          voicePlayer = src;
+          src.onended = () => {
+            liveSources.delete(src);
+            finish();
+          };
+          src.start();
+          setTimeout(() => {
+            try {
+              src.stop();
+            } catch {}
+            liveSources.delete(src);
+            finish();
+          }, Math.min(12000, (buf.duration + 0.35) * 1000));
+        } catch {
+          finish();
+        }
+      });
+      return gen === soundGen;
+    } catch {
+      return false;
+    }
+  }
+
+  // تلفظ سخت بدون لمس — کش/ابر + WebAudio (مسیر خودکار)
+  async function speakHardNameViaCtx(name, vol) {
+    const nm = normSpeakKey(name);
+    if (!nm || soundMuted) return false;
+    const v = vol == null ? 1 : vol;
+    const gen = soundGen;
+    const tok = speakToken;
+    const alive = () => soundAlive(gen, tok);
+    unlockAudio();
+    startBgKeepAlive();
+    try {
+      if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
+    } catch {}
+    if (!alive()) return false;
+    let blob = null;
+    try {
+      blob = await loadDynFaFromCache(nm);
+    } catch {}
+    if (!blob && alive()) {
+      try {
+        blob = await Promise.race([
+          cacheCloudEdgeBlob(nm),
+          sleep(4000).then(() => null)
+        ]);
+      } catch {}
+    }
+    if (!blob || !alive()) return false;
+    try {
+      await saveDynFaToCache(nm, blob);
+    } catch {}
+    primedExpectName = nm;
+    await primeMoveAudio(nm, blob).catch(() => {});
+    if (!alive()) return false;
+    let ok = await playBlobViaCtx(blob, v);
+    if (!ok && alive() && primedWorkName === nm) {
+      ok = await playPrimedWorkName(nm, v);
+    }
+    return !!ok;
+  }
+
   async function playVoiceFileHtml(rel, vol) {
     try {
       if (soundMuted) return false;
@@ -2187,6 +2282,12 @@
       if (!alive()) return false;
       if (ok) return true;
     }
+    // خودکار بدون لمس: اول WebAudio
+    {
+      const ok = await speakHardNameViaCtx(speakText, v);
+      if (!alive()) return false;
+      if (ok) return true;
+    }
     {
       const ok = await speakFaAny(speakText, v);
       if (!alive()) return false;
@@ -2311,8 +2412,8 @@
     if (!nm) return !!pref;
     await sleep(60);
     if (!soundAlive(gen, tok) || (seq != null && !announceAlive(seq))) return false;
-    const said = await speakMoveNameOnly(nm, 1);
-    // بعد از گفتن در استراحت، بافر را برای خود حرکت آماده نگه دار
+    let said = await speakHardNameViaCtx(nm, 1);
+    if (!said && soundAlive(gen, tok)) said = await speakMoveNameOnly(nm, 1);
     if (said && soundAlive(gen, tok) && nm) {
       ensurePrimedFor(nm).catch(() => {});
     }
@@ -2336,7 +2437,7 @@
         step.kind === "work" && step.name ? warmFaTts(step.name) : Promise.resolve();
       buzz(step.kind === "work" ? [80, 35, 90] : [55, 30, 70]);
       if (step.kind === "work") {
-        // بوق، ~۲ث، بعد همان اسمی که در استراحت گفته شد را دوباره بگو
+        // بوق کوتاه، بعد تلفظ سخت (WebAudio) — بعدی و خودکار یکی
         startBgKeepAlive();
         beepSoftRing(0);
         const nm = normSpeakKey(step.name);
@@ -2346,44 +2447,72 @@
           primedExpectName = nm;
           warmWork.catch(() => {});
           ensurePrimedFor(nm).catch(() => {});
+          cacheCloudEdgeBlob(nm).catch(() => {});
         }
-        const t0 = Date.now();
-        while (Date.now() - t0 < 2000) {
-          if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
-          unlockAudio();
-          try {
-            if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
-          } catch {}
-          await sleep(250);
-        }
+        await sleep(350);
         if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
         unlockAudio();
         try {
           if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
         } catch {}
         if (!nm) return;
+        // صبر کوتاه برای پرایم
+        try {
+          await Promise.race([ensurePrimedFor(nm), sleep(2500)]);
+        } catch {}
+        if (!announceAlive(seq) || !soundAlive(gen, tok)) return;
         let ok = false;
-        // اگر همان اسم در استراحت پرایم شده، فوری از بافر بگو
         if (primedWorkName === nm && primedWorkAudioBuffer) {
           ok = await playPrimedWorkName(nm, 1);
+        }
+        if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
+          ok = await speakHardNameViaCtx(nm, 1);
         }
         if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
           ok = await speakMoveNameOnly(nm, 1);
         }
         if (!ok && announceAlive(seq) && soundAlive(gen, tok)) {
-          await sleep(180);
-          if (announceAlive(seq) && soundAlive(gen, tok)) {
-            ok = await speakFaAny(nm, 1);
-          }
+          ok = await speakFaAny(nm, 1);
         }
         if (primedExpectName === nm) clearPrimedWork();
         return;
       }
       startBgKeepAlive();
+      unlockAudio();
+      try {
+        if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
+      } catch {}
+      if (step.kind === "rest-set") {
+        // بین ست: بوق + عالی + آفرین ست + حرکت بعد (تلفظ سخت)
+        const doneSets = Math.max(1, Math.round(Number(step.round) || 1));
+        const totalSets = Math.max(
+          doneSets,
+          Math.round(Number(step.rounds) || doneSets)
+        );
+        const next = step.nextName || "";
+        if (next) {
+          cacheCloudEdgeBlob(normSpeakKey(next)).catch(() => {});
+          ensurePrimedFor(next).catch(() => {});
+        }
+        beepSoftRing(0);
+        await sleep(160);
+        if (!announceAlive(seq)) return;
+        let ali = await playVoiceFile("cheer-ali.mp3", 1);
+        if (!ali) await speakCheerOnly(seq);
+        if (!announceAlive(seq)) return;
+        await sleep(100);
+        await speakHardNameViaCtx(
+          "آفرین. " + faNum(doneSets) + " ست از " + faNum(totalSets) + " ست",
+          1
+        );
+        if (!announceAlive(seq)) return;
+        await sleep(120);
+        await speakNextMoveName(next, seq);
+        return;
+      }
       beepSoftRing(0);
-      await sleep(200);
+      await sleep(160);
       if (!announceAlive(seq)) return;
-      // استراحت: «حرکت بعد» + اسم با فاصلهٔ کم
       if (isRest) {
         const next = step.nextName || "";
         await speakNextMoveName(next, seq);
@@ -2702,8 +2831,14 @@
     // صدا را در پس‌زمینه گرم کن؛ شروع را معطل نکن
     try {
       p.circuit.forEach((c) => {
+        const nm = normSpeakKey(c.name);
         warmMoveVoice(c.name);
+        cacheCloudEdgeBlob(nm).catch(() => {});
+        ensurePrimedFor(nm).catch(() => {});
       });
+    } catch {}
+    try {
+      if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
     } catch {}
     run = {
       planId: p.id,
@@ -2805,21 +2940,38 @@
     run.prevLeftCeil = Math.ceil(step.dur);
     run.lastTick = performance.now();
     paintRun(false);
-    // یک تیک صبر تا قطع صدای قبلی کامل بنشیند، بعد اعلام جدید
+    const speakHint =
+      step.kind === "work"
+        ? normSpeakKey(step.name || "")
+        : normSpeakKey(step.nextName || "");
+    if (speakHint) {
+      cacheCloudEdgeBlob(speakHint).catch(() => {});
+      ensurePrimedFor(speakHint).catch(() => {});
+    }
+    unlockAudio();
+    startBgKeepAlive();
+    try {
+      if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+    } catch {}
     const myGen = soundGen;
     const mySeq = announceSeq;
+    const phaseIndex = run.i;
+    const delay = step.kind === "rest-set" ? 140 : 280;
     setTimeout(() => {
-      if (!run || soundGen !== myGen || announceSeq !== mySeq) return;
-      // قطع دوباره قبل از اعلام — صدای دیررس فاز قبل وارد نشود
+      if (!run || run.i !== phaseIndex) return;
+      if (soundGen !== myGen || announceSeq !== mySeq) return;
       stopBeep();
-      killAllHtmlAudio();
       killAllSources();
       stopVoiceFile();
       unlockAudio();
       startBgKeepAlive();
-      if (!run || soundGen !== myGen || announceSeq !== mySeq) return;
-      speakPhase(step);
-    }, 380);
+      try {
+        if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+      } catch {}
+      if (!run || run.i !== phaseIndex) return;
+      if (soundGen !== myGen || announceSeq !== mySeq) return;
+      speakPhase(run.steps[run.i] || step);
+    }, delay);
     loop();
   }
 
@@ -3046,12 +3198,15 @@
     skipLock = true;
     setTimeout(() => {
       skipLock = false;
-    }, 450);
+    }, 280);
+    try {
+      lastGestureAt = Date.now();
+    } catch {}
     unlockAudio();
-    stopAllSound();
-    killAllHtmlAudio();
-    killAllSources();
-    stopBeep();
+    startBgKeepAlive();
+    try {
+      if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+    } catch {}
     run.skipped = (run.skipped || 0) + 1;
     advance();
   });
