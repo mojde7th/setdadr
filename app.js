@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "137";
+  const APP_VER = "138";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -74,6 +74,7 @@
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const readySpeakBlobs = new Map(); // متن → Blob آماده برای پخش مثل کلیپ
   const readySpeakWait = new Map(); // متن → Promise آماده‌سازی
+  const readySpeakBuffers = new Map(); // متن → AudioBuffer (عبور خودکار بدون لمس)
   const DYN_FA_CACHE = "setdadr-fa-tts-v1";
   let tickIv = 0;
   let bgKeepAudio = null;
@@ -607,16 +608,25 @@
       startBgKeepAlive();
       try {
         await ensureAudioCtxRunning();
+        startCtxKeepAlive();
       } catch {}
-      // عنصر چسبان را زنده نگه دار — پخش خودکار بدون لمس از همین می‌آید
       try {
         await armStickySilenceLoop();
       } catch {}
       if (warmHint) {
         try {
-          await Promise.race([warmHint, sleep(2000)]);
+          await Promise.race([warmHint, sleep(3000)]);
         } catch {}
       }
+      if (!run || run.i !== phaseIndex) return;
+      // اگر اسم سخت هنوز بافر نشده، همین‌جا بساز
+      try {
+        const hint =
+          step.kind === "work"
+            ? normSpeakKey(step.name || "")
+            : normSpeakKey(step.nextName || "");
+        if (hint) await Promise.race([ensureReadyBuffer(hint), sleep(2500)]);
+      } catch {}
       if (!run || run.i !== phaseIndex) return;
       speakPhase(step);
     }, wait);
@@ -698,8 +708,22 @@
   }
 
   function startCtxKeepAlive() {
-    // عمداً خاموش — اسیلاتور باعث وزوز می‌شد
+    // نگه داشتن کانتکست برای عبور خودکار — بهره نزدیک صفر، بدون وزوز
     stopCtxKeepAlive();
+    try {
+      if (!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      g.gain.value = 0.00001;
+      osc.type = "sine";
+      osc.frequency.value = 20;
+      osc.connect(g);
+      g.connect(audioCtx.destination);
+      osc.start();
+      bgCtxKeep = { osc, g };
+    } catch {
+      bgCtxKeep = null;
+    }
   }
 
   function stopCtxKeepAlive() {
@@ -2462,6 +2486,74 @@
     return p;
   }
 
+  async function ensureReadyBuffer(text) {
+    const key = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
+    if (!key) return null;
+    if (readySpeakBuffers.has(key)) return readySpeakBuffers.get(key);
+    const blob = await ensureReadySpeak(key);
+    if (!blob) return null;
+    try {
+      const ok = await ensureAudioCtxRunning();
+      if (!ok || !audioCtx) return null;
+      const raw = await blob.arrayBuffer();
+      const buf = await audioCtx.decodeAudioData(raw.slice(0));
+      if (buf) readySpeakBuffers.set(key, buf);
+      return buf || null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function playReadyBuffer(text, vol) {
+    // تلفظ سخت از بافر آماده‌شده — لمس تازه لازم نیست
+    const key = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
+    if (!key || soundMuted) return false;
+    let buf = readySpeakBuffers.get(key) || null;
+    if (!buf) buf = await ensureReadyBuffer(key);
+    if (!buf) return false;
+    const gen = soundGen;
+    try {
+      const ok = await ensureAudioCtxRunning();
+      if (!ok || !audioCtx) return false;
+      if (gen !== soundGen) return false;
+      startCtxKeepAlive();
+      await new Promise((resolve) => {
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          resolve();
+        };
+        try {
+          const src = audioCtx.createBufferSource();
+          const g = audioCtx.createGain();
+          g.gain.value = Math.max(0.35, Math.min(1, vol == null ? 1 : vol));
+          src.buffer = buf;
+          src.connect(g);
+          g.connect(audioCtx.destination);
+          liveSources.add(src);
+          src.onended = () => {
+            liveSources.delete(src);
+            finish();
+          };
+          src.start();
+          setTimeout(() => {
+            try {
+              src.stop();
+            } catch {}
+            liveSources.delete(src);
+            finish();
+          }, Math.min(14000, (buf.duration + 0.4) * 1000));
+        } catch {
+          finish();
+        }
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   // عین کلیپ ثابت: Audio تازه در لحظهٔ پخش (نه عنصر پرایم‌شده با نسل قدیمی)
   async function playBlobLikeClip(blob, vol) {
     if (!blob || soundMuted) return false;
@@ -2744,6 +2836,16 @@
     const v = vol == null ? 1 : vol;
     startBgKeepAlive();
     unlockAudio();
+    try {
+      await ensureAudioCtxRunning();
+      startCtxKeepAlive();
+    } catch {}
+
+    // اول بافر ازپیش‌دیکد — عبور خودکار تلفظ سخت را همین می‌گوید
+    {
+      const okBuf = await playReadyBuffer(key, v);
+      if (okBuf) return true;
+    }
 
     // کلیپ آماده — فقط اگر همان متن کاربر باشد (لاتین را به فارسی عوض نکن)
     try {
@@ -3360,7 +3462,8 @@
       }
       if (!alive()) return false;
       let said = false;
-      if (blob) said = await playBlobSticky(blob, 1);
+      if (!said && alive()) said = await playReadyBuffer(nm, 1);
+      if (blob && !said && alive()) said = await playBlobSticky(blob, 1);
       if (!said && alive()) said = await speakNameNow(nm, 1);
       return !!said;
     }
@@ -3372,8 +3475,13 @@
     if (!nm) return !!pref;
     await sleep(90);
     if (!alive()) return false;
-    // اسم فارسی سخت: اول کش/چسبان (عبور خودکار بدون لمس)
-    let said = await speakNameNow(nm, 1);
+    // اسم فارسی سخت: اول بافر ازپیش‌دیکد (عبور خودکار)
+    try {
+      await Promise.race([ensureReadyBuffer(nm), sleep(2500)]);
+    } catch {}
+    if (!alive()) return false;
+    let said = await playReadyBuffer(nm, 1);
+    if (!said && alive()) said = await speakNameNow(nm, 1);
     if (!said && alive()) said = await speakMoveNameOnly(nm, 1);
     if (!said && alive()) said = await speakFaAny(nm, 1);
     if (!said && alive()) said = await playCloudEdgeTts(nm, 1);
@@ -3454,11 +3562,12 @@
         await ensureAudioCtxRunning();
         if (!nm) return;
         try {
-          await Promise.race([ensureReadySpeak(nm), sleep(2800)]);
+          await Promise.race([ensureReadyBuffer(nm), sleep(3000)]);
         } catch {}
         if (!announceAlive(seq)) return;
         let ok = false;
-        ok = await speakNameNow(nm, 1);
+        ok = await playReadyBuffer(nm, 1);
+        if (!ok && announceAlive(seq)) ok = await speakNameNow(nm, 1);
         if (!ok && announceAlive(seq)) {
           ok = await speakMoveNameOnly(nm, 1);
         }
@@ -3885,7 +3994,19 @@
     markGesture();
     forceHaptic("heavy");
     startBgKeepAlive();
-    ensureAudioCtxRunning();
+    ensureAudioCtxRunning().then(() => {
+      startCtxKeepAlive();
+      try {
+        p.circuit.forEach((c) => {
+          const nm = normSpeakKey(c.name);
+          warmMoveVoice(c.name);
+          ensureReadyBuffer(nm).catch(() => {});
+          ensureReadySpeak(nm).catch(() => {});
+          cacheCloudEdgeBlob(nm).catch(() => {});
+          primeHtmlSpeak(nm).catch(() => {});
+        });
+      } catch {}
+    });
     // صدا را در پس‌زمینه گرم کن؛ شروع را معطل نکن
     try {
       p.circuit.forEach((c) => {
@@ -3959,6 +4080,7 @@
     const nm = upcomingSpeakText();
     if (!nm) return;
     try {
+      ensureReadyBuffer(nm).catch(() => {});
       ensureReadySpeak(nm).catch(() => {});
       cacheCloudEdgeBlob(nm).catch(() => {});
       warmFaTts(nm).catch(() => {});
@@ -4031,7 +4153,7 @@
       step.kind === "work"
         ? normSpeakKey(step.name || "")
         : normSpeakKey(step.nextName || "");
-    const warmHint = speakHint ? ensureReadySpeak(speakHint) : Promise.resolve(null);
+    const warmHint = speakHint ? ensureReadyBuffer(speakHint) : Promise.resolve(null);
     if (speakHint) {
       cacheCloudEdgeBlob(speakHint).catch(() => {});
       warmFaTts(speakHint).catch(() => {});
