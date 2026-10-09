@@ -2816,7 +2816,8 @@
         if (!soundAlive(gen, tok)) return false;
         if (cached) {
           readySpeakBlobs.set(key, cached);
-          let ok = await playBlobLikeClip(cached, vol == null ? 1 : vol);
+          let ok = await playBlobViaCtx(cached, vol == null ? 1 : vol);
+          if (!ok) ok = await playBlobLikeClip(cached, vol == null ? 1 : vol);
           if (!ok) ok = await playBlobFa(cached, vol == null ? 1 : vol);
           if (ok && soundAlive(gen, tok)) return true;
         }
@@ -2844,7 +2845,9 @@
         const blob = await cacheCloudEdgeBlob(key, voice);
         if (!soundAlive(gen, tok)) return false;
         if (blob) {
-          const ok = await playBlobFa(blob, vol == null ? 1 : vol);
+          let ok = await playBlobViaCtx(blob, vol == null ? 1 : vol);
+          if (!ok) ok = await playBlobSticky(blob, vol == null ? 1 : vol);
+          if (!ok) ok = await playBlobFa(blob, vol == null ? 1 : vol);
           if (ok && soundAlive(gen, tok)) return true;
         }
       } catch {}
