@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "215";
+  const APP_VER = "216";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -77,12 +77,16 @@
   let tickIv = 0;
   let bgKeepAudio = null;
   let voiceKeepAudio = null;
+  let stickySpeakAudio = null;
   let bgKeepOn = false;
   let silentCtxKeep = null;
   let silentCtxGain = null;
   let bgHeartbeatIv = 0;
+  let bgWatchIv = 0;
   let bgTickWired = false;
   let lastBgAudioT = 0;
+  let wakeLockSentinel = null;
+  let quietKeepUrl = "";
   const BG_KEEP_VOL = 0.004;
   const FG_KEEP_VOL = 0.004;
   // سرور دیلارا ابری دائمی (بدون لپ‌تاپ) + اختیاری تونل محلی
@@ -483,9 +487,11 @@
   function killAllHtmlAudio() {
     const keep = bgKeepAudio;
     const voice = voiceKeepAudio;
+    const sticky = stickySpeakAudio;
     liveAudios.forEach((a) => {
       if (keep && a === keep) return;
       if (voice && a === voice) return;
+      if (sticky && a === sticky) return;
       try {
         a.onended = null;
         a.onerror = null;
@@ -505,6 +511,7 @@
     liveAudios.clear();
     if (keep) liveAudios.add(keep);
     if (voiceKeepAudio) liveAudios.add(voiceKeepAudio);
+    if (stickySpeakAudio) liveAudios.add(stickySpeakAudio);
   }
 
   function killAllSources() {
@@ -520,14 +527,24 @@
   }
 
   function startSilentCtxKeep() {
-    // دیگر اسیلاتور به بلندگو وصل نشود — همان صدای «دوتو» بود
+    // مثل v122: ۱۸کیلوهرتز تقریباً نشنیدنی — فقط کانتکست زنده بماند
     try {
       unlockAudio();
       if (!audioCtx) return false;
       if (audioCtx.state === "suspended") {
         audioCtx.resume().catch(() => {});
       }
-      stopSilentCtxKeep();
+      if (silentCtxKeep) return true;
+      const osc = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      g.gain.value = 0.00003;
+      osc.frequency.value = 18000;
+      osc.type = "sine";
+      osc.connect(g);
+      g.connect(audioCtx.destination);
+      osc.start();
+      silentCtxKeep = osc;
+      silentCtxGain = g;
       return true;
     } catch {
       return false;
@@ -650,18 +667,105 @@
     }
   }
 
+  async function requestWakeLock() {
+    try {
+      if (!("wakeLock" in navigator)) return;
+      if (wakeLockSentinel) return;
+      wakeLockSentinel = await navigator.wakeLock.request("screen");
+      try {
+        wakeLockSentinel.addEventListener("release", () => {
+          wakeLockSentinel = null;
+        });
+      } catch {}
+    } catch {
+      wakeLockSentinel = null;
+    }
+  }
+
+  async function releaseWakeLock() {
+    try {
+      if (wakeLockSentinel) await wakeLockSentinel.release();
+    } catch {}
+    wakeLockSentinel = null;
+  }
+
+  function makeQuietKeepUrl() {
+    // نویز بسیار ضعیف (مثل v122) — شنیده نمی‌شود ولی سشن مدیا زنده می‌ماند
+    if (quietKeepUrl) return quietKeepUrl;
+    try {
+      const sr = 44100;
+      const sec = 2;
+      const n = sr * sec;
+      const data = new ArrayBuffer(44 + n * 2);
+      const view = new DataView(data);
+      const w = (o, s) => {
+        for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i));
+      };
+      w(0, "RIFF");
+      view.setUint32(4, 36 + n * 2, true);
+      w(8, "WAVE");
+      w(12, "fmt ");
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true);
+      view.setUint32(24, sr, true);
+      view.setUint32(28, sr * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true);
+      w(36, "data");
+      view.setUint32(40, n * 2, true);
+      for (let i = 0; i < n; i++) {
+        const sample = (Math.random() * 2 - 1) * 0.00035;
+        view.setInt16(44 + i * 2, (sample * 32767) | 0, true);
+      }
+      quietKeepUrl = URL.createObjectURL(new Blob([data], { type: "audio/wav" }));
+      return quietKeepUrl;
+    } catch {
+      return KEEP_SILENCE;
+    }
+  }
+
+  function startBgWatch() {
+    if (bgWatchIv) return;
+    bgWatchIv = setInterval(() => {
+      if (!run || run.paused || soundMuted) return;
+      resumeBgIfNeeded();
+      startSilentCtxKeep();
+      requestWakeLock();
+    }, 3500);
+  }
+
+  function stopBgWatch() {
+    if (bgWatchIv) clearInterval(bgWatchIv);
+    bgWatchIv = 0;
+  }
+
   function ensureBgLoop() {
-    // حلقهٔ سکوت واقعی — بدون فایل نویز/بوق
+    // مثل نسخهٔ اولیهٔ درست‌شده: dither خیلی آروم، نه بوق keep-quiet
     if (bgKeepAudio) return bgKeepAudio;
-    const a = makeHtmlAudio(KEEP_SILENCE);
+    const a = makeHtmlAudio(makeQuietKeepUrl());
     a.loop = true;
-    a.volume = FG_KEEP_VOL;
+    a.volume = BG_KEEP_VOL;
+    a.muted = false;
     a.setAttribute("data-setdadr-keep", "1");
     bgKeepAudio = a;
     liveAudios.add(a);
     wireBgAudioTick(a);
     return a;
   }
+
+  function ensureStickySpeakAudio() {
+    if (stickySpeakAudio) return stickySpeakAudio;
+    const a = new Audio();
+    a.playsInline = true;
+    a.setAttribute("playsinline", "");
+    a.setAttribute("webkit-playsinline", "");
+    a.preload = "auto";
+    stickySpeakAudio = a;
+    liveAudios.add(a);
+    return a;
+  }
+
 
   function ensureKeeper() {
     // عنصر جدا برای تلفظ — حلقهٔ پس‌زمینه را قطع نکند
@@ -756,72 +860,104 @@
     try {
       if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
     } catch {}
-    // اسیلاتور شنیدنی نه — فقط HTML سکوت مثل نسخه‌های پایدار قدیمی
-    const a = ensureBgLoop();
-    const hidden = isAppHidden();
-    const vol = BG_KEEP_VOL;
-    try {
-      if (!keeperOnSilence(a)) {
-        a.loop = true;
-        a.src = KEEP_SILENCE;
+    let dead = false;
+    if (bgKeepAudio) {
+      try {
+        if (!bgKeepAudio.src && !bgKeepAudio.currentSrc) dead = true;
+      } catch {
+        dead = true;
       }
-      a.muted = false;
-      a.volume = vol;
-      a.loop = true;
-      const p = a.play();
-      if (p && typeof p.catch === "function") {
-        p.catch(() => {
+    }
+    if (!bgKeepAudio || dead) {
+      try {
+        if (bgKeepAudio) {
+          liveAudios.delete(bgKeepAudio);
           try {
-            a.src = KEEP_SILENCE;
-            a.loop = true;
-            a.muted = false;
-            a.volume = vol;
-            a.play().catch(() => {});
+            bgKeepAudio.pause();
           } catch {}
+        }
+      } catch {}
+      bgKeepAudio = null;
+      bgTickWired = false;
+      const a = ensureBgLoop();
+      a.volume = BG_KEEP_VOL;
+      a.muted = false;
+      a.loop = true;
+    } else {
+      try {
+        bgKeepAudio.muted = false;
+        bgKeepAudio.volume = BG_KEEP_VOL;
+        bgKeepAudio.loop = true;
+      } catch {}
+    }
+    try {
+      const p = bgKeepAudio.play();
+      if (p && typeof p.then === "function") {
+        p.catch(() => {
+          bgKeepAudio = null;
+          bgTickWired = false;
         });
       }
     } catch {}
-    try {
-      if (hidden && run && !run.paused && navigator.wakeLock && !startBgKeepAlive._lock) {
-        navigator.wakeLock
-          .request("screen")
-          .then((lk) => {
-            startBgKeepAlive._lock = lk;
-            try {
-              lk.addEventListener("release", () => {
-                startBgKeepAlive._lock = null;
-              });
-            } catch {}
-          })
-          .catch(() => {});
-      }
-    } catch {}
+    startSilentCtxKeep();
     setMediaPlaying(true, (run && (run.title || "تمرین")) || "ست‌یار");
     wireMediaSessionKeep();
-    if (hidden) startBgHeartbeat();
+    startBgWatch();
+    requestWakeLock();
+    if (isAppHidden()) startBgHeartbeat();
   }
 
   function stopBgKeepAlive() {
     bgKeepOn = false;
     stopBgHeartbeat();
+    stopBgWatch();
     cutKeeperVoice();
     setMediaPlaying(false);
     stopSilentCtxKeep();
+    releaseWakeLock();
     const a = bgKeepAudio;
     if (!a) return;
     try {
+      a.onended = null;
+      a.onerror = null;
       a.pause();
+      a.removeAttribute("src");
+      a.load();
     } catch {}
+    bgKeepAudio = null;
+    bgTickWired = false;
   }
 
   function resumeBgIfNeeded() {
     if (!run || run.paused || soundMuted) return;
     bgKeepOn = true;
-    startBgKeepAlive();
+    unlockAudio();
+    try {
+      if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+    } catch {}
+    if (bgKeepAudio) {
+      try {
+        bgKeepAudio.muted = false;
+        bgKeepAudio.volume = BG_KEEP_VOL;
+      } catch {}
+      const p = bgKeepAudio.play();
+      if (p && typeof p.then === "function") {
+        p.catch(() => {
+          bgKeepAudio = null;
+          bgTickWired = false;
+          startBgKeepAlive();
+        });
+      }
+    } else {
+      startBgKeepAlive();
+    }
     startSilentCtxKeep();
     try {
       if (window.speechSynthesis) speechSynthesis.resume();
     } catch {}
+    setMediaPlaying(true, (run && (run.title || "تمرین")) || "ست‌یار");
+    startBgWatch();
+    requestWakeLock();
     if (isAppHidden()) startBgHeartbeat();
     else stopBgHeartbeat();
   }
@@ -4902,30 +5038,20 @@
         loop();
       }
     } else if (run && !run.paused && !soundMuted) {
-      // مینیمایز: حلقهٔ صدا را فوری پخش کن تا سیستم نکشد
       bgKeepOn = true;
-      try {
-        const a = ensureBgLoop();
-        a.muted = false;
-        a.volume = BG_KEEP_VOL;
-        a.loop = true;
-        if (!keeperOnSilence(a)) {
-          a.src = KEEP_SILENCE;
-        }
-        a.play().catch(() => {});
-      } catch {}
       resumeBgIfNeeded();
       startBgHeartbeat();
+      startBgWatch();
+      requestWakeLock();
     }
   });
   window.addEventListener("pagehide", () => {
     if (run && !run.paused && !soundMuted) {
       bgKeepOn = true;
-      try {
-        ensureBgLoop().play().catch(() => {});
-      } catch {}
       resumeBgIfNeeded();
       startBgHeartbeat();
+      startBgWatch();
+      requestWakeLock();
     }
   });
   window.addEventListener("pageshow", () => {
