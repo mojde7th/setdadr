@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "193";
+  const APP_VER = "195";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 16;
   const VOICE_STAT_LOUD = 6;
@@ -3702,8 +3702,8 @@
       startBgKeepAlive();
       startSilentCtxKeep();
     } else {
+      // عبور خودکار: قطع نرم — کیپر را خفه نکن تا تلفظ بعدی بماند
       softCutForAdvance();
-      hushKeeperToSilence();
     }
     run.i += 1;
     if (run.i >= run.steps.length) {
