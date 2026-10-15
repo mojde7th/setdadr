@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "235";
+  const APP_VER = "236";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -70,7 +70,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=235";
+  const VOICE_Q = "?v=236";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -771,10 +771,12 @@
     return a;
   }
 
-  function playBgCueFile(rel, vol) {
+  function playBgCueFile(rel, vol, opts) {
     if (soundMuted || !rel) return Promise.resolve(false);
+    const o = opts || {};
     const src = VOICE_BASE + rel + VOICE_Q;
     const v = Math.max(0.85, Math.min(1, vol == null ? 1 : Number(vol) || 1));
+    const waitMs = Math.max(3000, Math.min(10000, o.waitMs || 8000));
     unlockAudio();
     startBgKeepAlive();
     const a = ensureBgCueRail();
@@ -783,18 +785,20 @@
     } catch {}
     return new Promise((resolve) => {
       let done = false;
-      const finish = (ok) => {
+      const finish = (ok, cut) => {
         if (done) return;
         done = true;
         try {
           a.onended = null;
           a.onerror = null;
         } catch {}
-        try {
-          a.pause();
-          a.volume = 0;
-          a.src = KEEP_SILENCE;
-        } catch {}
+        if (cut !== false) {
+          try {
+            a.pause();
+            a.volume = 0;
+            a.src = KEEP_SILENCE;
+          } catch {}
+        }
         resolve(!!ok);
       };
       try {
@@ -806,13 +810,20 @@
         a.src = src;
         const p = a.play();
         if (p && typeof p.catch === "function") {
-          p.catch(() => {
-            playOnKeeper(src, v, { startCap: 1500, maxMs: 4000 }).then((ok2) => finish(!!ok2));
-          });
+          p.catch(() => finish(false));
         }
+        // فقط اگر هنوز شروع نشده؛ وسط بوق بلند را قطع نکن
         setTimeout(() => {
-          if (!done) finish(!a.paused || (a.currentTime || 0) > 0.02);
-        }, 2500);
+          if (done) return;
+          if (!a.paused && (a.currentTime || 0) > 0.05) {
+            // هنوز دارد پخش می‌شود — صبر تا onended یا سقف
+            setTimeout(() => {
+              if (!done) finish(true);
+            }, Math.max(500, waitMs - 2800));
+            return;
+          }
+          finish(false);
+        }, 2800);
       } catch {
         finish(false);
       }
@@ -1257,52 +1268,63 @@
 
   // ۴ ثانیه آخر: بوق استراحت — پس‌زمینه همان مسیر unlocked HTML (نه آماده)
   function beepLastSecond(secLeft) {
-    if (soundMuted) return;
-    unlockAudio();
-    startBgKeepAlive();
-    // فقط برای سازگاری؛ بوق اصلی ۴ث جداست
-    const vol = secLeft >= 4 ? 1 : 0.9;
-    playBgCueFile("beep-rest.wav", vol).then((ok) => {
-      if (!ok) {
-        playOnKeeper(VOICE_BASE + "beep-rest.wav" + VOICE_Q, vol, {
-          startCap: 2500,
-          maxMs: 6000
-        });
-      }
-    });
+    // بوق ۴ث فقط از beepFourSecWarning
+    if (secLeft === 4) beepFourSecWarning();
   }
 
   function beepFourSecWarning() {
     if (soundMuted) return;
+    if (beepFourSecWarning._on) return;
+    beepFourSecWarning._on = true;
     unlockAudio();
     startBgKeepAlive();
+    const src = VOICE_BASE + "beep-rest.wav" + VOICE_Q;
+    const a = ensureBgCueRail();
     try {
-      buzz([40, 30, 60]);
+      a.pause();
     } catch {}
-    // ریل جدا از تلفظ — بوق ۳٫۶ث قطع نشود
-    playBgCueFile("beep-rest.wav", 1).then((ok) => {
-      if (ok) return;
-      playOnKeeper(VOICE_BASE + "beep-rest.wav" + VOICE_Q, 1, {
-        startCap: 2500,
-        maxMs: 7000
-      });
-    });
+    try {
+      a.onended = () => {
+        beepFourSecWarning._on = false;
+        try {
+          a.volume = 0;
+          a.src = KEEP_SILENCE;
+        } catch {}
+        try {
+          keepSilenceAlive();
+        } catch {}
+      };
+      a.onerror = () => {
+        beepFourSecWarning._on = false;
+      };
+      a.loop = false;
+      a.muted = false;
+      a.volume = 1;
+      a.src = src;
+      const p = a.play();
+      if (p && typeof p.catch === "function") {
+        p.catch(() => {
+          beepFourSecWarning._on = false;
+          // فقط اگر ریل شکست — یک‌بار روی کیپر، بدون دوبل
+          playOnKeeper(src, 1, { startCap: 2500, maxMs: 7000 }).finally(() => {
+            beepFourSecWarning._on = false;
+          });
+        });
+      }
+      setTimeout(() => {
+        beepFourSecWarning._on = false;
+      }, 8000);
+    } catch {
+      beepFourSecWarning._on = false;
+    }
   }
 
   function beepPhaseStart() {
     if (soundMuted) return;
     unlockAudio();
     startBgKeepAlive();
-    try {
-      buzz([70, 25, 80]);
-    } catch {}
-    playBgCueFile("beep-soft.wav", 1).then((ok) => {
-      if (ok) return;
-      playOnKeeper(VOICE_BASE + "beep-soft.wav" + VOICE_Q, 1, {
-        startCap: 1500,
-        maxMs: 3000
-      });
-    });
+    // فقط بوق نرم شروع — بدون buzz اضافه و بدون دوبل
+    playBgCueFile("beep-soft.wav", 1, { waitMs: 2000 });
   }
 
   function beepReadyLikeRest() {
@@ -4024,17 +4046,7 @@
   }
 
   function flashAutoSave() {
-    const el = $("#autoSaveHint");
-    if (!el) return;
-    el.textContent = "ذخیره شد";
-    el.classList.add("on");
-    clearTimeout(flashAutoSave._t);
-    flashAutoSave._t = setTimeout(() => {
-      try {
-        el.textContent = "ذخیره خودکار است";
-        el.classList.remove("on");
-      } catch {}
-    }, 900);
+    // جملهٔ ذخیره خودکار حذف شد — بی‌صدا ذخیره می‌شود
   }
 
   function autoSavePlan() {
@@ -4457,9 +4469,9 @@
         if (total < 12) return;
         const key = run.i + ":" + keySuffix;
         if (run.announced[key]) return;
-        // ۱ث قبل از رسیدن به درصد؛ +۲ث اضافه برای تأخیر شروع تلفظ تا دیر نیاید
-        const targetLeft = total * (1 - pct / 100) + 1 + 2;
-        if (run.left <= targetLeft) {
+        // لحظهٔ هدف = ۱ث قبل از درصد؛ ۴ث زودتر تریگر تا تلفظ دیر نرسد
+        const mark = Math.ceil(total * (1 - pct / 100) + 1 + 4);
+        if (prev > mark && cur <= mark) {
           run.announced[key] = true;
           try {
             speakFn();
@@ -4470,7 +4482,6 @@
       fireAtGone(60, "pct60", () => speakPercentGone(60));
     }
 
-    // یک بوق بلند ۴ثانیه — نه چند تیک کوتاه که همدیگر را قطع کنند
     if (run.phaseDur > 5) {
       const k4 = run.i + ":beep4";
       if (!run.announced[k4] && prev > 4 && cur <= 4) {
