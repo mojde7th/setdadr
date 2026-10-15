@@ -1,9 +1,9 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "192";
+  const APP_VER = "193";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
-  const VOICE_LOUD = 26;
-  const VOICE_STAT_LOUD = 8;
+  const VOICE_LOUD = 16;
+  const VOICE_STAT_LOUD = 6;
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -897,17 +897,19 @@
   // ۴ ثانیه آخر: بوق تمیز، شفاف، بلند
   function beepReadyLikeRest() {
     if (soundMuted) return;
+    // تمیز و واضح برای باشگاه — بدون تیغ بالا
     playWarmChime({
       stack: false,
-      peak: 5.5,
-      total: 0.65,
+      peak: 3.8,
+      total: 0.9,
       notes: [
-        { f: 659.25, at: 0, dur: 0.14, g: 2.1 },
-        { f: 783.99, at: 0.18, dur: 0.2, g: 2.4 },
-        { f: 659.25, at: 0.4, dur: 0.16, g: 1.9 }
+        { f: 392.0, at: 0, dur: 0.28, g: 1.6 },
+        { f: 523.25, at: 0.12, dur: 0.32, g: 1.9 },
+        { f: 392.0, at: 0.48, dur: 0.3, g: 1.5 },
+        { f: 523.25, at: 0.58, dur: 0.28, g: 1.8 }
       ]
     });
-    buzz([110, 35, 150]);
+    buzz([100, 40, 140]);
   }
 
   function beepWhite(ms, soft) {
@@ -1068,18 +1070,26 @@
     const base = vol == null ? 1 : Number(vol);
     const mult = kind === "stat" ? VOICE_STAT_LOUD : VOICE_LOUD;
     // مثل ۱۸۱: بلند برای باشگاه — پایدار
-    return Math.max(0.08, Math.min(36, base * mult));
+    return Math.max(0.08, Math.min(22, base * mult));
   }
 
   function connectLoudOut(srcNode, gainVal) {
     const g = audioCtx.createGain();
+    const hp = audioCtx.createBiquadFilter();
     const lp = audioCtx.createBiquadFilter();
-    // مثل ۱۸۱ ساده؛ کمی نرم‌تر تا خش ته جمله کم شود
+    // همهمه پایین و تیغ بالا را کم کن تا نویز/خش کم شود
+    hp.type = "highpass";
+    hp.frequency.value = 140;
+    hp.Q.value = 0.7;
     lp.type = "lowpass";
-    lp.frequency.value = 5200;
-    lp.Q.value = 0.3;
-    g.gain.value = Math.min(Number(gainVal) || 1, 32);
-    srcNode.connect(g);
+    lp.frequency.value = 3800;
+    lp.Q.value = 0.4;
+    const peak = Math.min(Number(gainVal) || 1, 18);
+    const t = audioCtx.currentTime;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(peak, t + 0.03);
+    srcNode.connect(hp);
+    hp.connect(g);
     g.connect(lp);
     lp.connect(audioCtx.destination);
     return g;
@@ -3001,6 +3011,24 @@
   }
 
 
+  async function speakMidHalf() {
+    return queueAnnounce(async (seq) => {
+      if (!announceAlive(seq)) return;
+      const alive = aliveNow();
+      const live = () => announceAlive(seq) && alive() && !!run && !run.paused;
+      if (!live()) return;
+      try {
+        if (run) run.progressLabel = "";
+        const sub = $("#runSub");
+        if (sub) sub.textContent = "";
+      } catch {}
+      // کوتاه و واضح
+      const ok = !!(await speakFaAny("نصفشو رفتی", 1));
+      if (!live()) return;
+      if (!ok) await speakFaAny("بیشتر از نصفش رفتی", 1);
+    });
+  }
+
   async function speakDoneAmount(sec, total) {
     const n = Math.round(sec);
     const tot = Math.round(total || (run && run.phaseDur) || 0);
@@ -3011,16 +3039,13 @@
       const live = () => announceAlive(seq) && alive();
       const pct =
         tot > 0 ? Math.max(1, Math.min(99, Math.round((n / tot) * 100))) : 0;
-      // روی صفحه ننویس — فقط بگو
       try {
         if (run) run.progressLabel = "";
         const sub = $("#runSub");
         if (sub) sub.textContent = "";
       } catch {}
       const phrase =
-        pct >= 45
-          ? "بیشتر از نصفشووو رفتی"
-          : faNum(pct) + " درصد رفتی";
+        pct >= 45 ? "نصفشو رفتی" : faNum(pct) + " درصد رفتی";
       await speakFaAny(phrase, 1);
       if (!live()) return;
     });
@@ -3642,23 +3667,19 @@
     run.prevLeftCeil = cur;
     if (prev == null) return;
 
-    // وسط فاز فقط برای کار (نه استراحت)
+    // وسط فاز فقط برای کار — دقیقاً نصف
     if (step.kind === "work") {
       const midKey = run.i + ":halfPlus";
       const total = Math.round(run.phaseDur);
-      // حدود ۶۰٪ حرکت — برای جمله «بیشتر از نصفش رفتی»
-      const done = Math.max(1, Math.round((total * 3) / 5));
-      const targetLeft = Math.max(1, total - done);
-      const lead = 4;
-      const fireLeft = targetLeft + lead;
+      const halfLeft = Math.max(1, Math.ceil(total / 2));
       if (
-        total >= 8 &&
+        total >= 10 &&
         !run.announced[midKey] &&
-        prev > fireLeft &&
-        cur <= fireLeft
+        prev > halfLeft &&
+        cur <= halfLeft
       ) {
         run.announced[midKey] = true;
-        speakDoneAmount(done, total);
+        speakMidHalf();
       }
     }
 
