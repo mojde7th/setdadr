@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "206";
+  const APP_VER = "207";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -3593,6 +3593,111 @@
     return [...map.values()];
   }
 
+  function toEnDigits(s) {
+    return String(s || "")
+      .replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d))
+      .replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d));
+  }
+
+  function parseMoveInput(raw) {
+    let name = String(raw || "").replace(/\s+/g, " ").trim();
+    let work = null;
+    if (!name) return { name: "", work: null };
+    // اسکوات ۴۰ / اسکوات 40ث / اسکوات 40 ثانیه
+    const m = name.match(
+      /^(.*?)(?:\s+|-)([0-9۰-۹٠-٩]{1,3})\s*(?:ث(?:انیه)?)?$/i
+    );
+    if (m && String(m[1] || "").trim()) {
+      name = String(m[1]).trim();
+      const n = Math.round(Number(toEnDigits(m[2])));
+      if (Number.isFinite(n) && n >= 5 && n <= 600) work = n;
+    }
+    return { name, work };
+  }
+
+  function flashAutoSave() {
+    const el = $("#autoSaveHint");
+    if (!el) return;
+    el.textContent = "ذخیره شد";
+    el.classList.add("on");
+    clearTimeout(flashAutoSave._t);
+    flashAutoSave._t = setTimeout(() => {
+      try {
+        el.textContent = "ذخیره خودکار است";
+        el.classList.remove("on");
+      } catch {}
+    }, 900);
+  }
+
+  function autoSavePlan() {
+    const rounds = Math.max(1, Math.min(30, Number($("#planRounds").value) || 4));
+    const restSet = Math.max(0, Math.min(600, Number($("#planRestSet").value) || 0));
+    const restMove = Math.max(0, Math.min(300, Number($("#planRestMove").value) || 0));
+    if (!circuit.length) {
+      if (editId) {
+        state.plans = state.plans.filter((x) => x.id !== editId);
+        save(state);
+        renderPlans();
+        flashAutoSave();
+      }
+      return;
+    }
+    const title = autoTitle(circuit);
+    const payload = {
+      title,
+      rounds,
+      restSet,
+      restMove,
+      circuit: circuit.map((c) => ({ id: c.id, name: c.name, work: c.work }))
+    };
+    if (editId) {
+      let p = state.plans.find((x) => x.id === editId);
+      if (p) Object.assign(p, payload);
+      else {
+        state.plans.unshift({ id: editId, createdAt: Date.now(), ...payload });
+      }
+    } else {
+      editId = uid();
+      state.plans.unshift({ id: editId, createdAt: Date.now(), ...payload });
+    }
+    save(state);
+    renderPlans();
+    flashAutoSave();
+  }
+
+  function addMoveToCircuit(name, workSec) {
+    const parsed = parseMoveInput(name);
+    const nm = parsed.name;
+    if (!nm) return false;
+    let work =
+      parsed.work != null
+        ? parsed.work
+        : Math.max(5, Number(workSec) || Number($("#pickWork").value) || 40);
+    work = Math.max(5, Math.min(600, work));
+    const known = state.moves.find((m) => m.name === nm);
+    if (!known) {
+      state.moves.unshift({ id: uid(), name: nm, work });
+      save(state);
+      renderMoves();
+    } else if (parsed.work != null) {
+      known.work = work;
+      save(state);
+    }
+    circuit.push({ id: uid(), name: nm, work });
+    try {
+      warmMoveVoice(nm);
+    } catch {}
+    const nameEl = $("#pickMoveName");
+    if (nameEl) nameEl.value = "";
+    const workEl = $("#pickWork");
+    if (workEl && parsed.work != null) workEl.value = String(work);
+    renderCircuit();
+    updatePlanSummary();
+    renderMoveSuggest();
+    autoSavePlan();
+    return true;
+  }
+
   function renderMoveSuggest() {
     const box = $("#moveSuggest");
     if (!box) return;
@@ -3611,13 +3716,7 @@
       pick.className = "move-chip-pick";
       pick.textContent = m.name;
       pick.addEventListener("click", () => {
-        const nameEl = $("#pickMoveName");
-        const workEl = $("#pickWork");
-        if (nameEl) nameEl.value = m.name;
-        if (workEl) workEl.value = String(m.work);
-        try {
-          warmMoveVoice(m.name);
-        } catch {}
+        addMoveToCircuit(m.name, m.work);
       });
       const del = document.createElement("button");
       del.type = "button";
@@ -3773,6 +3872,8 @@
       rm.addEventListener("click", () => {
         circuit.splice(idx, 1);
         renderCircuit();
+        updatePlanSummary();
+        autoSavePlan();
       });
       li.appendChild(rm);
       ol.appendChild(li);
@@ -4380,6 +4481,7 @@
 
   $("#btnNewPlan").addEventListener("click", () => openEdit(null));
   $("#btnCancelEdit").addEventListener("click", () => {
+    autoSavePlan();
     editId = null;
     show("home");
   });
@@ -4450,59 +4552,40 @@
     });
   }
 
-  $("#addToSetForm").addEventListener("submit", async (e) => {
+  $("#addToSetForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const name = ($("#pickMoveName").value || "").trim();
-    if (!name) return;
-    let work = Math.max(5, Number($("#pickWork").value) || 40);
-    const known = state.moves.find((m) => m.name === name);
-    if (known) work = Math.max(5, Number($("#pickWork").value) || known.work);
-    if (!known) {
-      state.moves.unshift({ id: uid(), name, work });
-      save(state);
-      renderMoves();
+    if (!name) {
+      try {
+        $("#pickMoveName").focus();
+      } catch {}
+      return;
     }
-    circuit.push({ id: uid(), name, work });
+    addMoveToCircuit(name, Number($("#pickWork").value) || 40);
     try {
-      await warmMoveVoice(name);
+      $("#pickMoveName").focus();
     } catch {}
-    $("#pickMoveName").value = "";
-    renderCircuit();
-    updatePlanSummary();
-    renderMoveSuggest();
   });
 
   ["planRounds", "planRestSet", "planRestMove"].forEach((id) => {
     const el = document.getElementById(id);
     if (!el) return;
-    el.addEventListener("input", updatePlanSummary);
-    el.addEventListener("change", updatePlanSummary);
+    const bump = () => {
+      updatePlanSummary();
+      autoSavePlan();
+    };
+    el.addEventListener("input", bump);
+    el.addEventListener("change", bump);
   });
 
-  $("#btnSavePlan").addEventListener("click", () => {
-    const rounds = Math.max(1, Math.min(30, Number($("#planRounds").value) || 4));
-    const restSet = Math.max(0, Math.min(600, Number($("#planRestSet").value) || 0));
-    const restMove = Math.max(0, Math.min(300, Number($("#planRestMove").value) || 0));
-    if (!circuit.length) return;
-    const title = autoTitle(circuit);
-    const payload = {
-      title,
-      rounds,
-      restSet,
-      restMove,
-      circuit: circuit.map((c) => ({ id: c.id, name: c.name, work: c.work }))
-    };
-    if (editId) {
-      const p = state.plans.find((x) => x.id === editId);
-      if (p) Object.assign(p, payload);
-    } else {
-      state.plans.unshift({ id: uid(), createdAt: Date.now(), ...payload });
-    }
-    save(state);
-    editId = null;
-    renderPlans();
-    show("home");
-  });
+  const btnSavePlan = $("#btnSavePlan");
+  if (btnSavePlan) {
+    btnSavePlan.addEventListener("click", () => {
+      autoSavePlan();
+      editId = null;
+      show("home");
+    });
+  }
 
   $("#btnPause").addEventListener("click", () => {
     if (!run) return;
