@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "258";
+  const APP_VER = "259";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -71,7 +71,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=258";
+  const VOICE_Q = "?v=259";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -1350,7 +1350,34 @@
   function beepPhaseStart() {
     if (soundMuted) return Promise.resolve(false);
     unlockAudio();
-    startBgKeepAlive();
+    keepSilenceAlive();
+    // بوق شروع: سه ضربهٔ بلند و واضح (~۱ث) — ویواودیو + فایل
+    try {
+      if (audioCtx) {
+        if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+        const t0 = audioCtx.currentTime + 0.01;
+        const hits = [
+          { at: 0, dur: 0.16, f: 660, g: 0.95 },
+          { at: 0.18, dur: 0.16, f: 880, g: 1.0 },
+          { at: 0.38, dur: 0.5, f: 1175, g: 1.05 }
+        ];
+        hits.forEach((h) => {
+          const g = audioCtx.createGain();
+          g.connect(audioCtx.destination);
+          const st = t0 + h.at;
+          g.gain.setValueAtTime(0.0001, st);
+          g.gain.exponentialRampToValueAtTime(Math.min(1.2, h.g), st + 0.01);
+          g.gain.setValueAtTime(Math.min(1.2, h.g), st + Math.max(0.04, h.dur - 0.06));
+          g.gain.exponentialRampToValueAtTime(0.0001, st + h.dur);
+          const o = audioCtx.createOscillator();
+          o.type = "square";
+          o.frequency.setValueAtTime(h.f, st);
+          o.connect(g);
+          o.start(st);
+          o.stop(st + h.dur + 0.02);
+        });
+      }
+    } catch {}
     const src = VOICE_BASE + "beep-start.wav" + VOICE_Q;
     const a = ensureBgCueRail();
     try {
@@ -1376,7 +1403,7 @@
         a.src = src;
         const p = a.play();
         if (p && typeof p.catch === "function") p.catch(() => finish(false));
-        setTimeout(() => finish(true), 450);
+        setTimeout(() => finish(true), 1100);
       } catch {
         finish(false);
       }
@@ -3342,9 +3369,9 @@
         const nm = normSpeakKey(step.name);
         if (!nm || !alive()) return;
         try {
-          beepPhaseStart();
+          await beepPhaseStart();
         } catch {}
-        await sleep(300);
+        await sleep(120);
         if (!alive()) return;
         nameSpeechGuard = true;
         const guardTimer = setTimeout(() => {
