@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "204";
+  const APP_VER = "205";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -2903,17 +2903,189 @@
 
 
   const MUSCLE_META = {
-    chest: { fa: "سینه", tip: "فشار افقی جلو تنه؛ دم و بازدم را کنترل کن." },
-    back: { fa: "پشت", tip: "کشیدن کتف‌ها به هم ستون فقرات را پایدار می‌کند." },
-    shoulders: { fa: "شانه", tip: "بالا ندادن شانه به گوش؛ آرنج کمی جلو باشد." },
-    biceps: { fa: "جلو بازو", tip: "آرنج ثابت نزدیک تنه؛ تاب نده." },
-    triceps: { fa: "پشت بازو", tip: "آرنج را قفل نکن؛ فشار در انتهای حرکت." },
-    core: { fa: "میان‌تنه", tip: "شکم را مثل کمربند سفت نگه دار." },
-    quads: { fa: "چهارسر ران", tip: "زانو هم‌راستای پنجه؛ پاشنه روی زمین." },
-    hamstrings: { fa: "پشت ران", tip: "لگن را عقب بده؛ کمر گرد نشود." },
-    glutes: { fa: "سرینی", tip: "در بالا باسن را کامل منقبض کن." },
-    calves: { fa: "ساق", tip: "بالا رفتن روی پنجه با مکث کوتاه." }
+    chest: {
+      fa: "سینه",
+      tips: [
+        "سینه‌ای بزرگ اصلی‌ترین جلوبرندهٔ پرس افقی است؛ کتف‌ها را روی نیمکت/زمین ثابت نگه دار.",
+        "فیبرهای میانی سینه با آرنج حدود ۴۵ تا ۷۰ درجه بیشترین تنش مکانیکی را می‌گیرند.",
+        "دم در پایین و بازدم در فشار، پایداری قفسه و کنترل اسکاپولا را بهتر می‌کند.",
+        "کمی مکث کوتاه در کشش پایین، زمان زیر تنش را بدون تاب اضافه بالا می‌برد."
+      ]
+    },
+    back: {
+      fa: "پشت",
+      tips: [
+        "کشیدن کتف‌ها به هم (رترکشن) قبل از پول، لات و رومبوئید را هدفمندتر درگیر می‌کند.",
+        "ستون فقرات خنثی یعنی دیسک کمتر فشرده می‌شود؛ سینه را جلو نگه دار نه گودی افراطی.",
+        "شروع حرکت از لگن/کتف، نه از آرنج، بار را از جلوبازو به پشت منتقل می‌کند.",
+        "در انتهای دامنه، ۱ ثانیه جمع‌کردن کتف‌ها فعال‌سازی عصبی–عضلانی را بیشتر می‌کند."
+      ]
+    },
+    shoulders: {
+      fa: "شانه",
+      tips: [
+        "دلتوئید میانی با آرنج کمی جلوتر از بدن فشار کمتری به تاندون سوپرااسپیناتوس می‌آورد.",
+        "شانه را به گوش نزدیک نکن؛ بالا‌بردن کتف کار ذوزنقه فوقانی را می‌دزدد.",
+        "چرخش خارجی ملایم بازو در پرس بالای سر فضای ساب‌آکرومیال را بازتر نگه می‌دارد.",
+        "دامنه کنترل‌شده بهتر از وزنهٔ سنگین با قوس کمری جبرانی است."
+      ]
+    },
+    biceps: {
+      fa: "جلو بازو",
+      tips: [
+        "آرنج ثابت نزدیک تنه، تمرکز را روی دوسر بازویی می‌گذارد نه روی تاب تنه.",
+        "سوپیناسیون کامل مچ در بالا، سر کوتاه دوسر را بیشتر فعال می‌کند.",
+        "فاز پایین ۲ ثانیه‌ای آسیب‌زا نیست؛ تنش اکسنتریک محرک رشد خوبی است.",
+        "قفل کامل آرنج در پایین فقط اگر بدون درد باشد؛ کمی خم ملایم مفاصل را حفظ می‌کند."
+      ]
+    },
+    triceps: {
+      fa: "پشت بازو",
+      tips: [
+        "سر بلند سه‌سر در حرکات بالای سر بیشتر کشیده و فعال می‌شود.",
+        "آرنج را قفل انفجاری نکن؛ انتهای کنترل‌شده فشار را روی سه‌سر نگه می‌دارد.",
+        "بازوها نزدیک بدن در پرس/دیپ، سهم سینه را کم و سهم سه‌سر را زیاد می‌کند.",
+        "مکث کوتاه نزدیک قفل، واحدهای حرکتی دیررس سه‌سر را بهتر بیدار می‌کند."
+      ]
+    },
+    core: {
+      fa: "میان‌تنه",
+      tips: [
+        "بریس شکم مثل باد کردن کمربند، فشار داخل‌شکمی و پایداری لومبار را بالا می‌برد.",
+        "نفس را کامل حبس نکن؛ الگوی دم–بریس–بازدم کنترل‌شده ایمن‌تر است.",
+        "لگن خنثی (نه تیلت جلو افراطی) گودی کمر را از فشارهای تکراری حفظ می‌کند.",
+        "فعال‌سازی عرضی شکم قبل از حرکت اندام، نشت نیرو از میان‌تنه را کم می‌کند."
+      ]
+    },
+    quads: {
+      fa: "چهارسر ران",
+      tips: [
+        "زانو هم‌مسیر پنجه بماند تا گشتاور والگوس روی رباط‌ها کمتر شود.",
+        "پاشنه روی زمین یعنی گشتاور بهتر روی چهارسر و پایداری مچ.",
+        "عمق اسکوات تا جایی که لگن و کمر کنترل دارند؛ عمق بی‌فرم فایده ندارد.",
+        "فاز بالا آمدن را عجله نکن؛ شتاب کنترل‌شده واحدهای حرکتی بیشتری را درگیر می‌کند."
+      ]
+    },
+    hamstrings: {
+      fa: "پشت ران",
+      tips: [
+        "لگن را عقب بده (hinge)؛ خم کردن از کمر بار را به دیسک منتقل می‌کند.",
+        "کشش اکسنتریک پشت ران در پایین RDL محرک قوی انطباق تاندون–عضله است.",
+        "زانوی نرم ثابت، نه قفل خشک، تنش را روی همسترینگ نگه می‌دارد.",
+        "احساس کشش پشت ران مهم‌تر از لمس زمین با وزنه است."
+      ]
+    },
+    glutes: {
+      fa: "سرینی",
+      tips: [
+        "در بالای پل/تراست، انقباض کامل سرینی را حس کن نه قوس زیاد کمر.",
+        "چرخش خارجی ملایم ران اغلب گلوت مدیوس را برای پایداری لگن بیدار می‌کند.",
+        "مکث ۱ ثانیه‌ای در اوج انقباض، ارتباط ذهن–عضله سرینی را قوی‌تر می‌کند.",
+        "اگر کمردرد جای باسن می‌سوزد، دامنه را کم کن و بریس میان‌تنه را سفت‌تر بگیر."
+      ]
+    },
+    calves: {
+      fa: "ساق",
+      tips: [
+        "بالا روی پنجه با مکث کوتاه، واحدهای دیررس دوقلو را بهتر خسته می‌کند.",
+        "زانوی صاف بیشتر دوقلو؛ زانوی خم بیشتر نعلی را هدف می‌گیرد.",
+        "فاز پایین آهسته کشش آپونوروز و ظرفیت نیرو را بهتر می‌سازد.",
+        "دامنه کامل بدون جهش، اصطکاک تاندون آشیل را کنترل‌شده‌تر نگه می‌دارد."
+      ]
+    }
   };
+
+  const MOVE_SCIENCE_TIPS = {
+    squat: [
+      "اسکوات یک الگوی زنجیرهٔ بسته است؛ چهارسر، سرینی و میان‌تنه هم‌زمان پایداری تولید می‌کنند.",
+      "نگاه ثابت جلو به حفظ راستای گردن و تنش تنه کمک می‌کند.",
+      "فشار یکنواخت روی هر دو پا از شیفت لگن و بار نامتقارن جلوگیری می‌کند."
+    ],
+    lunge: [
+      "لانگز تعادل تک‌پا را می‌سازد؛ گلوت مدیوس سمت ایستاده پایداری لگن را نگه می‌دارد.",
+      "گام نه خیلی بلند نه کوتاه؛ زانوی جلو حدود بالای مچ بماند.",
+      "تنه کمی جلوتر از عمود، بار را طبیعی‌تر روی سرینی و چهارسر پخش می‌کند."
+    ],
+    deadlift: [
+      "ددلیفت/آر‌دی‌ال الگوی hinge است؛ قدرت از لگن می‌آید نه از گرد کردن کمر.",
+      "میله/وزن نزدیک ساق بماند تا بازوی گشتاور روی کمر کوتاه شود.",
+      "قفل لگن در بالا با سرینی؛ هیپرگست کمر جای آن را نگیرد."
+    ],
+    push: [
+      "شنا/پرس سینه زنجیرهٔ سینه‌ای–سه‌سر–دلتوئید قدامی را هم‌زمان بار می‌دهد.",
+      "بدن مثل تخته سفت؛ باسن و میان‌تنه نباید شل شوند.",
+      "آرنج‌ها را کامل به طرفین باز نکن تا شانه امن‌تر بماند."
+    ],
+    pull: [
+      "بارفیکس/روئینگ عرض پشت و پایداری کتف را هم‌زمان تقویت می‌کند.",
+      "شروع با پایین آوردن کتف‌ها، نه فقط خم کردن آرنج.",
+      "در پایین دامنه شانه را از گوش دور نگه دار."
+    ],
+    plank: [
+      "پلانک بیشتر پایداری ایزومتریک است تا حرکت؛ نفس را منظم نگه دار.",
+      "لگن نه بالا نه پایین؛ خط سر تا پاشنه یکپارچه باشد.",
+      "فشار ملایم به کف دست/ساعد، دنده‌ها را پایین و هسته را فعال نگه می‌دارد."
+    ],
+    glute: [
+      "هیپ‌تراست/بریج یکی از مستقیم‌ترین محرک‌های سرینی بزرگ است.",
+      "چانه کمی جمع؛ نگاه به جلو از قوس گردن کم می‌کند.",
+      "پاها را خیلی دور نگذار؛ زاویه زانو حدود ۹۰ در اوج معمولاً بهینه است."
+    ],
+    cardio: [
+      "برپی و جک‌ها هزینهٔ متابولیک بالا دارند؛ فرم را فدای سرعت نکن.",
+      "فرود نرم روی میانی‌پا ضربهٔ مفاصل را کم می‌کند.",
+      "بین تکرارها یک بازدم سریع، ریتم قلبی–تنفسی را پایدارتر می‌کند."
+    ]
+  };
+
+  function moveTipBucket(name) {
+    const k = normMuscleKey(name);
+    if (/اسکوات|squat|گبلت|سومو/.test(k)) return "squat";
+    if (/لانگ|lunge/.test(k)) return "lunge";
+    if (/ددلیفت|deadlift|rdl|رومانیایی/.test(k)) return "deadlift";
+    if (/شنا|bench|push|پرس سینه|پوش/.test(k)) return "push";
+    if (/بارفیکس|pull|row|روئینگ|زیربغل|قایقی/.test(k)) return "pull";
+    if (/پلانک|plank|کرانچ|sit\s*up|hollow|روسی|russian/.test(k)) return "plank";
+    if (/هیپ|thrust|بریج|bridge|گلوت|باسن/.test(k)) return "glute";
+    if (/برپی|burpee|جک|jack|mountain|زانو بلند|high knee|طناب/.test(k)) return "cardio";
+    return "";
+  }
+
+  function tipSeed(extra) {
+    let s = String(extra || "");
+    try {
+      s += "|" + String((lastDoneStats && lastDoneStats.finishedAt) || Date.now());
+    } catch {
+      s += "|" + String(Date.now());
+    }
+    try {
+      const day = new Date().toISOString().slice(0, 10);
+      s += "|" + day;
+    } catch {}
+    return s;
+  }
+
+  function pickRotatingTip(list, seed) {
+    const arr = Array.isArray(list) ? list.filter(Boolean) : [];
+    if (!arr.length) return "";
+    const i = Math.abs(hashUnit(String(seed || "x"))) % arr.length;
+    return arr[i];
+  }
+
+  function muscleTipFor(id, seed) {
+    const meta = MUSCLE_META[id];
+    if (!meta) return "";
+    const tips = meta.tips || (meta.tip ? [meta.tip] : []);
+    return pickRotatingTip(tips, String(seed || "") + "|" + id);
+  }
+
+  function moveScienceTip(name, seed) {
+    const bucket = moveTipBucket(name);
+    const list = (bucket && MOVE_SCIENCE_TIPS[bucket]) || [];
+    if (list.length) return pickRotatingTip(list, String(seed || "") + "|mv|" + bucket);
+    const ms = musclesForMove(name);
+    return muscleTipFor(ms[0] || "core", seed);
+  }
 
   const MOVE_MUSCLE_RULES = [
     { keys: ["اسکوات", "squat", "گبلت", "سومو", "air squat"], muscles: ["quads", "glutes", "core"] },
@@ -2982,7 +3154,7 @@
     if (!tops.length) return "برای تحلیل عضله، حداقل یک حرکت کاری لازم است.";
     const names = tops.map((t) => t.fa).join("، ");
     const moves = ((stats && stats.byMove) || []).slice(0, 3).map((m) => m.name).join("، ");
-    const tip = (MUSCLE_META[tops[0].id] && MUSCLE_META[tops[0].id].tip) || "";
+    const tip = muscleTipFor(tops[0].id, tipSeed("insight"));
     return (
       "بیشترین درگیری: " +
       names +
@@ -2992,72 +3164,73 @@
   }
 
   function anatomySvg(load) {
-    const max = Math.max(1, ...Object.keys(load).map((k) => load[k] || 0));
+    const max = Math.max(1, ...Object.keys(MUSCLE_META).map((k) => load[k] || 0));
+    const ranked = Object.keys(MUSCLE_META)
+      .map((id) => ({ id, sec: load[id] || 0 }))
+      .filter((x) => x.sec > 0)
+      .sort((a, b) => b.sec - a.sec);
+    const rankOf = {};
+    ranked.forEach((x, i) => {
+      rankOf[x.id] = i;
+    });
+    function lvl(id) {
+      const v = (load[id] || 0) / max;
+      if (v <= 0.02) return 0;
+      if (v < 0.34) return 1;
+      if (v < 0.67) return 2;
+      return 3;
+    }
     function heat(id) {
       const v = (load[id] || 0) / max;
-      const a = (0.18 + v * 0.82).toFixed(2);
+      if (v <= 0.02) return "rgba(58,52,44,0.95)";
+      const a = (0.28 + v * 0.72).toFixed(2);
       return "rgba(232,165,75," + a + ")";
     }
-    // شماتیک ساده بدن — نواحی عضله با رنگ بار تمرین
-    const rawSvg = (
+    function zone(tag, attrs, id) {
+      const level = lvl(id);
+      const delay = rankOf[id] != null ? (0.12 + rankOf[id] * 0.18).toFixed(2) : "0";
+      const cls =
+        "mus-zone" +
+        (level > 0 ? " mus-hot mus-lvl-" + level : " mus-idle");
+      return (
+        "<" +
+        tag +
+        " " +
+        attrs +
+        ' data-muscle="' +
+        id +
+        '" data-lvl="' +
+        level +
+        '" class="' +
+        cls +
+        '" style="--d:' +
+        delay +
+        's" fill="' +
+        heat(id) +
+        '"/>'
+      );
+    }
+    return (
       '<svg viewBox="0 0 200 360" xmlns="http://www.w3.org/2000/svg" class="anatomy-svg anatomy-live" aria-hidden="true">' +
       '<rect x="0" y="0" width="200" height="360" rx="18" fill="#100e0a"/>' +
       '<ellipse cx="100" cy="36" rx="22" ry="26" fill="#2a241c" stroke="#3a342c"/>' +
       '<rect x="78" y="58" width="44" height="18" rx="6" fill="#2a241c"/>' +
-      // شانه
-      '<ellipse cx="58" cy="88" rx="18" ry="14" fill="' +
-      heat("shoulders") +
-      '"/>' +
-      '<ellipse cx="142" cy="88" rx="18" ry="14" fill="' +
-      heat("shoulders") +
-      '"/>' +
-      // سینه
-      '<ellipse cx="100" cy="110" rx="36" ry="22" fill="' +
-      heat("chest") +
-      '"/>' +
-      // پشت (لایه کم‌رنگ زیر)
-      '<ellipse cx="100" cy="132" rx="30" ry="16" fill="' +
-      heat("back") +
-      '" opacity="0.85"/>' +
-      // بازو
-      '<rect x="34" y="100" width="18" height="56" rx="9" fill="' +
-      heat("biceps") +
-      '"/>' +
-      '<rect x="148" y="100" width="18" height="56" rx="9" fill="' +
-      heat("triceps") +
-      '"/>' +
-      // میان‌تنه
-      '<rect x="78" y="128" width="44" height="52" rx="12" fill="' +
-      heat("core") +
-      '"/>' +
-      // سرینی
-      '<ellipse cx="100" cy="188" rx="28" ry="16" fill="' +
-      heat("glutes") +
-      '"/>' +
-      // ران
-      '<rect x="72" y="200" width="22" height="70" rx="11" fill="' +
-      heat("quads") +
-      '"/>' +
-      '<rect x="106" y="200" width="22" height="70" rx="11" fill="' +
-      heat("hamstrings") +
-      '"/>' +
-      // ساق
-      '<rect x="74" y="274" width="18" height="50" rx="9" fill="' +
-      heat("calves") +
-      '"/>' +
-      '<rect x="108" y="274" width="18" height="50" rx="9" fill="' +
-      heat("calves") +
-      '"/>' +
+      zone("ellipse", 'cx="58" cy="88" rx="18" ry="14"', "shoulders") +
+      zone("ellipse", 'cx="142" cy="88" rx="18" ry="14"', "shoulders") +
+      zone("ellipse", 'cx="100" cy="110" rx="36" ry="22"', "chest") +
+      zone("ellipse", 'cx="100" cy="132" rx="30" ry="16" opacity="0.9"', "back") +
+      zone("rect", 'x="34" y="100" width="18" height="56" rx="9"', "biceps") +
+      zone("rect", 'x="148" y="100" width="18" height="56" rx="9"', "triceps") +
+      zone("rect", 'x="78" y="128" width="44" height="52" rx="12"', "core") +
+      zone("ellipse", 'cx="100" cy="188" rx="28" ry="16"', "glutes") +
+      zone("rect", 'x="72" y="200" width="22" height="70" rx="11"', "quads") +
+      zone("rect", 'x="106" y="200" width="22" height="70" rx="11"', "hamstrings") +
+      zone("rect", 'x="74" y="274" width="18" height="50" rx="9"', "calves") +
+      zone("rect", 'x="108" y="274" width="18" height="50" rx="9"', "calves") +
       '<text x="100" y="348" text-anchor="middle" fill="#9a9080" font-size="11" font-family="Vazirmatn,sans-serif">نقشه درگیری عضله</text>' +
       "</svg>"
     );
-    return String(rawSvg).replace(
-      /fill="(rgba\\(232,165,75,0\\.(?:[5-9]\\d*|4[5-9]\\d*))\\)"/g,
-      'class="mus-hot" fill="$1"'
-    );
-
   }
-
 
   async function speakMidHalf() {
     // فقط بگو — روی صفحه ننویس
@@ -3273,7 +3446,7 @@
     const load = muscleLoadFromStats(s);
     const tops = topMuscles(load, 1);
     if (tops.length) {
-      const tip = MUSCLE_META[tops[0].id] && MUSCLE_META[tops[0].id].tip;
+      const tip = muscleTipFor(tops[0].id, tipSeed("speak-" + tops[0].id));
       const tipLines = [
         tip ? "نکته: " + tip : "",
         "نکته: روی " + tops[0].fa + " نفس را منظم نگه دار",
@@ -4074,7 +4247,7 @@
           } catch {}
         });
         const tip =
-          (MUSCLE_META[m.id] && MUSCLE_META[m.id].tip) ||
+          muscleTipFor(m.id, tipSeed(m.id)) ||
           ("روی " + m.fa + " کنترل و فرم را حفظ کن.");
         const p = document.createElement("div");
         p.className = "mus-tip";
@@ -4083,15 +4256,32 @@
         musclesEl.appendChild(li);
       });
     }
-    // کارت پایین حذف — زمان حرکت‌ها در کاشی‌های بالاست
+    // نکته علمی تازه برای هر حرکت این ست
+    if (movesEl) {
+      movesEl.innerHTML = "";
+      movesEl.hidden = false;
+      byMove.slice(0, 6).forEach((mv, idx) => {
+        const name = String(mv.name || "حرکت");
+        const tip = moveScienceTip(name, tipSeed("move-" + idx + "-" + name));
+        if (!tip) return;
+        const li = document.createElement("li");
+        li.className = "done-move-science";
+        const title = document.createElement("div");
+        title.className = "done-move-science-name";
+        title.textContent = name;
+        const body = document.createElement("div");
+        body.className = "done-move-science-tip";
+        body.textContent = tip;
+        li.appendChild(title);
+        li.appendChild(body);
+        movesEl.appendChild(li);
+      });
+      if (!movesEl.children.length) movesEl.hidden = true;
+    }
     if (chart) {
       chart.innerHTML = "";
       const wrap = chart.closest(".done-chart-wrap");
       if (wrap) wrap.hidden = true;
-    }
-    if (movesEl) {
-      movesEl.innerHTML = "";
-      movesEl.hidden = true;
     }
   }
 
