@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "202";
+  const APP_VER = "203";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -70,7 +70,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=109";
+  const VOICE_Q = "?v=203";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -2071,24 +2071,83 @@
 
   // کلیپ آفلاین برای هر متن دلخواه که با اسکریپت پخته شده: voice/dyn/{sha1}.mp3
   const bakedHas = new Map();
+  // مسیر ثابت وسط حرکت — بدون وابستگی به توکن/صف
+  const MID_HALF_CLIP = "dyn/5b47ffb16507f9a1.mp3";
   async function playBakedDynClip(text, vol) {
     const key = String(text || "").replace(/\s+/g, " ").trim().slice(0, 160);
     if (!key || !window.crypto || !crypto.subtle) return false;
     const gen = soundGen;
-    const tok = speakToken;
     try {
       const h = await sha1Short(key);
       const rel = "dyn/" + h + ".mp3";
       if (!bakedHas.has(h)) {
         try {
-          const res = await fetchWithTimeout(VOICE_BASE + rel + VOICE_Q, 2500, "force-cache");
+          const res = await fetchWithTimeout(VOICE_BASE + rel + VOICE_Q, 2500, "no-store");
           bakedHas.set(h, !!(res && res.ok));
         } catch {
-          return false;
+          bakedHas.set(h, false);
         }
       }
-      if (!bakedHas.get(h) || !soundAlive(gen, tok)) return false;
+      if (!bakedHas.get(h)) return false;
+      if (gen !== soundGen) return false;
       return playVoiceFile(rel, vol);
+    } catch {
+      return false;
+    }
+  }
+
+  async function playMidHalfClipDirect() {
+    if (soundMuted) return false;
+    const gen = soundGen;
+    try {
+      unlockAudio();
+      startBgKeepAlive();
+      startSilentCtxKeep();
+      try {
+        if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
+      } catch {}
+      // ۱) WebAudio از کلیپ ثابت
+      if (audioCtx && gen === soundGen) {
+        try {
+          const res = await fetchWithTimeout(VOICE_BASE + MID_HALF_CLIP + VOICE_Q, 3000, "no-store");
+          if (res && res.ok && gen === soundGen) {
+            const raw = await res.arrayBuffer();
+            const buf = await audioCtx.decodeAudioData(raw.slice(0));
+            if (gen === soundGen && buf) {
+              stopVoiceFile();
+              await new Promise((resolve) => {
+                let done = false;
+                const finish = () => {
+                  if (done) return;
+                  done = true;
+                  resolve();
+                };
+                const src = audioCtx.createBufferSource();
+                src.buffer = buf;
+                connectLoudOut(src, loudVol(1, "name"));
+                liveSources.add(src);
+                voicePlayer = src;
+                src.onended = () => {
+                  try {
+                    liveSources.delete(src);
+                  } catch {}
+                  finish();
+                };
+                src.start();
+                setTimeout(finish, Math.min(8000, (buf.duration + 0.4) * 1000));
+              });
+              return gen === soundGen;
+            }
+          }
+        } catch {}
+      }
+      // ۲) HTML Audio مستقیم
+      try {
+        const a = makeHtmlAudio(VOICE_BASE + MID_HALF_CLIP + VOICE_Q);
+        const ok = await playHtmlAudioEl(a, 1, 8000);
+        if (ok) return true;
+      } catch {}
+      return false;
     } catch {
       return false;
     }
@@ -3001,26 +3060,29 @@
 
 
   async function speakMidHalf() {
-    return queueAnnounce(async (seq) => {
-      if (!announceAlive(seq)) return;
-      const alive = aliveNow();
-      const live = () => announceAlive(seq) && alive() && !!run && !run.paused;
-      if (!live()) return;
-      try {
-        if (run) run.progressLabel = "";
-        const sub = $("#runSub");
-        if (sub) sub.textContent = "";
-      } catch {}
-      const line = "نصفشو رفتی";
-      // اول کلیپ پختهٔ محلی؛ بعد زنجیرهٔ معمولی
-      let ok = !!(await playBakedDynClip(line, 1));
-      if (!live()) return;
-      if (!ok) ok = !!(await speakFaAny(line, 1));
-      if (!live()) return;
-      if (!ok) ok = !!(await playBakedDynClip("بیشتر از نصفش رفتی", 1));
-      if (!live()) return;
-      if (!ok) await speakFaAny("بیشتر از نصفش رفتی", 1);
-    });
+    // مستقیم، خارج از صف اعلام — تا توکن/فاز قبلی خفه‌اش نکند
+    try {
+      if (run) run.progressLabel = "نصفشو رفتی";
+      const sub = $("#runSub");
+      if (sub) sub.textContent = "نصفشو رفتی";
+    } catch {}
+    let ok = false;
+    try {
+      ok = !!(await playMidHalfClipDirect());
+    } catch {}
+    if (ok) return true;
+    try {
+      ok = !!(await speakFaAny("نصفشو رفتی", 1));
+    } catch {}
+    if (ok) return true;
+    try {
+      ok = !!(await speakSynthLang("نصفشو رفتی", 1, "fa", {
+        noCancel: true,
+        rate: 0.92,
+        pitch: 1.0
+      }));
+    } catch {}
+    return !!ok;
   }
 
   async function speakDoneAmount(sec, total) {
@@ -3661,19 +3723,16 @@
     run.prevLeftCeil = cur;
     if (prev == null) return;
 
-    // وسط فاز فقط برای کار — دقیقاً نصف
+    // وسط فاز کار: اولین تیک که از نصف رد شد (بدون miss با Math.ceil)
     if (step.kind === "work") {
       const midKey = run.i + ":halfPlus";
-      const total = Math.round(run.phaseDur);
-      const halfLeft = Math.max(1, Math.ceil(total / 2));
-      if (
-        total >= 10 &&
-        !run.announced[midKey] &&
-        prev > halfLeft &&
-        cur <= halfLeft
-      ) {
+      const total = Math.max(1, Number(run.phaseDur) || 0);
+      const halfLeft = total / 2;
+      if (total >= 10 && !run.announced[midKey] && run.left <= halfLeft) {
         run.announced[midKey] = true;
-        speakMidHalf();
+        try {
+          speakMidHalf();
+        } catch {}
       }
     }
 
