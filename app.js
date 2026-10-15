@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "266";
+  const APP_VER = "267";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -71,7 +71,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=266";
+  const VOICE_Q = "?v=267";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -1263,7 +1263,8 @@
 
   function beepClockTick(secLeft) {
     if (soundMuted) return;
-    // شمارش ۴…۱ مثل بهترین بوق‌های سه‌ثانیه: بلند، واضح، طول‌دار — فقط یک‌بار
+    if (beepClockTick._busy) return;
+    beepClockTick._busy = true;
     try {
       const src = VOICE_BASE + "beep-tick.wav" + VOICE_Q;
       const a = ensureBgCueRail();
@@ -1276,6 +1277,9 @@
       const p = a.play();
       if (p && typeof p.catch === "function") p.catch(() => {});
     } catch {}
+    setTimeout(() => {
+      beepClockTick._busy = false;
+    }, 480);
   }
 
   function beepFourSecWarning() {
@@ -4586,14 +4590,16 @@
       }
     }
 
-    // تیک ۴…۱ حتی وسط اسم — وگرنه شنیده نمی‌شود
-    if (run.phaseDur > 5) {
-      for (let s = 4; s >= 1; s--) {
-        const k = run.i + ":tick" + s;
-        if (!run.announced[k] && prev > s && cur <= s) {
-          run.announced[k] = true;
-          beepClockTick(s);
-        }
+    // فقط ۳…۱ — هر ثانیه یک بوق تک، با فاصلهٔ طبیعی ۱ث (اگر چند ثانیه پرید فقط همان ثانیهٔ فعلی)
+    if (run.phaseDur > 5 && cur >= 1 && cur <= 3 && prev > cur) {
+      const s = cur;
+      const k = run.i + ":tick" + s;
+      if (!run.announced[k]) {
+        run.announced[k] = true;
+        beepClockTick(s);
+      }
+      for (let skipped = Math.min(3, prev - 1); skipped > cur; skipped--) {
+        if (skipped >= 1) run.announced[run.i + ":tick" + skipped] = true;
       }
     }
   }
