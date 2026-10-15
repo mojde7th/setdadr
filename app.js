@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "259";
+  const APP_VER = "260";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -71,7 +71,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=259";
+  const VOICE_Q = "?v=260";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -680,7 +680,7 @@
       if (!run || run.paused || soundMuted) return;
       if (!isAppHidden()) return;
       keepSilenceAlive();
-    }, 5000);
+    }, 8000);
   }
 
   function stopBgWatch() {
@@ -920,7 +920,7 @@
     bgHeartbeatIv = setInterval(() => {
       if (!run || run.paused || soundMuted || !isAppHidden()) return;
       keepSilenceAlive();
-    }, 3000);
+    }, 4500);
   }
 
   function stopBgHeartbeat() {
@@ -932,7 +932,7 @@
   function startBgKeepAlive() {
     if (soundMuted) return;
     const now = Date.now();
-    if (bgKeepOn && now - bgKeepStamp < 2500) {
+    if (bgKeepOn && now - bgKeepStamp < 4500) {
       keepSilenceAlive();
       return;
     }
@@ -1263,26 +1263,7 @@
 
   function beepClockTick(secLeft) {
     if (soundMuted) return;
-    unlockAudio();
-    keepSilenceAlive();
-    // تیک ساعت بلند — ویواودیو + فایل؛ بدون startBgKeepAlive سنگین
-    try {
-      if (audioCtx) {
-        if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
-        const t0 = audioCtx.currentTime + 0.01;
-        const g = audioCtx.createGain();
-        g.connect(audioCtx.destination);
-        g.gain.setValueAtTime(0.0001, t0);
-        g.gain.exponentialRampToValueAtTime(0.9, t0 + 0.008);
-        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.11);
-        const o = audioCtx.createOscillator();
-        o.type = "square";
-        o.frequency.setValueAtTime(secLeft <= 2 ? 1320 : 990, t0);
-        o.connect(g);
-        o.start(t0);
-        o.stop(t0 + 0.12);
-      }
-    } catch {}
+    // فقط یک مسیر فایل — بدون ویواودیو موازی
     try {
       const rel = secLeft <= 2 ? "beep-soft.wav" : "beep-tick.wav";
       const src = VOICE_BASE + rel + VOICE_Q;
@@ -1291,7 +1272,7 @@
       a.onerror = null;
       a.loop = false;
       a.muted = false;
-      a.volume = 1;
+      a.volume = secLeft <= 2 ? 0.9 : 0.78;
       a.src = src;
       const p = a.play();
       if (p && typeof p.catch === "function") p.catch(() => {});
@@ -1309,7 +1290,6 @@
     if (nameSpeechGuard) return;
     beepMidExact._on = true;
     unlockAudio();
-    startBgKeepAlive();
     try {
       stopCueRail();
     } catch {}
@@ -1350,34 +1330,7 @@
   function beepPhaseStart() {
     if (soundMuted) return Promise.resolve(false);
     unlockAudio();
-    keepSilenceAlive();
-    // بوق شروع: سه ضربهٔ بلند و واضح (~۱ث) — ویواودیو + فایل
-    try {
-      if (audioCtx) {
-        if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
-        const t0 = audioCtx.currentTime + 0.01;
-        const hits = [
-          { at: 0, dur: 0.16, f: 660, g: 0.95 },
-          { at: 0.18, dur: 0.16, f: 880, g: 1.0 },
-          { at: 0.38, dur: 0.5, f: 1175, g: 1.05 }
-        ];
-        hits.forEach((h) => {
-          const g = audioCtx.createGain();
-          g.connect(audioCtx.destination);
-          const st = t0 + h.at;
-          g.gain.setValueAtTime(0.0001, st);
-          g.gain.exponentialRampToValueAtTime(Math.min(1.2, h.g), st + 0.01);
-          g.gain.setValueAtTime(Math.min(1.2, h.g), st + Math.max(0.04, h.dur - 0.06));
-          g.gain.exponentialRampToValueAtTime(0.0001, st + h.dur);
-          const o = audioCtx.createOscillator();
-          o.type = "square";
-          o.frequency.setValueAtTime(h.f, st);
-          o.connect(g);
-          o.start(st);
-          o.stop(st + h.dur + 0.02);
-        });
-      }
-    } catch {}
+    // فقط یک بار — فایل ملایم؛ بدون ویواودیو موازی (دوبل نمی‌زند)
     const src = VOICE_BASE + "beep-start.wav" + VOICE_Q;
     const a = ensureBgCueRail();
     try {
@@ -1397,13 +1350,13 @@
       try {
         a.loop = false;
         a.muted = false;
-        a.volume = 1;
+        a.volume = 0.72;
         a.onended = () => finish(true);
         a.onerror = () => finish(false);
         a.src = src;
         const p = a.play();
         if (p && typeof p.catch === "function") p.catch(() => finish(false));
-        setTimeout(() => finish(true), 1100);
+        setTimeout(() => finish(true), 650);
       } catch {
         finish(false);
       }
@@ -3364,14 +3317,13 @@
       const tok = speakToken;
       const alive = () => announceAlive(seq) && soundAlive(gen, tok) && run && run.steps[run.i] === step;
       unlockAudio();
-      keepSilenceAlive();
       if (step.kind === "work") {
         const nm = normSpeakKey(step.name);
         if (!nm || !alive()) return;
         try {
           await beepPhaseStart();
         } catch {}
-        await sleep(120);
+        await sleep(40);
         if (!alive()) return;
         nameSpeechGuard = true;
         const guardTimer = setTimeout(() => {
@@ -4531,19 +4483,19 @@
     // گرم‌کردن بقیه بعد از شروع تلفظ اول
     setTimeout(() => {
       try {
-        const names = (p.circuit || []).map((c) => c && c.name).filter(Boolean);
+        const names = (p.circuit || []).map((c) => c && c.name).filter(Boolean).slice(0, 3);
         let i = 0;
         const stepWarm = () => {
-          if (i >= names.length) return;
+          if (i >= names.length || !run || run.paused) return;
           try {
             warmMoveVoice(names[i]);
           } catch {}
           i += 1;
-          setTimeout(stepWarm, 350);
+          setTimeout(stepWarm, 700);
         };
         stepWarm();
       } catch {}
-    }, 1200);
+    }, 1800);
   }
 
   function stopLoop() {
@@ -4578,7 +4530,7 @@
       }
     };
     tick();
-    tickIv = setInterval(tick, 300);
+    tickIv = setInterval(tick, 400);
   }
 
   function maybeAnnounce() {
