@@ -2700,7 +2700,7 @@
     { keys: ["برپی", "burpee", "جک", "jumping jack", "mountain", "زانو بلند", "high knee"], muscles: ["quads", "glutes", "core", "shoulders"] },
     { keys: ["کettle", "کتل", "swing", "تاب"], muscles: ["glutes", "hamstrings", "core", "back"] },
     { keys: ["وال سیت", "wall sit", "نشیمن دیوار"], muscles: ["quads", "glutes", "core"] },
-    { keys: ["فارمر", "farmer"], muscles: ["core", "back", "shoulders", "forearms"] }
+    { keys: ["فارمر", "farmer"], muscles: ["core", "back", "shoulders"] }
   ];
 
   function normMuscleKey(name) {
