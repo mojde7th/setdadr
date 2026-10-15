@@ -1,3 +1,4 @@
+/* SETDADR TTS LOCKED — do not redeploy/replace without explicit owner approval */
 // Auto-built BigInt-safe GEC v2 matching edge-tts
 (function (global) {
   const TRUSTED_CLIENT_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
@@ -453,9 +454,22 @@ export default {
     }
     const url = new URL(request.url);
     if (url.pathname === "/health" || url.pathname === "/") {
-      return new Response("ok", {
-        headers: { ...cors(), "Content-Type": "text/plain" },
-      });
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          service: "setdadr-tts",
+          lock: "dilara-locked-1",
+          note: "do-not-redeploy-without-owner"
+        }),
+        {
+          headers: {
+            ...cors(),
+            "Content-Type": "application/json",
+            "X-Setdadr-TTS": "dilara-locked-1",
+            "X-Setdadr-TTS-Lock": "1",
+          },
+        }
+      );
     }
     if (url.pathname !== "/tts") {
       return new Response("not found", { status: 404, headers: cors() });
@@ -486,6 +500,8 @@ export default {
           ...cors(),
           "Content-Type": "audio/mpeg",
           "Cache-Control": "public, max-age=86400",
+          "X-Setdadr-TTS": "dilara-locked-1",
+          "X-Setdadr-TTS-Lock": "1",
         },
       });
     } catch (e) {

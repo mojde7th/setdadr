@@ -1,0 +1,5 @@
+LOCKED
+service=setdadr-tts
+url=https://setdadr-tts.minasi24100.workers.dev
+token=dilara-locked-1
+rule=Do not edit, redeploy, or replace this worker unless the owner explicitly asks.

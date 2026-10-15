@@ -1,0 +1,12 @@
+---
+description: Freeze Cloudflare Dilara TTS worker for setdadr
+alwaysApply: true
+---
+Never modify, redeploy, overwrite, or replace the Setdadr Cloudflare TTS worker unless the user explicitly asks in this turn.
+
+Paths:
+- cf-tts/
+- https://setdadr-tts.minasi24100.workers.dev
+
+Even tiny text/header/version changes are forbidden without an explicit request.
+If speech breaks, debug the PWA app.js path first; do not touch the worker by default.
