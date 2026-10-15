@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "248";
+  const APP_VER = "249";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -71,7 +71,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=248";
+  const VOICE_Q = "?v=249";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -924,7 +924,7 @@
       } catch {}
       setMediaPlaying(true, (run && (run.title || "تمرین")) || "ست‌یار");
       requestWakeLock();
-    }, 400);
+    }, 1200);
   }
 
   function stopBgHeartbeat() {
@@ -1032,15 +1032,15 @@
     if (gen !== soundGen) return Promise.resolve(false);
     const hidden = isAppHidden();
     const startCap = o.protect
-      ? Math.min(Math.max(o.startCap || 4000, 3000), 9000)
+      ? Math.min(Math.max(o.startCap || 3000, 2200), 4500)
       : hidden
-        ? Math.min(Math.max(o.startCap || 3500, 2500), 8000)
-        : Math.min(o.startCap || 1800, 2500);
+        ? Math.min(Math.max(o.startCap || 2800, 2200), 4500)
+        : Math.min(o.startCap || 1600, 2200);
     const maxMs = o.protect
-      ? Math.min(Math.max(o.maxMs || 20000, 12000), 30000)
+      ? Math.min(Math.max(o.maxMs || 12000, 8000), 16000)
       : hidden
-        ? Math.min(Math.max(o.maxMs || 15000, 10000), 25000)
-        : Math.min(o.maxMs || 10000, 12000);
+        ? Math.min(Math.max(o.maxMs || 12000, 8000), 16000)
+        : Math.min(o.maxMs || 9000, 12000);
     return new Promise((resolve) => {
       let done = false;
       let started = false;
@@ -1403,8 +1403,7 @@
         a.src = src;
         const p = a.play();
         if (p && typeof p.catch === "function") p.catch(() => finish(false));
-        // سقف کوتاه تا اگر onended نیامد اپ هنگ نکند
-        setTimeout(() => finish(true), 500);
+        setTimeout(() => finish(true), 450);
       } catch {
         finish(false);
       }
@@ -3360,7 +3359,7 @@
       const tok = speakToken;
       const alive = () => announceAlive(seq) && soundAlive(gen, tok) && run && run.steps[run.i] === step;
       try {
-        buzz(step.kind === "work" ? [80, 35, 90] : [55, 30, 70]);
+        buzz(step.kind === "work" ? [50, 20, 60] : [40, 20, 50]);
       } catch {}
       unlockAudio();
       startBgKeepAlive();
@@ -3375,22 +3374,22 @@
       if (step.kind === "work") {
         const nm = normSpeakKey(step.name);
         if (!nm || !alive()) return;
-        // حتماً اول بوق شروع تمام شود، بعد اسم — بدون قطع وسط حرف
+        // بوق سنگین شروع؛ منتظر شبکه نشو تا هنگ نشود
         try {
-          await beepPhaseStart();
+          beepPhaseStart();
         } catch {}
-        await sleep(150);
+        await sleep(360);
         if (!alive()) return;
         nameSpeechGuard = true;
         try {
           let ok = false;
           try {
-            ok = await speakMoveNameOnly(nm, 1);
+            ok = !!(await withTimeout(speakMoveNameOnly(nm, 1), 7000, false));
           } catch {}
           if (!alive()) return;
           if (!ok) {
             try {
-              ok = !!(await speakFaAny(nm, 1));
+              ok = !!(await withTimeout(speakFaAny(nm, 1), 5000, false));
             } catch {}
           }
         } finally {
@@ -3401,11 +3400,11 @@
       try {
         stopCueRail();
       } catch {}
-      await sleep(220);
+      await sleep(200);
       if (!alive()) return;
       nameSpeechGuard = true;
       try {
-        await speakNextMoveName(step.nextName || "", seq);
+        await withTimeout(speakNextMoveName(step.nextName || "", seq), 10000, false);
       } finally {
         nameSpeechGuard = false;
       }
@@ -4684,13 +4683,8 @@
       } catch {}
       speakPhase(run.steps[run.i] || step);
     };
-    // فقط وقتی واقعاً مخفی است فوری؛ وگرنه تایمر کوتاه (آیفون پیش‌زمینه را هنگ نکن)
-    let hidden = false;
-    try {
-      hidden = document.visibilityState === "hidden";
-    } catch {}
-    if (hidden) kick();
-    else setTimeout(kick, skip ? 100 : 60);
+    // هرگز kick فوری — روی آیفون هنگ می‌آورد
+    setTimeout(kick, skip ? 80 : 50);
     loop();
   }
 
