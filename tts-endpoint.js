@@ -1,3 +1,3 @@
-// Permanent cloud Dilara TTS — no laptop required.
-// Optional override: set a self-hosted base (not trycloudflare) if you deploy tts-service.
-window.SETDADR_TTS_API = "";
+// Live Dilara TTS for arbitrary Persian on phone (Safari/Chrome).
+// Refresh with: tools/start_tts_public.ps1  (keep PC awake)
+window.SETDADR_TTS_API = "https://companies-harold-refused-spies.trycloudflare.com";

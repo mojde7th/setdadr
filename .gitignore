@@ -4,3 +4,14 @@ tools/cf_out.txt
 tools/fly/
 tools/flyctl.zip
 voice/api-cache/
+
+node_modules/
+package-lock.json
+tools/_*.mp3
+tools/_*.log
+tools/_probe_*.py
+tools/_emit_*.py
+tools/_check_*.py
+tools/_scan_*
+tools/_gec_*
+tools/_tts_api.*.log

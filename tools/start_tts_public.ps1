@@ -2,29 +2,37 @@
 $ErrorActionPreference = "Stop"
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $cf = Join-Path $PSScriptRoot "cloudflared.exe"
-$api = Join-Path $PSScriptRoot "tts_api.py"
+$api = Join-Path $root "tts-service\tts_api.py"
+if (-not (Test-Path $api)) { $api = Join-Path $PSScriptRoot "tts_api.py" }
 $endpointJs = Join-Path $root "tts-endpoint.js"
 
-Write-Host "Starting TTS API on :8787 ..."
-Start-Process -FilePath "python" -ArgumentList "`"$api`"" -WorkingDirectory $root -WindowStyle Minimized
+if (-not (Test-Path $cf)) {
+  Write-Host "Downloading cloudflared..."
+  Invoke-WebRequest -Uri "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" -OutFile $cf -UseBasicParsing
+}
 
+Write-Host "Starting TTS API on :8787 ..."
+Start-Process -FilePath "python" -ArgumentList "-u","`"$api`"" -WorkingDirectory (Split-Path $api) -WindowStyle Minimized
 Start-Sleep -Seconds 2
+
 $errLog = Join-Path $PSScriptRoot "cf_err.txt"
 $outLog = Join-Path $PSScriptRoot "cf_out.txt"
 Remove-Item $errLog, $outLog -ErrorAction SilentlyContinue
 Write-Host "Starting Cloudflare quick tunnel ..."
-Start-Process -FilePath $cf -ArgumentList @("tunnel", "--url", "http://127.0.0.1:8787") -RedirectStandardError $errLog -RedirectStandardOutput $outLog -WindowStyle Minimized
+Start-Process -FilePath $cf -ArgumentList @("tunnel", "--url", "http://127.0.0.1:8787", "--no-autoupdate") -RedirectStandardError $errLog -RedirectStandardOutput $outLog -WindowStyle Minimized
 
 $url = $null
 for ($i = 0; $i -lt 40; $i++) {
   Start-Sleep -Seconds 1
-  if (Test-Path $errLog) {
-    $m = Select-String -Path $errLog -Pattern "https://[a-z0-9-]+\.trycloudflare\.com" | Select-Object -First 1
+  foreach ($log in @($errLog, $outLog)) {
+    if (-not (Test-Path $log)) { continue }
+    $m = Select-String -Path $log -Pattern "https://[a-z0-9-]+\.trycloudflare\.com" | Select-Object -First 1
     if ($m) {
       $url = [regex]::Match($m.Line, "https://[a-z0-9-]+\.trycloudflare\.com").Value
       break
     }
   }
+  if ($url) { break }
 }
 
 if (-not $url) {
@@ -33,7 +41,8 @@ if (-not $url) {
 }
 
 $js = @"
-// Ø¢Ø¯Ø±Ø³ Ø³Ø±ÙˆØ± ØµØ¯Ø§ÛŒ Ø¯ÛŒÙ„Ø§Ø±Ø§ (Ù‡Ø± Ø¬Ù…Ù„Ù‡). Ø¨Ø§ tools/start_tts_public.ps1 Ø¨Ù‡ Ø±ÙˆØ² Ù…ÛŒ Ø´ÙˆØ¯.
+// Live Dilara TTS for arbitrary Persian on phone (Safari/Chrome).
+// Refresh with: tools/start_tts_public.ps1  (keep PC awake)
 window.SETDADR_TTS_API = "$url";
 "@
 $utf8NoBom = New-Object System.Text.UTF8Encoding $false

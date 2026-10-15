@@ -1,6 +1,9 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "159";
+  const APP_VER = "162";
+  // صدای باشگاه: HTML حداکثر ۱ است؛ بلندی واقعی با WebAudio حدود ده برابر سیستم
+  const VOICE_LOUD = 10;
+  const VOICE_STAT_LOUD = 2.2;
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -97,17 +100,26 @@
       if (saved && /trycloudflare\.com/i.test(saved)) localStorage.removeItem(TTS_API_LS);
     } catch {}
   }
+  function prefersEdgeWs() {
+    // فقط مرورگر اج توکن وب‌سوکت را می‌پذیرد؛ کروم/سافاری گوشی ۴۰۳ می‌گیرند
+    try {
+      return /Edg\/|EdgA\/|EdgiOS\//.test(navigator.userAgent || "");
+    } catch {
+      return false;
+    }
+  }
   function getTtsApiBases() {
     const out = [];
     if (typeof window !== "undefined" && window.SETDADR_TTS_API) {
       const u = String(window.SETDADR_TTS_API || "").replace(/\/$/, "");
-      // تونل موقت لپ‌تاپ را دیگر به‌عنوان مسیر اصلی نگیر
-      if (u && !/trycloudflare\.com/i.test(u)) out.push(u);
+      // آدرس صریح در tts-endpoint.js — حتی تونل موقت — برای متن زنده روی گوشی
+      if (u) out.push(u);
     }
     try {
       const saved = localStorage.getItem(TTS_API_LS);
       if (saved) {
         const u = saved.replace(/\/$/, "");
+        // کش محلی تونل مرده را نگه ندار
         if (u && !/trycloudflare\.com/i.test(u) && out.indexOf(u) === -1) out.push(u);
       }
     } catch {}
@@ -735,7 +747,7 @@
         lp.type = "lowpass";
         lp.frequency.setValueAtTime(o.bright ? 1600 : 1200, t0);
         lp.Q.setValueAtTime(0.55, t0);
-        const peak = o.peak != null ? o.peak : 1.15;
+        const peak = o.peak != null ? o.peak : 3.2;
         const total = o.total != null ? o.total : 0.7;
         master.gain.setValueAtTime(0.0001, t0);
         master.gain.exponentialRampToValueAtTime(peak, t0 + 0.05);
@@ -956,9 +968,26 @@
   const EDGE_TTS_VOICE = EDGE_TTS_VOICE_FA;
   const EDGE_TTS_CHROME = "143.0.3650.75";
   let edgeTtsSkew = 0;
-  // ابر بدون هدر CORS است و سوکت اج ۴۰۳ می‌دهد؛ بعد از اولین شکست دوباره امتحان نکن
-  let cloudBlobDead = false;
-  let edgeWsDead = false;
+  // ابر/سوکت گاهی می‌میرد؛ فقط برای ۶۰ ثانیه کنار بگذار، نه برای همیشه
+  let cloudBlobDeadUntil = 0;
+  let edgeWsDeadUntil = 0;
+  function cloudBlobDead() {
+    return Date.now() < cloudBlobDeadUntil;
+  }
+  function markCloudBlobDead() {
+    cloudBlobDeadUntil = Date.now() + 60000;
+  }
+  function edgeWsDead() {
+    return Date.now() < edgeWsDeadUntil;
+  }
+  function markEdgeWsDead() {
+    edgeWsDeadUntil = Date.now() + 60000;
+  }
+  function loudVol(vol, kind) {
+    const base = vol == null ? 1 : Number(vol);
+    const mult = kind === "stat" ? VOICE_STAT_LOUD : VOICE_LOUD;
+    return Math.max(0.05, Math.min(16, base * mult));
+  }
 
   function edgeUuid() {
     if (crypto.randomUUID) return crypto.randomUUID().replace(/-/g, "");
@@ -969,18 +998,31 @@
     ).slice(0, 32);
   }
 
-  async function edgeSecMsGec() {
-    const WIN_EPOCH = 11644473600;
-    let ticks = Date.now() / 1000 + edgeTtsSkew + WIN_EPOCH;
-    ticks -= ticks % 300;
-    ticks = Math.floor(ticks * (1e9 / 100));
-    const str = String(ticks) + EDGE_TTS_TOKEN;
-    const data = new TextEncoder().encode(str);
-    const hash = await crypto.subtle.digest("SHA-256", data);
-    return [...new Uint8Array(hash)]
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("")
-      .toUpperCase();
+  function edgeSecMsGec() {
+    // GEC v2 (CS64+SHA) — بدون این، وب‌سوکت اج روی گوشی برای متن دلخواه قطع است
+    const gecApi =
+      typeof globalThis !== "undefined" && globalThis.SetdadrEdgeGec
+        ? globalThis.SetdadrEdgeGec
+        : typeof window !== "undefined" && window.SetdadrEdgeGec
+          ? window.SetdadrEdgeGec
+          : null;
+    if (!gecApi || typeof gecApi.generateSecMsGecV2 !== "function") return null;
+    try {
+      return gecApi.generateSecMsGecV2(Date.now() / 1000 + edgeTtsSkew);
+    } catch {
+      return null;
+    }
+  }
+
+  function edgeSecMsGecVersion() {
+    const gecApi =
+      typeof globalThis !== "undefined" && globalThis.SetdadrEdgeGec
+        ? globalThis.SetdadrEdgeGec
+        : typeof window !== "undefined" && window.SetdadrEdgeGec
+          ? window.SetdadrEdgeGec
+          : null;
+    if (gecApi && gecApi.SEC_MS_GEC_VERSION) return String(gecApi.SEC_MS_GEC_VERSION);
+    return "2-" + EDGE_TTS_CHROME;
   }
 
   function edgeJsDate() {
@@ -1001,7 +1043,7 @@
 
   function synthesizeEdgeTts(text, voiceName) {
     const key = String(text || "").trim().slice(0, 160);
-    if (!key || edgeWsDead) return Promise.resolve(null);
+    if (!key || edgeWsDead()) return Promise.resolve(null);
     const voice = voiceName || EDGE_TTS_VOICE_FA;
     const langXml = /^en/i.test(voice) ? "en-US" : "fa-IR";
     return new Promise(async (resolve) => {
@@ -1012,7 +1054,11 @@
         resolve(blob);
       };
       try {
-        const gec = await edgeSecMsGec();
+        const gec = edgeSecMsGec();
+        if (!gec) {
+          done(null);
+          return;
+        }
         const connId = edgeUuid();
         const url =
           "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1" +
@@ -1021,9 +1067,9 @@
           "&ConnectionId=" +
           connId +
           "&Sec-MS-GEC=" +
-          gec +
-          "&Sec-MS-GEC-Version=1-" +
-          EDGE_TTS_CHROME;
+          encodeURIComponent(gec) +
+          "&Sec-MS-GEC-Version=" +
+          encodeURIComponent(edgeSecMsGecVersion());
         const ws = new WebSocket(url);
         ws.binaryType = "arraybuffer";
         const chunks = [];
@@ -1102,7 +1148,7 @@
 
         ws.onerror = () => {
           clearTimeout(killer);
-          if (!opened) edgeWsDead = true;
+          if (!opened) markEdgeWsDead();
           done(chunks.length ? new Blob(chunks, { type: "audio/mpeg" }) : null);
         };
         ws.onclose = () => {
@@ -1143,31 +1189,23 @@
     const hasFa = /[\u0600-\u06FF]/.test(key);
     const voice = hasFa ? EDGE_TTS_VOICE_FA : EDGE_TTS_VOICE_EN;
 
-    // ۱) ابر دائمی — تایم‌اوت کوتاه تا گرم‌کردن صف اعلام را نکشد
-    if (!cloudBlobDead) {
+    const tryEdgeWs = async () => {
       try {
-        const url = cloudEdgeUrl(key, voice);
-        let res = await fetchWithTimeout(url, 4500, "no-store");
-        if (!res || !res.ok) {
-          res = await fetchWithTimeout(
-            "https://corsproxy.io/?" + encodeURIComponent(url),
-            4500,
-            "no-store"
-          );
+        const edgeBlob = await synthesizeEdgeTts(key.slice(0, 160), voice);
+        if (edgeBlob && edgeBlob.size > 80) {
+          await saveDynFaToCache(key, edgeBlob);
+          return edgeBlob;
         }
-        if (res && res.ok) {
-          const blob = await res.blob();
-          if (blob && blob.size > 80) {
-            await saveDynFaToCache(key, blob);
-            return blob;
-          }
-        }
-      } catch (err) {
-        if (err && err.name === "TypeError") cloudBlobDead = true;
-      }
+      } catch {}
+      return null;
+    };
+
+    // اج فقط روی مرورگر اج؛ بقیهٔ گوشی‌ها از ای‌پی‌آی دیلارا (تونل/ابر)
+    if (prefersEdgeWs()) {
+      const edgeFirst = await tryEdgeWs();
+      if (edgeFirst) return edgeFirst;
     }
 
-    // ۲) سرور خودی اگر تنظیم شده باشد
     const bases = getTtsApiBases();
     for (let i = 0; i < bases.length; i++) {
       try {
@@ -1188,14 +1226,34 @@
       }
     }
 
-    // ۳) اج مستقیم گوشی
-    try {
-      const edgeBlob = await synthesizeEdgeTts(key.slice(0, 160), voice);
-      if (edgeBlob && edgeBlob.size > 80) {
-        await saveDynFaToCache(key, edgeBlob);
-        return edgeBlob;
+    if (!prefersEdgeWs()) {
+      const edgeLate = await tryEdgeWs();
+      if (edgeLate) return edgeLate;
+    }
+
+    // ابر عمومی (ممکن است قطع باشد)
+    if (!cloudBlobDead()) {
+      try {
+        const url = cloudEdgeUrl(key, voice);
+        let res = await fetchWithTimeout(url, 4500, "no-store");
+        if (!res || !res.ok) {
+          res = await fetchWithTimeout(
+            "https://corsproxy.io/?" + encodeURIComponent(url),
+            4500,
+            "no-store"
+          );
+        }
+        if (res && res.ok) {
+          const blob = await res.blob();
+          if (blob && blob.size > 80) {
+            await saveDynFaToCache(key, blob);
+            return blob;
+          }
+        }
+      } catch (err) {
+        if (err && err.name === "TypeError") markCloudBlobDead();
       }
-    } catch {}
+    }
 
     // ۴) گوگل انگلیسی
     if (!hasFa) {
@@ -1328,26 +1386,14 @@
     });
   }
 
-  async function playBlobFa(blob, vol) {
+  async function playBlobFa(blob, vol, kind) {
     if (!blob) return false;
     const gen = soundGen;
+    const gainVal = loudVol(vol, kind || "name");
     try {
       unlockAudio();
       if (gen !== soundGen) return false;
-      // اول HTML Audio — روی گوشی پایدارتر شنیده می‌شود
-      try {
-        const url = URL.createObjectURL(blob);
-        const a = makeHtmlAudio(url);
-        dynFaAudio.set(String(url), a);
-        const ok = await playHtmlAudioEl(a, vol, 10000);
-        setTimeout(() => {
-          try {
-            URL.revokeObjectURL(url);
-          } catch {}
-        }, 20000);
-        if (ok) return true;
-      } catch {}
-      if (gen !== soundGen) return false;
+      // اول WebAudio با گین بالای ۱ — فقط این در باشگاه واقعاً بلند است
       if (audioCtx) {
         try {
           if (audioCtx.state === "suspended") await audioCtx.resume();
@@ -1370,10 +1416,19 @@
             }
             const src = audioCtx.createBufferSource();
             const g = audioCtx.createGain();
-            g.gain.value = Math.max(0.05, Math.min(1, vol == null ? 0.98 : vol));
+            const comp = audioCtx.createDynamicsCompressor();
+            try {
+              comp.threshold.setValueAtTime(-18, audioCtx.currentTime);
+              comp.knee.setValueAtTime(24, audioCtx.currentTime);
+              comp.ratio.setValueAtTime(4, audioCtx.currentTime);
+              comp.attack.setValueAtTime(0.003, audioCtx.currentTime);
+              comp.release.setValueAtTime(0.25, audioCtx.currentTime);
+            } catch {}
+            g.gain.value = gainVal;
             src.buffer = buf;
             src.connect(g);
-            g.connect(audioCtx.destination);
+            g.connect(comp);
+            comp.connect(audioCtx.destination);
             liveSources.add(src);
             voicePlayer = src;
             const drop = () => {
@@ -1394,11 +1449,25 @@
                 } catch {}
               }
               finish();
-            }, Math.min(8000, (buf.duration + 0.4) * 1000));
+            }, Math.min(12000, (buf.duration + 0.4) * 1000));
           });
           return gen === soundGen;
         } catch {}
       }
+      if (gen !== soundGen) return false;
+      // پشتیبان HTML (حداکثر ولوم ۱)
+      try {
+        const url = URL.createObjectURL(blob);
+        const a = makeHtmlAudio(url);
+        dynFaAudio.set(String(url), a);
+        const ok = await playHtmlAudioEl(a, 1, 10000);
+        setTimeout(() => {
+          try {
+            URL.revokeObjectURL(url);
+          } catch {}
+        }, 20000);
+        if (ok) return true;
+      } catch {}
       return false;
     } catch {
       return false;
@@ -1422,8 +1491,63 @@
       const tok = speakToken;
       if (!soundAlive(gen, tok)) return false;
       unlockAudio();
+      // اول WebAudio بلند؛ کیپر فقط پشتیبان آنلاک آی‌او‌اس
+      if (audioCtx) {
+        try {
+          if (audioCtx.state === "suspended") await audioCtx.resume();
+        } catch {}
+      }
+      if (audioCtx && soundAlive(gen, tok)) {
+        stopVoiceFile();
+        const buf = await loadVoiceBuffer(rel);
+        if (buf && soundAlive(gen, tok)) {
+          const gain = loudVol(vol, "name");
+          await new Promise((resolve) => {
+            let done = false;
+            const finish = () => {
+              if (done) return;
+              done = true;
+              resolve();
+            };
+            if (gen !== soundGen) {
+              finish();
+              return;
+            }
+            const src = audioCtx.createBufferSource();
+            const g = audioCtx.createGain();
+            const comp = audioCtx.createDynamicsCompressor();
+            try {
+              comp.threshold.setValueAtTime(-18, audioCtx.currentTime);
+              comp.knee.setValueAtTime(24, audioCtx.currentTime);
+              comp.ratio.setValueAtTime(4, audioCtx.currentTime);
+            } catch {}
+            g.gain.value = gain;
+            src.buffer = buf;
+            src.connect(g);
+            g.connect(comp);
+            comp.connect(audioCtx.destination);
+            liveSources.add(src);
+            voicePlayer = src;
+            src.onended = () => {
+              liveSources.delete(src);
+              finish();
+            };
+            src.start();
+            setTimeout(() => {
+              if (gen !== soundGen) {
+                try {
+                  src.stop();
+                } catch {}
+                liveSources.delete(src);
+              }
+              finish();
+            }, Math.min(12000, (buf.duration + 0.4) * 1000));
+          });
+          if (gen === soundGen) return true;
+        }
+      }
       {
-        const ok = await playOnKeeper(VOICE_BASE + rel + VOICE_Q, vol, {
+        const ok = await playOnKeeper(VOICE_BASE + rel + VOICE_Q, 1, {
           startCap: 2500,
           maxMs: 12000
         });
@@ -1431,56 +1555,11 @@
         if (ok) return true;
       }
       {
-        const htmlOk = await playVoiceFileHtml(rel, vol);
+        const htmlOk = await playVoiceFileHtml(rel, 1);
         if (!soundAlive(gen, tok)) return false;
         if (htmlOk) return true;
       }
-      if (!audioCtx) return false;
-      if (audioCtx.state === "suspended") {
-        try {
-          await audioCtx.resume();
-        } catch {}
-      }
-      if (!soundAlive(gen, tok)) return false;
-      stopVoiceFile();
-      const buf = await loadVoiceBuffer(rel);
-      if (!buf || !soundAlive(gen, tok)) return false;
-      const gain = Math.max(0.05, Math.min(1, vol == null ? 0.98 : vol));
-      await new Promise((resolve) => {
-        let done = false;
-        const finish = () => {
-          if (done) return;
-          done = true;
-          resolve();
-        };
-        if (gen !== soundGen) {
-          finish();
-          return;
-        }
-        const src = audioCtx.createBufferSource();
-        const g = audioCtx.createGain();
-        g.gain.value = gain;
-        src.buffer = buf;
-        src.connect(g);
-        g.connect(audioCtx.destination);
-        liveSources.add(src);
-        voicePlayer = src;
-        src.onended = () => {
-          liveSources.delete(src);
-          finish();
-        };
-        src.start();
-        setTimeout(() => {
-          if (gen !== soundGen) {
-            try {
-              src.stop();
-            } catch {}
-            liveSources.delete(src);
-          }
-          finish();
-        }, Math.min(8000, (buf.duration + 0.4) * 1000));
-      });
-      return gen === soundGen;
+      return false;
     } catch {
       return false;
     }
@@ -2059,7 +2138,7 @@
     const hasFa = /[\u0600-\u06FF]/.test(key);
     const voice =
       voiceName || (hasFa ? EDGE_TTS_VOICE_FA : EDGE_TTS_VOICE_EN);
-    if (cloudBlobDead) return null;
+    if (cloudBlobDead()) return null;
     const url = cloudEdgeUrl(key, voice);
     const tries = [url, "https://corsproxy.io/?" + encodeURIComponent(url)];
     for (let i = 0; i < tries.length; i++) {
@@ -2072,7 +2151,7 @@
         return blob;
       } catch (err) {
         if (i === 0 && err && err.name === "TypeError") {
-          cloudBlobDead = true;
+          markCloudBlobDead();
           return null;
         }
       }
@@ -2156,21 +2235,37 @@
     return false;
   }
 
-  // هر متن دلخواه: کلیپ پخته → بلندگوی آنلاک (کش/ابر) → مسیرهای قدیمی
+  // هر متن دلخواه: کلیپ/کش → دیلارا (زنده) → اج (فقط مرورگر اج) → بقیه
   async function speakTextChain(key, v, voice, alive) {
     const en = /^en/i.test(voice);
+    const edgeOk = prefersEdgeWs();
     {
       const ok = await playBakedDynClip(key, v);
       if (!alive()) return false;
       if (ok) return true;
     }
     {
-      const ok = await playTextOnKeeper(key, v, voice);
+      const ok = await playCachedFaOnly(key, v);
+      if (!alive()) return false;
+      if (ok) return true;
+    }
+    if (edgeOk) {
+      const ok = await playEdgeTts(key, v, voice);
+      if (!alive()) return false;
+      if (ok) return true;
+    }
+    if (!en) {
+      const ok = await playDilaraFa(key, v);
+      if (!alive()) return false;
+      if (ok) return true;
+    }
+    if (!edgeOk) {
+      const ok = await playEdgeTts(key, v, voice);
       if (!alive()) return false;
       if (ok) return true;
     }
     {
-      const ok = await playCachedFaOnly(key, v);
+      const ok = await playTextOnKeeper(key, v, voice);
       if (!alive()) return false;
       if (ok) return true;
     }
@@ -2184,17 +2279,7 @@
       if (!alive()) return false;
       if (ok) return true;
     }
-    {
-      const ok = await playEdgeTts(key, v, voice);
-      if (!alive()) return false;
-      if (ok) return true;
-    }
     if (en) return false;
-    {
-      const ok = await playDilaraFa(key, v);
-      if (!alive()) return false;
-      if (ok) return true;
-    }
     {
       const ok = await playGoogleQuick(key, v, "fa");
       if (!alive()) return false;
@@ -2694,7 +2779,8 @@
     const key = String(text || "").replace(/\s+/g, " ").trim();
     if (!key) return false;
     if (seq != null && !announceAlive(seq)) return false;
-    return !!(await speakFaAny(key, 1));
+    // آمار آرام‌تر از اسم حرکت (حدود یک‌پنجم بلندی نام)
+    return !!(await speakFaAny(key, 0.2));
   }
 
   function setDoneLine(completed, totalSets) {
@@ -3235,66 +3321,93 @@
     const row2 = $("#flowRow2");
     const arrow = $("#flowArrow");
     const arrowLead = $("#flowArrowLead");
+    const nextLbl = $("#nextLabel");
     if (!card || !run || !flow1) return;
     const step = run.steps[run.i];
 
-    function showOne(text) {
-      card.hidden = false;
-      card.classList.remove("is-rest-next");
-      flow1.textContent = text;
-      if (row2) row2.hidden = true;
-      if (arrow) arrow.hidden = true;
+    function hideNext() {
+      card.hidden = true;
+      card.classList.remove("is-rest-next", "is-next-only");
       if (arrowLead) arrowLead.hidden = true;
+      if (arrow) arrow.hidden = true;
+      if (row2) row2.hidden = true;
+      if (nextLbl) nextLbl.hidden = true;
       if (flow2) flow2.textContent = "";
     }
 
-    function showFlow(a, b, lead) {
+    // همیشه فلش و برچسب «حرکت بعدی» را برای اسم حرکت بعدی نگه دار
+    function showNextMoveOnly(name) {
+      const nm = String(name || "").trim();
+      if (!nm) {
+        hideNext();
+        return;
+      }
       card.hidden = false;
-      flow1.textContent = a;
-      if (flow2) flow2.textContent = b;
+      card.classList.add("is-rest-next", "is-next-only");
+      if (nextLbl) {
+        nextLbl.hidden = false;
+        nextLbl.textContent = "حرکت بعدی";
+      }
+      if (arrowLead) {
+        arrowLead.hidden = false;
+        arrowLead.textContent = "↓";
+      }
+      flow1.textContent = nm;
+      if (flow2) flow2.textContent = "";
+      if (row2) row2.hidden = true;
+      if (arrow) arrow.hidden = true;
+    }
+
+    function showRestThenNext(restText, nextName) {
+      const nm = String(nextName || "").trim();
+      if (!nm) {
+        hideNext();
+        return;
+      }
+      card.hidden = false;
+      card.classList.add("is-rest-next");
+      card.classList.remove("is-next-only");
+      if (nextLbl) nextLbl.hidden = true;
+      if (arrowLead) arrowLead.hidden = true;
+      flow1.textContent = restText;
+      if (flow2) flow2.textContent = nm;
       if (row2) row2.hidden = false;
-      if (arrow) arrow.hidden = false;
-      if (arrowLead) arrowLead.hidden = !lead;
+      if (arrow) {
+        arrow.hidden = false;
+        arrow.textContent = "↓ حرکت بعدی";
+      }
     }
 
     if (step.kind !== "work") {
       if (!step.nextName) {
-        card.hidden = true;
-        card.classList.remove("is-rest-next");
-        if (arrowLead) arrowLead.hidden = true;
-        if (arrow) arrow.hidden = true;
+        hideNext();
         return;
       }
-      card.classList.add("is-rest-next");
-      // فقط اسم حرکت بعدی + فلش؛ برچسب «حرکت بعدی» تکراری است
-      flow1.textContent = step.nextName;
-      if (flow2) flow2.textContent = "";
-      if (row2) row2.hidden = true;
-      if (arrow) arrow.hidden = true;
-      if (arrowLead) arrowLead.hidden = false;
-      card.hidden = false;
+      showNextMoveOnly(step.nextName);
       return;
     }
 
     card.classList.remove("is-rest-next");
-
     const next = run.steps[run.i + 1];
     if (!next) {
-      card.hidden = true;
+      hideNext();
       return;
     }
 
     if (next.kind === "work") {
-      showOne(next.name);
+      showNextMoveOnly(next.name);
       return;
     }
 
     if (next.nextName) {
-      showFlow("استراحت " + toFaDigits(next.dur) + " ثانیه", next.nextName, true);
+      showRestThenNext(
+        "استراحت " + toFaDigits(next.dur) + " ثانیه",
+        next.nextName
+      );
       return;
     }
 
-    card.hidden = true;
+    hideNext();
   }
 
   function finishRun() {

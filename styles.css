@@ -386,7 +386,7 @@ input[type="text"], input[type="number"] {
 }
 .run-stage.rest .move-big {
   display: block;
-  font-size: clamp(52px, 16vw, 84px);
+  font-size: clamp(28px, 8vw, 40px);
   color: #f0b75a;
 }
 .run-stage.rest .sub {
@@ -516,23 +516,46 @@ input[type="text"], input[type="number"] {
   min-width: 0;
 }
 .flow-arrow {
-  font-size: 20px;
+  font-size: clamp(22px, 6vw, 34px);
   font-weight: 900;
-  color: var(--accent);
-  line-height: 1;
-  direction: ltr;
+  color: #f0b75a;
+  line-height: 1.15;
+  direction: rtl;
+  text-align: center;
+  width: 100%;
+  padding: 4px 0;
 }
 .flow-arrow-lead {
-  font-size: 28px;
-  margin-bottom: 2px;
+  font-size: clamp(36px, 10vw, 52px);
+  margin-bottom: 4px;
   color: #f0b75a;
+  animation: nextPulse 1.2s ease-in-out infinite;
+}
+.next-label {
+  font-size: clamp(18px, 5vw, 24px);
+  font-weight: 900;
+  color: #f0b75a;
+  letter-spacing: .04em;
+  margin-bottom: 2px;
+}
+.next-label[hidden] {
+  display: none !important;
 }
 .next-card.is-rest-next .flow-arrow-lead {
   display: block !important;
 }
+.next-card.is-next-only .flow-row:first-of-type .flow-txt,
+.next-card.is-rest-next #flowRow2 .flow-txt {
+  color: #f0b75a;
+  font-weight: 900;
+}
 .next-card.is-rest-next .flow-row:first-of-type .flow-txt {
   color: #f0b75a;
   font-weight: 800;
+}
+@keyframes nextPulse {
+  0%, 100% { opacity: 1; transform: translateY(0); }
+  50% { opacity: .55; transform: translateY(4px); }
 }
 .flow-arrow[hidden],
 .flow-row[hidden] {
@@ -689,14 +712,17 @@ input[type="text"], input[type="number"] {
   color: #fff;
   stroke: #fff;
 }
-.next-card.is-rest-next {
+.next-card.is-rest-next,
+.next-card.is-next-only {
   border-color: #f0b75a !important;
+  box-shadow: 0 0 0 1px rgba(240, 183, 90, .35), 0 12px 28px rgba(0, 0, 0, .4);
 }
-.next-card.is-rest-next .flow-arrow-lead {
+.next-card.is-rest-next .flow-arrow-lead,
+.next-card.is-next-only .flow-arrow-lead {
   display: block !important;
-  font-size: 32px;
+  font-size: clamp(40px, 12vw, 56px);
   color: #f0b75a;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
 
