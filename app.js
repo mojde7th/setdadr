@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "168";
+  const APP_VER = "169";
   // باشگاه: بلند بدون خش — گین معقول، بدون دیستورت WaveShaper
   const VOICE_LOUD = 56;
   const VOICE_STAT_LOUD = 14;
@@ -2671,6 +2671,159 @@
     });
   }
 
+
+  const MUSCLE_META = {
+    chest: { fa: "سینه", tip: "فشار افقی جلو تنه؛ دم و بازدم را کنترل کن." },
+    back: { fa: "پشت", tip: "کشیدن کتف‌ها به هم ستون فقرات را پایدار می‌کند." },
+    shoulders: { fa: "شانه", tip: "بالا ندادن شانه به گوش؛ آرنج کمی جلو باشد." },
+    biceps: { fa: "جلو بازو", tip: "آرنج ثابت نزدیک تنه؛ تاب نده." },
+    triceps: { fa: "پشت بازو", tip: "آرنج را قفل نکن؛ فشار در انتهای حرکت." },
+    core: { fa: "میان‌تنه", tip: "شکم را مثل کمربند سفت نگه دار." },
+    quads: { fa: "چهارسر ران", tip: "زانو هم‌راستای پنجه؛ پاشنه روی زمین." },
+    hamstrings: { fa: "پشت ران", tip: "لگن را عقب بده؛ کمر گرد نشود." },
+    glutes: { fa: "سرینی", tip: "در بالا باسن را کامل منقبض کن." },
+    calves: { fa: "ساق", tip: "بالا رفتن روی پنجه با مکث کوتاه." }
+  };
+
+  const MOVE_MUSCLE_RULES = [
+    { keys: ["اسکوات", "squat", "گبلت", "سومو", "air squat"], muscles: ["quads", "glutes", "core"] },
+    { keys: ["لانگز", "lunge", "لانگ"], muscles: ["quads", "glutes", "hamstrings"] },
+    { keys: ["ددلیفت", "deadlift", "rdl", "رومانیایی"], muscles: ["hamstrings", "glutes", "back", "core"] },
+    { keys: ["پرس سینه", "bench", "شنا", "push up", "pushup", "پوشاپ"], muscles: ["chest", "triceps", "shoulders"] },
+    { keys: ["بارفیکس", "pull up", "pullup", "زیربغل", "row", "قایقی", "bent over"], muscles: ["back", "biceps", "core"] },
+    { keys: ["پرس شانه", "shoulder press", "میلیتاری", "lateral raise", "نشر جانب"], muscles: ["shoulders", "triceps", "core"] },
+    { keys: ["جلو بازو", "curl", "بایسپس", "bicep"], muscles: ["biceps"] },
+    { keys: ["پشت بازو", "tricep", "دیپ", "dip", "kickback"], muscles: ["triceps", "chest"] },
+    { keys: ["پلانک", "plank", "کرانچ", "crunch", "sit up", "situp", "روسی", "russian", "hollow"], muscles: ["core"] },
+    { keys: ["هیپ تراست", "hip thrust", "پل باسن", "glute bridge", "گلوت"], muscles: ["glutes", "hamstrings", "core"] },
+    { keys: ["ساق", "calf"], muscles: ["calves"] },
+    { keys: ["برپی", "burpee", "جک", "jumping jack", "mountain", "زانو بلند", "high knee"], muscles: ["quads", "glutes", "core", "shoulders"] },
+    { keys: ["کettle", "کتل", "swing", "تاب"], muscles: ["glutes", "hamstrings", "core", "back"] },
+    { keys: ["وال سیت", "wall sit", "نشیمن دیوار"], muscles: ["quads", "glutes", "core"] },
+    { keys: ["فارمر", "farmer"], muscles: ["core", "back", "shoulders", "forearms"] }
+  ];
+
+  function normMuscleKey(name) {
+    return String(name || "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function musclesForMove(name) {
+    const key = normMuscleKey(name);
+    if (!key) return ["core"];
+    for (let i = 0; i < MOVE_MUSCLE_RULES.length; i++) {
+      const rule = MOVE_MUSCLE_RULES[i];
+      if (rule.keys.some((k) => key.indexOf(String(k).toLowerCase()) >= 0)) {
+        return rule.muscles.slice();
+      }
+    }
+    return ["core", "quads"];
+  }
+
+  function muscleLoadFromStats(stats) {
+    const load = {};
+    Object.keys(MUSCLE_META).forEach((k) => {
+      load[k] = 0;
+    });
+    const byMove = (stats && stats.byMove) || [];
+    byMove.forEach((m) => {
+      const sec = Math.max(0, Number(m.sec) || 0);
+      const ms = musclesForMove(m.name);
+      const share = sec / Math.max(1, ms.length);
+      ms.forEach((id) => {
+        load[id] = (load[id] || 0) + share;
+      });
+    });
+    return load;
+  }
+
+  function topMuscles(load, n) {
+    return Object.keys(load)
+      .map((id) => ({ id, sec: load[id] || 0, fa: (MUSCLE_META[id] && MUSCLE_META[id].fa) || id }))
+      .filter((x) => x.sec > 0)
+      .sort((a, b) => b.sec - a.sec)
+      .slice(0, n || 4);
+  }
+
+  function muscleInsightText(stats, load) {
+    const tops = topMuscles(load, 3);
+    if (!tops.length) return "برای تحلیل عضله، حداقل یک حرکت کاری لازم است.";
+    const names = tops.map((t) => t.fa).join("، ");
+    const moves = ((stats && stats.byMove) || []).slice(0, 3).map((m) => m.name).join("، ");
+    const tip = (MUSCLE_META[tops[0].id] && MUSCLE_META[tops[0].id].tip) || "";
+    return (
+      "بیشترین درگیری: " +
+      names +
+      (moves ? " · بر پایه " + moves : "") +
+      (tip ? " · نکته: " + tip : "")
+    );
+  }
+
+  function anatomySvg(load) {
+    const max = Math.max(1, ...Object.keys(load).map((k) => load[k] || 0));
+    function heat(id) {
+      const v = (load[id] || 0) / max;
+      const a = (0.18 + v * 0.82).toFixed(2);
+      return "rgba(232,165,75," + a + ")";
+    }
+    // شماتیک ساده بدن — نواحی عضله با رنگ بار تمرین
+    return (
+      '<svg viewBox="0 0 200 360" xmlns="http://www.w3.org/2000/svg" class="anatomy-svg" aria-hidden="true">' +
+      '<rect x="0" y="0" width="200" height="360" rx="18" fill="#100e0a"/>' +
+      '<ellipse cx="100" cy="36" rx="22" ry="26" fill="#2a241c" stroke="#3a342c"/>' +
+      '<rect x="78" y="58" width="44" height="18" rx="6" fill="#2a241c"/>' +
+      // شانه
+      '<ellipse cx="58" cy="88" rx="18" ry="14" fill="' +
+      heat("shoulders") +
+      '"/>' +
+      '<ellipse cx="142" cy="88" rx="18" ry="14" fill="' +
+      heat("shoulders") +
+      '"/>' +
+      // سینه
+      '<ellipse cx="100" cy="110" rx="36" ry="22" fill="' +
+      heat("chest") +
+      '"/>' +
+      // پشت (لایه کم‌رنگ زیر)
+      '<ellipse cx="100" cy="132" rx="30" ry="16" fill="' +
+      heat("back") +
+      '" opacity="0.85"/>' +
+      // بازو
+      '<rect x="34" y="100" width="18" height="56" rx="9" fill="' +
+      heat("biceps") +
+      '"/>' +
+      '<rect x="148" y="100" width="18" height="56" rx="9" fill="' +
+      heat("triceps") +
+      '"/>' +
+      // میان‌تنه
+      '<rect x="78" y="128" width="44" height="52" rx="12" fill="' +
+      heat("core") +
+      '"/>' +
+      // سرینی
+      '<ellipse cx="100" cy="188" rx="28" ry="16" fill="' +
+      heat("glutes") +
+      '"/>' +
+      // ران
+      '<rect x="72" y="200" width="22" height="70" rx="11" fill="' +
+      heat("quads") +
+      '"/>' +
+      '<rect x="106" y="200" width="22" height="70" rx="11" fill="' +
+      heat("hamstrings") +
+      '"/>' +
+      // ساق
+      '<rect x="74" y="274" width="18" height="50" rx="9" fill="' +
+      heat("calves") +
+      '"/>' +
+      '<rect x="108" y="274" width="18" height="50" rx="9" fill="' +
+      heat("calves") +
+      '"/>' +
+      '<text x="100" y="348" text-anchor="middle" fill="#9a9080" font-size="11" font-family="Vazirmatn,sans-serif">نقشه درگیری عضله</text>' +
+      "</svg>"
+    );
+  }
+
+
   async function speakDoneAmount(sec, total) {
     const n = Math.round(sec);
     const tot = Math.round(total || (run && run.phaseDur) || 0);
@@ -2679,10 +2832,12 @@
       if (!announceAlive(seq)) return;
       const alive = aliveNow();
       const live = () => announceAlive(seq) && alive();
-      // وسط حرکت: فقط پیشرفت همین فاز
+      // حدود دو سوم حرکت: درصد پیشرفت
+      const pct =
+        tot > 0 ? Math.max(1, Math.min(99, Math.round((n / tot) * 100))) : 0;
       const phrase =
-        tot > 0
-          ? faNum(n) + " ثانیه از " + faNum(tot) + " ثانیه همین"
+        pct > 0
+          ? "تقریباً " + faNum(pct) + " درصد"
           : faNum(n) + " ثانیه همین";
       await speakFaAny(phrase, 1);
       if (!live()) return;
@@ -2841,13 +2996,24 @@
       await sleep(150);
       if (!alive()) return;
       await speakStatLine(
-        "بیشترین کار روی " +
+        "بیشترین تمرین روی " +
           top.name +
           "، جمع " +
           faNum(top.sec) +
           " ثانیه در " +
           faNum(top.count) +
           " بار",
+        null
+      );
+    }
+    if (!alive()) return;
+    const load = muscleLoadFromStats(s);
+    const tops = topMuscles(load, 2);
+    if (tops.length) {
+      await sleep(150);
+      if (!alive()) return;
+      await speakStatLine(
+        "عضلات اصلی درگیر: " + tops.map((x) => x.fa).join(" و "),
         null
       );
     }
@@ -2928,23 +3094,12 @@
   function rememberedMoves() {
     const map = new Map();
     (state.moves || []).forEach((m) => {
-      const name = String(m && m.name || "").trim();
+      const name = String((m && m.name) || "").trim();
       if (!name) return;
       map.set(name, {
         id: m.id || uid(),
         name,
         work: Math.max(5, Number(m.work) || 40)
-      });
-    });
-    (state.plans || []).forEach((p) => {
-      (p.circuit || []).forEach((c) => {
-        const name = String(c && c.name || "").trim();
-        if (!name || map.has(name)) return;
-        map.set(name, {
-          id: c.id || uid(),
-          name,
-          work: Math.max(5, Number(c.work) || 40)
-        });
       });
     });
     return [...map.values()];
@@ -2961,11 +3116,13 @@
     }
     box.hidden = false;
     list.forEach((m) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "move-chip";
-      btn.textContent = m.name;
-      btn.addEventListener("click", () => {
+      const wrap = document.createElement("div");
+      wrap.className = "move-chip";
+      const pick = document.createElement("button");
+      pick.type = "button";
+      pick.className = "move-chip-pick";
+      pick.textContent = m.name;
+      pick.addEventListener("click", () => {
         const nameEl = $("#pickMoveName");
         const workEl = $("#pickWork");
         if (nameEl) nameEl.value = m.name;
@@ -2974,7 +3131,23 @@
           warmMoveVoice(m.name);
         } catch {}
       });
-      box.appendChild(btn);
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "move-chip-x";
+      del.setAttribute("aria-label", "حذف از حافظه");
+      del.textContent = "×";
+      del.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        state.moves = (state.moves || []).filter(
+          (x) => String((x && x.name) || "").trim() !== m.name
+        );
+        save(state);
+        renderMoveSuggest();
+      });
+      wrap.appendChild(pick);
+      wrap.appendChild(del);
+      box.appendChild(wrap);
     });
   }
 
@@ -3276,7 +3449,7 @@
     if (step.kind === "work") {
       const midKey = run.i + ":twoThirds";
       const total = Math.round(run.phaseDur);
-      const done = Math.max(1, Math.round((total * 5) / 8));
+      const done = Math.max(1, Math.round((total * 2) / 3));
       const targetLeft = Math.max(1, total - done);
       const lead = 3;
       const fireLeft = targetLeft + lead;
@@ -3493,9 +3666,15 @@
     const tiles = $("#doneTiles");
     const chart = $("#doneChart");
     const movesEl = $("#doneMoves");
+    const anatomy = $("#doneAnatomy");
+    const insight = $("#doneInsight");
+    const musclesEl = $("#doneMuscles");
     if (tiles) tiles.innerHTML = "";
     if (chart) chart.innerHTML = "";
     if (movesEl) movesEl.innerHTML = "";
+    if (anatomy) anatomy.innerHTML = "";
+    if (insight) insight.textContent = "";
+    if (musclesEl) musclesEl.innerHTML = "";
     if (!stats) return;
     const rounds = Math.max(0, Math.round(Number(stats.rounds) || 0));
     const workSec = Math.max(0, Math.round(Number(stats.workSec) || 0));
@@ -3503,6 +3682,8 @@
     const calories = Math.max(0, Math.round(Number(stats.calories) || 0));
     const walkMin = Math.max(0, Math.round(Number(stats.walkMin) || 0));
     const byMove = Array.isArray(stats.byMove) ? stats.byMove : [];
+    const load = muscleLoadFromStats(stats);
+    const tops = topMuscles(load, 5);
     const tileData = [
       ["ست", toFaDigits(rounds)],
       ["تمرین", timePhrase(workSec)],
@@ -3510,6 +3691,7 @@
       ["کالری", toFaDigits(calories)]
     ];
     if (walkMin > 0) tileData.push(["پیاده‌روی", toFaDigits(walkMin) + " دقیقه"]);
+    if (tops[0]) tileData.push(["عضلهٔ اصلی", tops[0].fa]);
     if (tiles) {
       tileData.forEach(([k, v]) => {
         const d = document.createElement("div");
@@ -3520,18 +3702,47 @@
         tiles.appendChild(d);
       });
     }
+    if (anatomy) anatomy.innerHTML = anatomySvg(load);
+    if (insight) insight.textContent = muscleInsightText(stats, load);
+    if (musclesEl && tops.length) {
+      const max = Math.max(1, tops[0].sec);
+      tops.forEach((m) => {
+        const li = document.createElement("li");
+        const pct = Math.round((m.sec / max) * 100);
+        li.innerHTML =
+          '<div class="mus-row"><span class="mus-name"></span><span class="mus-pct"></span></div><div class="mus-track"><div class="mus-fill"></div></div>';
+        li.querySelector(".mus-name").textContent = m.fa;
+        li.querySelector(".mus-pct").textContent = toFaDigits(pct) + "٪ بار نسبی";
+        li.querySelector(".mus-fill").style.width = Math.max(8, pct) + "%";
+        const tip = MUSCLE_META[m.id] && MUSCLE_META[m.id].tip;
+        if (tip) {
+          const p = document.createElement("div");
+          p.className = "mus-tip";
+          p.textContent = tip;
+          li.appendChild(p);
+        }
+        musclesEl.appendChild(li);
+      });
+    }
     const maxSec = Math.max(1, ...byMove.map((m) => m.sec || 0));
     if (chart && byMove.length) {
       byMove.forEach((m) => {
         const row = document.createElement("div");
         row.className = "done-bar-row";
         const pct = Math.max(6, Math.round(((m.sec || 0) / maxSec) * 100));
+        const ms = musclesForMove(m.name)
+          .map((id) => (MUSCLE_META[id] && MUSCLE_META[id].fa) || id)
+          .join("، ");
         row.innerHTML =
           '<div class="done-bar-name"></div><div class="done-bar-track"><div class="done-bar-fill"></div></div><div class="done-bar-sec"></div>';
         row.querySelector(".done-bar-name").textContent = m.name;
         row.querySelector(".done-bar-fill").style.width = pct + "%";
         row.querySelector(".done-bar-sec").textContent =
-          toFaDigits(m.sec) + " ثانیه · " + toFaDigits(m.count) + " بار";
+          toFaDigits(m.sec) +
+          "ث · " +
+          toFaDigits(m.count) +
+          " بار" +
+          (ms ? " · " + ms : "");
         chart.appendChild(row);
       });
     } else if (chart) {
@@ -3540,13 +3751,17 @@
     if (movesEl && byMove.length) {
       byMove.forEach((m) => {
         const li = document.createElement("li");
+        const ms = musclesForMove(m.name)
+          .map((id) => (MUSCLE_META[id] && MUSCLE_META[id].fa) || id)
+          .join("، ");
         li.textContent =
           m.name +
           " — " +
           toFaDigits(m.count) +
           " بار · جمع " +
           toFaDigits(m.sec) +
-          " ثانیه";
+          " ثانیه" +
+          (ms ? " · " + ms : "");
         movesEl.appendChild(li);
       });
     }
