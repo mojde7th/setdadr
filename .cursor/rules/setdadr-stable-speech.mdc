@@ -1,0 +1,18 @@
+---
+description: Setdadr stable speech restore point
+alwaysApply: true
+---
+When the owner asks to restore speech / «برگردون پایه» / «نسخه پایدار تلفظ»:
+
+Restore these paths from git tag `setdadr-stable-speech-v204` (APP_VER 204):
+- app.js
+- index.html
+- styles.css
+- sw.js
+- tts-endpoint.js
+- voice/dyn/
+
+Do NOT redeploy or edit the Cloudflare TTS worker unless explicitly asked.
+Worker lock: dilara-locked-1 at https://setdadr-tts.minasi24100.workers.dev
+
+After restore, bump only SW/APP cache if needed so phones drop stale caches, then push.

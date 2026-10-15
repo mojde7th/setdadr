@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "203";
+  const APP_VER = "204";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -3060,12 +3060,7 @@
 
 
   async function speakMidHalf() {
-    // مستقیم، خارج از صف اعلام — تا توکن/فاز قبلی خفه‌اش نکند
-    try {
-      if (run) run.progressLabel = "نصفشو رفتی";
-      const sub = $("#runSub");
-      if (sub) sub.textContent = "نصفشو رفتی";
-    } catch {}
+    // فقط بگو — روی صفحه ننویس
     let ok = false;
     try {
       ok = !!(await playMidHalfClipDirect());
