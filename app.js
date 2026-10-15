@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "219";
+  const APP_VER = "220";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -70,7 +70,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=219";
+  const VOICE_Q = "?v=220";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -667,6 +667,7 @@
   // یک عنصر صوتی که با لمس شروع/بعدی آنلاک می‌شود و دیگر عوض نمی‌شود.
   // آیفون عنصر صوتی تازه را بدون لمس پخش نمی‌کند؛ این یکی را چرا.
   const KEEP_SILENCE = VOICE_BASE + "silence.wav" + VOICE_Q;
+  const KEEP_IOS = VOICE_BASE + "keep-ios.wav" + VOICE_Q;
   let keeperVoice = null;
 
   function keeperOnSilence(a) {
@@ -750,12 +751,27 @@
     bgWatchIv = 0;
   }
 
+  function bgKeepSrc() {
+    // آیفون نویز تقریباً صفر را سشن مدیا می‌کشد؛ keep-ios نرم و غیرتونال است
+    try {
+      if (isIOSLike() || isAppHidden()) return KEEP_IOS;
+    } catch {}
+    return makeQuietKeepUrl();
+  }
+
+  function bgKeepVolume() {
+    try {
+      if (isIOSLike()) return isAppHidden() ? 0.045 : 0.02;
+      if (isAppHidden()) return Math.max(BG_KEEP_VOL, 0.03);
+    } catch {}
+    return BG_KEEP_VOL;
+  }
+
   function ensureBgLoop() {
-    // مثل نسخهٔ اولیهٔ درست‌شده: dither خیلی آروم، نه بوق keep-quiet
     if (bgKeepAudio) return bgKeepAudio;
-    const a = makeHtmlAudio(makeQuietKeepUrl());
+    const a = makeHtmlAudio(bgKeepSrc());
     a.loop = true;
-    a.volume = BG_KEEP_VOL;
+    a.volume = bgKeepVolume();
     a.muted = false;
     a.setAttribute("data-setdadr-keep", "1");
     bgKeepAudio = a;
@@ -849,7 +865,10 @@
       try {
         const a = ensureBgLoop();
         a.muted = false;
-        a.volume = BG_KEEP_VOL;
+        a.volume = bgKeepVolume();
+        try {
+          if (String(a.src || "").indexOf("keep-ios") < 0) a.src = KEEP_IOS;
+        } catch {}
         if (a.paused) a.play().catch(() => {});
       } catch {}
       startBgKeepAlive();
@@ -890,13 +909,19 @@
       bgKeepAudio = null;
       bgTickWired = false;
       const a = ensureBgLoop();
-      a.volume = isAppHidden() ? Math.max(BG_KEEP_VOL, 0.03) : BG_KEEP_VOL;
+      a.volume = bgKeepVolume();
+      try {
+        if ((isIOSLike() || isAppHidden()) && a.src && a.src.indexOf("keep-ios") < 0) a.src = KEEP_IOS;
+      } catch {}
       a.muted = false;
       a.loop = true;
     } else {
       try {
         bgKeepAudio.muted = false;
-        bgKeepAudio.volume = isAppHidden() ? Math.max(BG_KEEP_VOL, 0.03) : BG_KEEP_VOL;
+        bgKeepAudio.volume = bgKeepVolume();
+        try {
+          if ((isIOSLike() || isAppHidden()) && String(bgKeepAudio.src || "").indexOf("keep-ios") < 0) bgKeepAudio.src = KEEP_IOS;
+        } catch {}
         bgKeepAudio.loop = true;
       } catch {}
     }
@@ -948,7 +973,11 @@
     if (bgKeepAudio) {
       try {
         bgKeepAudio.muted = false;
-        bgKeepAudio.volume = BG_KEEP_VOL;
+        bgKeepAudio.volume = bgKeepVolume();
+        if ((isIOSLike() || isAppHidden()) && String(bgKeepAudio.src || "").indexOf("keep-ios") < 0) {
+          bgKeepAudio.src = KEEP_IOS;
+          bgKeepAudio.loop = true;
+        }
       } catch {}
       const p = bgKeepAudio.play();
       if (p && typeof p.then === "function") {
@@ -1154,7 +1183,10 @@
       const a = ensureBgLoop();
       a.loop = true;
       a.muted = false;
-      a.volume = isAppHidden() ? Math.max(BG_KEEP_VOL, 0.03) : BG_KEEP_VOL;
+      a.volume = bgKeepVolume();
+      try {
+        if ((isIOSLike() || isAppHidden()) && a.src && a.src.indexOf("keep-ios") < 0) a.src = KEEP_IOS;
+      } catch {}
       try {
         const want = makeQuietKeepUrl();
         if (a.src !== want && a.currentSrc !== want) a.src = want;
@@ -1941,36 +1973,49 @@
     if (!blob) return false;
     const gen = soundGen;
     const gainVal = loudVol(vol, kind || "name");
+    const htmlV = vol == null ? 1 : Math.min(1, Number(vol) || 1);
     try {
       unlockAudio();
+      startBgKeepAlive();
       if (gen !== soundGen) return false;
-      // پس‌زمینه: روی کیپر آنلاک‌شده — Audio تازه معمولاً ساکت می‌ماند
-      if (isAppHidden()) {
+      const url = URL.createObjectURL(blob);
+      const revoke = () => {
+        setTimeout(() => {
+          try {
+            URL.revokeObjectURL(url);
+          } catch {}
+        }, 20000);
+      };
+      // آیفون / پس‌زمینه: اول کیپر آنلاک — WebAudio و Audio تازه اغلب ساکت‌اند
+      if (isIOSLike() || isAppHidden()) {
         try {
-          const url = URL.createObjectURL(blob);
-          const ok = await playOnKeeper(url, vol == null ? 1 : Math.min(1, Number(vol) || 1), {
-            startCap: 4500,
-            maxMs: 12000,
-            gen
-          });
-          setTimeout(() => {
-            try {
-              URL.revokeObjectURL(url);
-            } catch {}
-          }, 20000);
-          if (ok && gen === soundGen) return true;
+          const ok = await playOnKeeper(url, htmlV, { startCap: 4500, maxMs: 12000, gen });
+          if (ok && gen === soundGen) {
+            revoke();
+            return true;
+          }
         } catch {}
       }
-      // اول WebAudio با گین بالای ۱ — فقط این در باشگاه واقعاً بلند است
-      if (audioCtx) {
+      // WebAudio بلند (فقط پیش‌زمینه غیرآیفون یا اگر کیپر شکست)
+      if (audioCtx && !isAppHidden()) {
         try {
           if (audioCtx.state === "suspended") await audioCtx.resume();
-          if (gen !== soundGen) return false;
+          if (gen !== soundGen) {
+            revoke();
+            return false;
+          }
           const raw = await blob.arrayBuffer();
-          if (gen !== soundGen) return false;
+          if (gen !== soundGen) {
+            revoke();
+            return false;
+          }
           const buf = await audioCtx.decodeAudioData(raw.slice(0));
-          if (gen !== soundGen) return false;
+          if (gen !== soundGen) {
+            revoke();
+            return false;
+          }
           stopVoiceFile();
+          let heard = false;
           await new Promise((resolve) => {
             let done = false;
             const finish = () => {
@@ -1987,14 +2032,20 @@
             connectLoudOut(src, gainVal);
             liveSources.add(src);
             voicePlayer = src;
-            const drop = () => {
+            src.onended = () => {
               try {
                 liveSources.delete(src);
               } catch {}
+              heard = true;
               finish();
             };
-            src.onended = drop;
-            src.start();
+            try {
+              src.start();
+              heard = true;
+            } catch {
+              finish();
+              return;
+            }
             setTimeout(() => {
               if (gen !== soundGen) {
                 try {
@@ -2007,27 +2058,25 @@
               finish();
             }, Math.min(12000, (buf.duration + 0.4) * 1000));
           });
-          return gen === soundGen;
+          if (heard && gen === soundGen) {
+            revoke();
+            return true;
+          }
         } catch {}
       }
-      if (gen !== soundGen) return false;
-      // پشتیبان: کیپر آنلاک سپس HTML
+      // پشتیبان کیپر / HTML
       try {
-        const url = URL.createObjectURL(blob);
-        let ok = await playOnKeeper(url, 1, { startCap: 3500, maxMs: 10000, gen });
+        let ok = await playOnKeeper(url, htmlV, { startCap: 3500, maxMs: 10000, gen });
         if (!ok) {
           const a = makeHtmlAudio(url);
           dynFaAudio.set(String(url), a);
-          ok = await playHtmlAudioEl(a, 1, 10000);
+          ok = await playHtmlAudioEl(a, htmlV, 10000);
         }
-        setTimeout(() => {
-          try {
-            URL.revokeObjectURL(url);
-          } catch {}
-        }, 20000);
+        revoke();
         if (ok) return true;
-      } catch {}
-
+      } catch {
+        revoke();
+      }
       return false;
     } catch {
       return false;
@@ -2674,14 +2723,19 @@
   async function speakSynthLang(text, vol, lang, opts) {
     if (soundMuted || !text) return false;
     unlockAudio();
-    try {
-      speechSynthesis.cancel();
-    } catch {}
-    await sleep(isIOSLike() ? 50 : 25);
+    // آیفون: cancel قبل از speak اغلب کل سینث را می‌کشد
+    if (!isIOSLike()) {
+      try {
+        speechSynthesis.cancel();
+      } catch {}
+      await sleep(25);
+    } else {
+      await sleep(40);
+    }
     try {
       speechSynthesis.resume();
     } catch {}
-    await waitVoices(isIOSLike() ? 280 : 120);
+    await waitVoices(isIOSLike() ? 400 : 120);
     const o = opts || {};
     return speakFaSynthAsync(text, vol, lang, {
       ...o,
@@ -3134,7 +3188,13 @@
       MOVE_CLIP[keyLow] ||
       (said && MOVE_CLIP[said.text]);
     if (clip) {
-      const ok = await playVoiceFile(clip, v);
+      let ok = false;
+      try {
+        ok = !!(await playOnKeeper(VOICE_BASE + clip + VOICE_Q, v, { startCap: 3500, maxMs: 10000 }));
+      } catch {}
+      if (!alive()) return false;
+      if (ok) return true;
+      ok = await playVoiceFile(clip, v);
       if (!alive()) return false;
       if (ok) return true;
     }
@@ -5209,9 +5269,19 @@
       startBgHeartbeat();
       startBgWatch();
       requestWakeLock();
+      setMediaPlaying(true, (run && (run.title || "تمرین")) || "ست‌یار");
+      try {
+        const a = ensureBgLoop();
+        a.muted = false;
+        a.loop = true;
+        a.volume = bgKeepVolume();
+        a.src = KEEP_IOS;
+        a.play().catch(() => {});
+      } catch {}
       try {
         const k = ensureKeeper();
         k.muted = false;
+        k.volume = 0.001;
         if (k.paused) k.play().catch(() => {});
       } catch {}
     }
