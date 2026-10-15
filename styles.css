@@ -1336,3 +1336,35 @@ input[type="text"], input[type="number"] {
   min-height: 0;
   padding-top: 8px !important;
 }
+
+/* v181 home dash */
+.home-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.btn-dash {
+  border: 1px solid rgba(232, 165, 75, 0.45);
+  background: transparent;
+  color: #f6d7a4;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font: 800 13px var(--font);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.btn-dash:active {
+  background: rgba(232, 165, 75, 0.2);
+}
+.done-insight:not([hidden]) {
+  display: block;
+  margin: 8px 0 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(232, 165, 75, 0.28);
+  background: rgba(232, 165, 75, 0.08);
+  font: 700 13px/1.5 var(--font);
+  color: #f3ebe0;
+  text-align: start;
+}

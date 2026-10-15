@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "180";
+  const APP_VER = "181";
   // باشگاه: بلند و نرم — بدون دیستورت خشن
   const VOICE_LOUD = 44;
   const VOICE_STAT_LOUD = 12;
@@ -23,6 +23,7 @@
   let editId = null;
   let circuit = [];
   let lastPlanId = null;
+  let lastDoneStats = null;
   let run = null;
   let raf = 0;
   let voiceReady = false;
@@ -3116,10 +3117,14 @@
     $$("#navTabs button").forEach((b) => {
       b.classList.toggle("on", b.getAttribute("data-view") === name);
     });
+    const tabHome = $("#tabHome");
+    if (tabHome) tabHome.hidden = true; // روی صفحه ست‌ها دکمه ست‌ها معنی ندارد
     const tabEdit = $("#tabEdit");
     if (tabEdit) tabEdit.hidden = name !== "edit";
     const topBar = $("#topBar");
     if (topBar) topBar.style.display = name === "run" ? "none" : "";
+    const dashBtn = $("#btnHomeDash");
+    if (dashBtn) dashBtn.hidden = name !== "home";
     if (name === "edit") {
       updatePlanSummary();
       renderMoveSuggest();
@@ -3795,8 +3800,20 @@
     }
     if (anatomy) anatomy.innerHTML = anatomySvg(load);
     if (insight) {
-      insight.textContent = "";
-      insight.hidden = true;
+      const tips = tops
+        .slice(0, 3)
+        .map((m) => {
+          const tip = MUSCLE_META[m.id] && MUSCLE_META[m.id].tip;
+          return tip ? m.fa + ": " + tip : "";
+        })
+        .filter(Boolean);
+      if (tips.length) {
+        insight.hidden = false;
+        insight.textContent = "نکته حرکت — " + tips.join(" · ");
+      } else {
+        insight.textContent = "";
+        insight.hidden = true;
+      }
     }
     if (musclesEl && tops.length) {
       const max = Math.max(1, tops[0].sec);
@@ -3808,6 +3825,13 @@
         li.querySelector(".mus-name").textContent = m.fa;
         li.querySelector(".mus-pct").textContent = toFaDigits(pct) + "٪ بار نسبی";
         li.querySelector(".mus-fill").style.width = Math.max(8, pct) + "%";
+        const tip = MUSCLE_META[m.id] && MUSCLE_META[m.id].tip;
+        if (tip) {
+          const p = document.createElement("div");
+          p.className = "mus-tip";
+          p.textContent = tip;
+          li.appendChild(p);
+        }
         musclesEl.appendChild(li);
       });
     }
@@ -3844,6 +3868,10 @@
     }
     const kick = document.querySelector(".done-kicker");
     if (kick) kick.textContent = "✨ داشبورد پایان تمرین ✨";
+    lastDoneStats = stats;
+    try {
+      localStorage.setItem("setdadr-last-done", JSON.stringify(stats));
+    } catch {}
     renderDoneStats(stats);
     show("done");
     Promise.resolve()
@@ -3866,6 +3894,38 @@
   const btnDoneAgain = $("#btnDoneAgain");
   if (btnDoneAgain) {
     btnDoneAgain.addEventListener("click", () => show("home"));
+  }
+
+  function openDashboard() {
+    let stats = lastDoneStats;
+    if (!stats) {
+      try {
+        const raw = localStorage.getItem("setdadr-last-done");
+        if (raw) stats = JSON.parse(raw);
+      } catch {}
+    }
+    if (!stats) {
+      alert("هنوز تمرینی تمام نشده تا داشبورد داشته باشد.");
+      return;
+    }
+    lastDoneStats = stats;
+    const rounds = Math.max(0, Math.round(Number(stats.rounds) || 0));
+    const frac = $("#doneFrac");
+    if (frac) {
+      frac.innerHTML =
+        toFaDigits(rounds) + "<span>/</span>" + toFaDigits(rounds);
+    }
+    const msg = $("#doneMsg");
+    if (msg) msg.textContent = "داشبورد آخرین تمرین";
+    const kick = document.querySelector(".done-kicker");
+    if (kick) kick.textContent = "✨ داشبورد تمرین ✨";
+    renderDoneStats(stats);
+    show("done");
+  }
+
+  const btnHomeDash = $("#btnHomeDash");
+  if (btnHomeDash) {
+    btnHomeDash.addEventListener("click", openDashboard);
   }
 
   const moveFormEl = $("#moveForm");
