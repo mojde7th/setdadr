@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "191";
+  const APP_VER = "192";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 26;
   const VOICE_STAT_LOUD = 8;
@@ -559,6 +559,31 @@
     startSilentCtxKeep();
   }
 
+  function hushKeeperToSilence() {
+    try {
+      cutKeeperVoice(false);
+    } catch {}
+    try {
+      const a = bgKeepAudio;
+      if (!a) return;
+      try {
+        a.onended = null;
+        a.onerror = null;
+        a.onplaying = null;
+        a.ontimeupdate = null;
+      } catch {}
+      try {
+        a.pause();
+      } catch {}
+      try {
+        a.loop = true;
+        a.volume = 0.001;
+        a.muted = false;
+        a.src = KEEP_SILENCE;
+      } catch {}
+    } catch {}
+  }
+
   function stopAllSound() {
     // نسل صدا را عوض کن تا هر پخش/اعلام قبلی بی‌اثر شود
     soundGen += 1;
@@ -567,6 +592,7 @@
     announceChain = Promise.resolve();
     stopBeep();
     stopVoiceFile();
+    hushKeeperToSilence();
     killAllHtmlAudio();
     killAllSources();
     if (window.speechSynthesis) {
@@ -2915,8 +2941,8 @@
       return "rgba(232,165,75," + a + ")";
     }
     // شماتیک ساده بدن — نواحی عضله با رنگ بار تمرین
-    return (
-      '<svg viewBox="0 0 200 360" xmlns="http://www.w3.org/2000/svg" class="anatomy-svg" aria-hidden="true">' +
+    const rawSvg = (
+      '<svg viewBox="0 0 200 360" xmlns="http://www.w3.org/2000/svg" class="anatomy-svg anatomy-live" aria-hidden="true">' +
       '<rect x="0" y="0" width="200" height="360" rx="18" fill="#100e0a"/>' +
       '<ellipse cx="100" cy="36" rx="22" ry="26" fill="#2a241c" stroke="#3a342c"/>' +
       '<rect x="78" y="58" width="44" height="18" rx="6" fill="#2a241c"/>' +
@@ -2967,6 +2993,11 @@
       '<text x="100" y="348" text-anchor="middle" fill="#9a9080" font-size="11" font-family="Vazirmatn,sans-serif">نقشه درگیری عضله</text>' +
       "</svg>"
     );
+    return String(rawSvg).replace(
+      /fill="(rgba\\(232,165,75,0\\.(?:[5-9]\\d*|4[5-9]\\d*))\\)"/g,
+      'class="mus-hot" fill="$1"'
+    );
+
   }
 
 
@@ -3109,70 +3140,74 @@
     return parts.join("، ");
   }
 
+  function nextDashSayIdx() {
+    let i = 0;
+    try {
+      i = Math.max(0, Math.round(Number(localStorage.getItem("setdadr-dash-say-i")) || 0));
+    } catch {}
+    try {
+      localStorage.setItem("setdadr-dash-say-i", String(i + 1));
+    } catch {}
+    return i;
+  }
+
   async function speakDone(stats) {
     const s = stats || {};
     const n = Math.max(1, Math.round(Number(s.rounds) || 0));
     const { moves, workSec, calories, walkMin } = statNumbers(s);
     const myGen = soundGen;
-    const alive = () => myGen === soundGen && !soundMuted;
+    const sayi = nextDashSayIdx();
+    const alive = () => {
+      const on = $("#view-done") && $("#view-done").classList.contains("on");
+      return myGen === soundGen && !soundMuted && !!on;
+    };
     unlockAudio();
     startBgKeepAlive();
     startSilentCtxKeep();
-    buzz([90, 50, 90, 50, 140]);
-    beepWhite(300);
-    await sleep(800);
+    buzz([90, 50, 120]);
     if (!alive()) return;
-    await speakStatLine("آفرین، تمرین تمام شد", null);
-    if (!alive()) return;
-    await sleep(150);
-    await speakStatLine(
-      "شما " +
-        setCountPhrase(n) +
-        (moves > 0 ? " و " + moveCountPhrase(moves) : "") +
-        " انجام دادید",
-      null
-    );
+    const opens = [
+      "آفرین، تمرین تمام شد",
+      "عالی بود، ست تموم شد",
+      "دمت گرم، تمرین جمع شد",
+      "خوب اومدی، کار تموم"
+    ];
+    await speakStatLine(opens[sayi % opens.length], null);
     if (!alive()) return;
     const bits = [];
-    if (workSec > 0) bits.push("مجموعاً " + timePhrase(workSec) + " تمرین کردید");
-    if (calories > 0) bits.push("حدود " + faNum(calories) + " کالری سوزاندید");
-    if (walkMin > 0) bits.push("معادل حدود " + faNum(walkMin) + " دقیقه پیاده‌روی");
-    if (bits.length) {
-      await sleep(150);
-      await speakStatLine(bits.join("، "), null);
-    }
+    if (n > 0) bits.push(faNum(n) + " ست");
+    if (moves > 0) bits.push(faNum(moves) + " حرکت");
+    if (workSec > 0) bits.push(timePhrase(workSec));
+    if (calories > 0) bits.push(faNum(calories) + " کالری");
+    if (walkMin > 0) bits.push(faNum(walkMin) + " دقیقه پیاده‌روی");
+    if (bits.length) await speakStatLine(bits.join("، "), null);
     if (!alive()) return;
     const byMove = Array.isArray(s.byMove) ? s.byMove : [];
     if (byMove.length) {
-      const top = byMove[0];
-      await sleep(150);
-      if (!alive()) return;
-      await speakStatLine(
-        "بیشترین تمرین روی " +
-          top.name +
-          "، جمع " +
-          timePhrase(top.sec) +
-          " در " +
-          faNum(top.count) +
-          " بار",
-        null
-      );
+      const top = byMove[sayi % byMove.length];
+      const variants = [
+        "بیشترین کار روی " + top.name,
+        "این‌بار روی " + top.name + " خوب فشار آوردی",
+        "تمرکز بعدی را روی فرم " + top.name + " بگذار",
+        top.name + " را کنترل‌شده‌تر تکرار کن"
+      ];
+      await speakStatLine(variants[sayi % variants.length], null);
     }
     if (!alive()) return;
     const load = muscleLoadFromStats(s);
-    const tops = topMuscles(load, 2);
+    const tops = topMuscles(load, 1);
     if (tops.length) {
-      await sleep(150);
-      if (!alive()) return;
-      await speakStatLine(
-        "عضلات اصلی درگیر: " + tops.map((x) => x.fa).join(" و "),
-        null
-      );
+      const tip = MUSCLE_META[tops[0].id] && MUSCLE_META[tops[0].id].tip;
+      const tipLines = [
+        tip ? "نکته: " + tip : "",
+        "نکته: روی " + tops[0].fa + " نفس را منظم نگه دار",
+        "نکته: " + tops[0].fa + " را بدون عجله جمع کن",
+        "نکته: دامنه کامل " + tops[0].fa + " را حفظ کن"
+      ].filter(Boolean);
+      if (tipLines.length) {
+        await speakStatLine(tipLines[sayi % tipLines.length], null);
+      }
     }
-    if (!alive()) return;
-    await sleep(180);
-    const ali = await playVoiceFile("cheer-ali.mp3", 1);
-    if (!ali && alive()) await speakStatLine("خیلی عالی بود", null);
   }
 
   function bumpNumber(input, dir) {
@@ -3221,6 +3256,11 @@
 
   function show(name) {
     if (name === "moves") name = "home";
+    const wasDone = $("#view-done") && $("#view-done").classList.contains("on");
+    if (wasDone && name !== "done") {
+      stopAllSound();
+      hushKeeperToSilence();
+    }
     viewIds.forEach((k) => {
       const el = document.getElementById("view-" + k);
       if (!el) return;
@@ -3635,11 +3675,14 @@
     const skip = !!fromSkip;
     // بعدی: قطع سخت؛ خودکار: قطع نرم تا HTML آنلاک برای تلفظ سخت بماند
     if (skip) {
+      // قطع سخت صدای فاز قبل تا وارد بعدی نشود
       stopAllSound();
+      hushKeeperToSilence();
       startBgKeepAlive();
       startSilentCtxKeep();
     } else {
       softCutForAdvance();
+      hushKeeperToSilence();
     }
     run.i += 1;
     if (run.i >= run.steps.length) {
@@ -3931,6 +3974,13 @@
       ["حرکت‌ها", toFaDigits(movesN)],
       ["دورها", toFaDigits(rounds)]
     ];
+    // کارت آخر حذف؛ زمان هر حرکت همان بالا
+    byMove.slice(0, 4).forEach((mv) => {
+      tileData.push([
+        String(mv.name || "حرکت"),
+        timePhrase(Math.max(0, Math.round(Number(mv.sec) || 0)))
+      ]);
+    });
     if (tiles) {
       tileData.forEach(([k, v]) => {
         const d = document.createElement("div");
@@ -3956,7 +4006,12 @@
           '<div class="mus-row"><span class="mus-name"></span><span class="mus-pct"></span></div><div class="mus-track"><div class="mus-fill"></div></div>';
         li.querySelector(".mus-name").textContent = m.fa;
         li.querySelector(".mus-pct").textContent = toFaDigits(pct) + "٪ بار نسبی";
-        li.querySelector(".mus-fill").style.width = Math.max(8, pct) + "%";
+        li.querySelector(".mus-fill").style.width = "0%";
+        requestAnimationFrame(() => {
+          try {
+            li.querySelector(".mus-fill").style.width = Math.max(8, pct) + "%";
+          } catch {}
+        });
         const tip =
           (MUSCLE_META[m.id] && MUSCLE_META[m.id].tip) ||
           ("روی " + m.fa + " کنترل و فرم را حفظ کن.");
@@ -3967,31 +4022,11 @@
         musclesEl.appendChild(li);
       });
     }
-    // نمودار حرکت‌ها + نکته زیر هر میله (حتی تکراری)
+    // کارت پایین حذف — زمان حرکت‌ها در کاشی‌های بالاست
     if (chart) {
       chart.innerHTML = "";
       const wrap = chart.closest(".done-chart-wrap");
-      if (wrap) wrap.hidden = !byMove.length;
-      if (byMove.length) {
-        const maxSec = Math.max(1, byMove[0].sec || 1);
-        byMove.forEach((mv) => {
-          const row = document.createElement("div");
-          row.className = "done-bar";
-          const pct = Math.round((Math.max(0, mv.sec) / maxSec) * 100);
-          row.innerHTML =
-            '<div class="done-bar-top"><span class="done-bar-name"></span><span class="done-bar-sec"></span></div><div class="mus-track"><div class="mus-fill"></div></div><div class="mus-tip done-bar-tip"></div>';
-          row.querySelector(".done-bar-name").textContent = mv.name;
-          row.querySelector(".done-bar-sec").textContent =
-            timePhrase(Math.max(0, Math.round(mv.sec || 0)));
-          row.querySelector(".mus-fill").style.width = Math.max(8, pct) + "%";
-          const tipEl = row.querySelector(".done-bar-tip");
-          tipEl.textContent =
-            "نکته: فرم " +
-            mv.name +
-            " را کنترل کن؛ نفس منظم و بدون عجله.";
-          chart.appendChild(row);
-        });
-      }
+      if (wrap) wrap.hidden = true;
     }
     if (movesEl) {
       movesEl.innerHTML = "";
@@ -4045,7 +4080,11 @@
   if (btnDoneHome) btnDoneHome.addEventListener("click", () => show("home"));
   const btnDoneAgain = $("#btnDoneAgain");
   if (btnDoneAgain) {
-    btnDoneAgain.addEventListener("click", () => show("home"));
+    btnDoneAgain.addEventListener("click", () => {
+      stopAllSound();
+      hushKeeperToSilence();
+      show("home");
+    });
   }
 
   function openDashboard() {
@@ -4073,6 +4112,9 @@
     if (kick) kick.textContent = "✨ داشبورد تمرین ✨";
     renderDoneStats(stats);
     show("done");
+    Promise.resolve()
+      .then(() => speakDone(stats))
+      .catch(() => {});
   }
 
   const btnTopDash = $("#btnTopDash");
