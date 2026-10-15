@@ -1194,3 +1194,28 @@ input[type="text"], input[type="number"] {
 .next-card.is-finale #flow1 {
   font-size: clamp(22px, 5.5vw, 32px);
 }
+
+/* v173 overall */
+.overall-box {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  margin: 0 0 8px;
+  padding: 10px 12px 8px;
+  border-radius: 16px;
+  border: 1px solid rgba(232, 165, 75, 0.35);
+  background: linear-gradient(160deg, rgba(232,165,75,.16), rgba(20,17,13,.55));
+}
+.overall-k {
+  font: 800 clamp(12px, 3.2vw, 15px) var(--font);
+  color: var(--muted);
+}
+.overall-v {
+  font: 900 clamp(36px, 10vw, 56px)/1 var(--font);
+  color: #f6d7a4;
+  letter-spacing: -0.02em;
+}
+#runSub {
+  color: #d7c4a4;
+  font-size: clamp(16px, 4vw, 22px) !important;
+}

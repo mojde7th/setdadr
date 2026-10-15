@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "172";
+  const APP_VER = "173";
   // باشگاه: بلند بدون خش — گین معقول، بدون دیستورت WaveShaper
   const VOICE_LOUD = 56;
   const VOICE_STAT_LOUD = 14;
@@ -507,6 +507,7 @@
     announceChain = Promise.resolve();
     stopBeep();
     stopVoiceFile();
+    killAllHtmlAudio();
     killAllSources();
     if (window.speechSynthesis) {
       try {
@@ -2614,22 +2615,31 @@
     }
   }
 
-  async function speakNextMoveName(name, seq) {
+  async function speakNextMoveName(name, seq, bare) {
     const raw = String(name || "").replace(/\s+/g, " ").trim();
     const nm = normSpeakKey(raw);
     const gen = soundGen;
     const tok = speakToken;
     const alive = () => soundAlive(gen, tok) && (seq == null || announceAlive(seq));
     if (!alive()) return false;
-    // اول ترجیحاً کلیپ «حرکت بعد»، ولی اسم حرکت را هیچ‌وقت جا نگذار
-    try {
-      let pref = await playVoiceFile("phrase-next.mp3", 1);
-      if (!alive()) return false;
-      if (!pref) await speakFaAny("حرکت بعد", 1);
-    } catch {}
-    if (!alive()) return false;
     if (!nm) return false;
-    await sleep(60);
+    // bare=true: فقط اسم — جمله «حرکت بعد» قاطی اسم نشود
+    if (!bare) {
+      try {
+        let pref = await playVoiceFile("phrase-next.mp3", 1);
+        if (!alive()) return false;
+        if (!pref) {
+          await speakFaAny("حرکت بعد", 1);
+          if (!alive()) return false;
+        }
+        // قطع کوتاه تا ته کلیپ روی اسم ننشیند
+        stopVoiceFile();
+        killAllHtmlAudio();
+        await sleep(90);
+      } catch {}
+      if (!alive()) return false;
+    }
+    await sleep(40);
     if (!alive()) return false;
     let ok = false;
     try {
@@ -2687,7 +2697,8 @@
           } else {
             const nxt =
               next.nextName || (next.kind === "work" ? next.name : "");
-            if (nxt) await speakNextMoveName(nxt, seq);
+            // فقط اسم بعدی — بدون جمله «حرکت بعد» تا قاطی نشود
+            if (nxt) await speakNextMoveName(nxt, seq, true);
           }
         }
         return;
@@ -2867,20 +2878,20 @@
       if (!announceAlive(seq)) return;
       const alive = aliveNow();
       const live = () => announceAlive(seq) && alive();
-      // حدود دو سوم حرکت: پیشرفت را صریح بگو
+      // حدود دو سوم: فقط پیشرفت همین حرکت (نه کل ست)
       const pct =
         tot > 0 ? Math.max(1, Math.min(99, Math.round((n / tot) * 100))) : 0;
       try {
         if (run && pct > 0) {
-          run.progressLabel = toFaDigits(pct) + "٪ پیشرفت";
+          run.progressLabel = toFaDigits(pct) + "٪ همین حرکت";
           const sub = $("#runSub");
           if (sub) sub.textContent = run.progressLabel;
         }
       } catch {}
       const phrase =
         pct > 0
-          ? "پیشرفت تقریباً " + faNum(pct) + " درصد"
-          : timePhrase(n) + " از این حرکت";
+          ? "پیشرفت همین حرکت تقریباً " + faNum(pct) + " درصد"
+          : timePhrase(n) + " از همین حرکت";
       await speakFaAny(phrase, 1);
       if (!live()) return;
     });
@@ -3555,8 +3566,15 @@
       if (soundGen !== myGen || announceSeq !== mySeq) return;
       stopBeep();
       if (skip) {
-        killAllSources();
+        // یک‌بار دیگر بکش تا «حرکت بعد» قبلی نیاید
         stopVoiceFile();
+        killAllHtmlAudio();
+        killAllSources();
+        if (window.speechSynthesis) {
+          try {
+            speechSynthesis.cancel();
+          } catch {}
+        }
       }
       unlockAudio();
       startBgKeepAlive();
@@ -3571,6 +3589,29 @@
     loop();
   }
 
+  function overallProgressPct() {
+    if (!run || !Array.isArray(run.steps) || !run.steps.length) return 0;
+    let total = 0;
+    let done = 0;
+    run.steps.forEach((s, i) => {
+      const dur = Math.max(0, Number(s && s.dur) || 0);
+      total += dur;
+      if (i < run.i) done += dur;
+      else if (i === run.i) {
+        done += Math.max(0, dur - Math.max(0, Number(run.left) || 0));
+      }
+    });
+    if (total <= 0) return 0;
+    return Math.max(0, Math.min(100, Math.round((done / total) * 100)));
+  }
+
+  function paintOverallProgress() {
+    const el = $("#runOverall");
+    if (!el) return;
+    const pct = overallProgressPct();
+    el.textContent = toFaDigits(pct) + "٪";
+  }
+
   function paintRun(announceStart) {
     if (!run) return;
     const step = run.steps[run.i];
@@ -3579,6 +3620,7 @@
     const isRest = step.kind !== "work";
     stage.classList.toggle("work", !isRest);
     stage.classList.toggle("rest", isRest);
+    paintOverallProgress();
     $("#runFrac").innerHTML = toFaDigits(step.round) + "<span>/</span>" + toFaDigits(step.rounds);
     const mc = $("#runMoveCount");
     const mpi = $("#moveProgressItem");
