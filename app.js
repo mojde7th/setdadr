@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "243";
+  const APP_VER = "244";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -71,7 +71,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=243";
+  const VOICE_Q = "?v=244";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -1340,7 +1340,9 @@
     beepMidExact._on = true;
     unlockAudio();
     startBgKeepAlive();
-    // تلفظ را قطع نکن — فقط ریل بوق
+    try {
+      stopCueRail();
+    } catch {}
     const src = VOICE_BASE + "beep-mid.wav" + VOICE_Q;
     const a = ensureBgCueRail();
     try {
@@ -1369,7 +1371,7 @@
       }
       setTimeout(() => {
         beepMidExact._on = false;
-      }, 2500);
+      }, 3000);
     } catch {
       beepMidExact._on = false;
     }
@@ -3817,10 +3819,10 @@
     const gen = soundGen;
     unlockAudio();
     startBgKeepAlive();
-    // بوق را نکش — فقط درصد را سریع بگو
     try {
       cloudTtsDeadUntil = 0;
     } catch {}
+    // سریع‌ترین مسیر ممکن تا با lead سه‌ثانیه‌ای سر وقت برسد
     try {
       const ok = !!(await speakFaAny(line, 1));
       if (ok && gen === soundGen) return true;
@@ -4571,16 +4573,17 @@
 
     if (step.kind === "work") {
       const total = Math.max(1, Number(run.phaseDur) || 0);
-      const elapsed = Math.max(0, total - Number(run.left) || 0);
+      const elapsed = Math.max(0, total - (Number(run.left) || 0));
       const prevElapsed = Math.max(0, total - (prev == null ? total : prev));
-      // درصدِ پرشده (رفته)، نه مانده — ۲ث زودتر برای تأخیر تلفظ
-      function fireAtFilled(pct, keySuffix, speakFn) {
+      // درصدِ پرشده؛ leadث زودتر تریگر تا با تأخیر تلفظ سر وقت شنیده شود
+      function fireAtFilled(pct, keySuffix, speakFn, leadSec) {
         if (total < 12) return;
         if (nameSpeechGuard) return;
         const key = run.i + ":" + keySuffix;
         if (run.announced[key]) return;
+        const lead = leadSec == null ? 2 : leadSec;
         const target = total * (pct / 100);
-        const fireAt = Math.max(0, target - 2);
+        const fireAt = Math.max(0, target - lead);
         if (prevElapsed < fireAt && elapsed >= fireAt) {
           run.announced[key] = true;
           try {
@@ -4591,8 +4594,9 @@
           } catch {}
         }
       }
-      fireAtFilled(30, "pct30", () => speakPercentGone(30));
-      fireAtFilled(80, "pct80", () => speakPercentGone(80));
+      fireAtFilled(30, "pct30", () => speakPercentGone(30), 2);
+      // ۸۰٪ واقعی: ۳ث زودتر شروع کن تا دیر نگوید
+      fireAtFilled(80, "pct80", () => speakPercentGone(80), 3);
 
       if (total >= 10 && !nameSpeechGuard) {
         const midKey = run.i + ":midBeep";
