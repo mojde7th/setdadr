@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "241";
+  const APP_VER = "242";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -71,7 +71,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=241";
+  const VOICE_Q = "?v=242";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -397,7 +397,7 @@
     } catch {}
     // پیش‌گرم بوق‌ها تا قبل از مینیمایز در کش/آنلاک باشند
     try {
-      ["beep-rest.wav", "beep-soft.wav", "beep-mid.wav"].forEach((rel) => {
+      ["beep-rest.wav", "beep-soft.wav", "beep-mid.wav", "beep-tick.wav"].forEach((rel) => {
         const u = VOICE_BASE + rel + VOICE_Q;
         const pre = new Audio(u);
         pre.preload = "auto";
@@ -1293,58 +1293,44 @@
 
   // ۴ ثانیه آخر: بوق استراحت — پس‌زمینه همان مسیر unlocked HTML (نه آماده)
   function beepLastSecond(secLeft) {
-    // بوق ۴ث فقط از beepFourSecWarning
-    if (secLeft === 4) beepFourSecWarning();
+    beepClockTick(secLeft);
   }
 
-  function beepFourSecWarning() {
+  function beepClockTick(secLeft) {
     if (soundMuted) return;
-    if (beepFourSecWarning._on) return;
-    if (nameSpeechGuard) return;
-    beepFourSecWarning._on = true;
     unlockAudio();
     startBgKeepAlive();
-    try {
-      cutKeeperVoice(false);
-    } catch {}
-    try {
-      hushKeeperToSilence();
-    } catch {}
-    const src = VOICE_BASE + "beep-soft.wav" + VOICE_Q;
+    // تیک ساعت بلند — چندضرب ۴→۱؛ هر ثانیه یک ضربه
+    const vol = secLeft <= 1 ? 1 : secLeft <= 2 ? 0.98 : 0.95;
+    const src = VOICE_BASE + "beep-tick.wav" + VOICE_Q;
     const a = ensureBgCueRail();
     try {
       a.pause();
     } catch {}
     try {
-      a.onended = () => {
-        beepFourSecWarning._on = false;
-        try {
-          a.volume = 0;
-          a.src = KEEP_SILENCE;
-        } catch {}
-        try {
-          keepSilenceAlive();
-        } catch {}
-      };
-      a.onerror = () => {
-        beepFourSecWarning._on = false;
-      };
+      a.onended = null;
+      a.onerror = null;
       a.loop = false;
       a.muted = false;
-      a.volume = 0.9;
+      a.volume = vol;
       a.src = src;
       const p = a.play();
       if (p && typeof p.catch === "function") {
         p.catch(() => {
-          beepFourSecWarning._on = false;
+          // فوری دوباره تلاش روی همان ریل
+          try {
+            a.src = src;
+            a.volume = 1;
+            a.play().catch(() => {});
+          } catch {}
         });
       }
-      setTimeout(() => {
-        beepFourSecWarning._on = false;
-      }, 3000);
-    } catch {
-      beepFourSecWarning._on = false;
-    }
+    } catch {}
+  }
+
+  function beepFourSecWarning() {
+    // سازگاری: شروع شمارش ساعت از ۴
+    beepClockTick(4);
   }
 
   function beepMidExact() {
@@ -4614,11 +4600,14 @@
       }
     }
 
+    // ۴ ثانیه آخر: تیک ساعت بلند — هر ثانیه یک ضربه (۴،۳،۲،۱)
     if (run.phaseDur > 5 && !nameSpeechGuard) {
-      const k4 = run.i + ":beep4";
-      if (!run.announced[k4] && prev > 4 && cur <= 4) {
-        run.announced[k4] = true;
-        beepFourSecWarning();
+      for (let s = 4; s >= 1; s--) {
+        const k = run.i + ":tick" + s;
+        if (!run.announced[k] && prev > s && cur <= s) {
+          run.announced[k] = true;
+          beepClockTick(s);
+        }
       }
     }
   }
