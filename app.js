@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "220";
+  const APP_VER = "221";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -70,7 +70,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=220";
+  const VOICE_Q = "?v=221";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -1130,9 +1130,15 @@
         const peak = o.peak != null ? o.peak : 3.2;
         const total = o.total != null ? o.total : 0.7;
         master.gain.setValueAtTime(0.0001, t0);
-        master.gain.exponentialRampToValueAtTime(peak, t0 + 0.05);
-        master.gain.setValueAtTime(peak * 0.85, t0 + total * 0.55);
-        master.gain.exponentialRampToValueAtTime(0.0001, t0 + total);
+        master.gain.exponentialRampToValueAtTime(peak, t0 + 0.04);
+        if (o.flat) {
+          // یکنواخت تا نزدیک ته؛ فقط رهاسازی خیلی کوتاه
+          master.gain.setValueAtTime(peak, t0 + Math.max(0.08, total - 0.12));
+          master.gain.exponentialRampToValueAtTime(0.0001, t0 + total);
+        } else {
+          master.gain.setValueAtTime(peak * 0.85, t0 + total * 0.55);
+          master.gain.exponentialRampToValueAtTime(0.0001, t0 + total);
+        }
         master.connect(lp);
         lp.connect(audioCtx.destination);
         const notes = o.notes || [
@@ -1152,10 +1158,15 @@
           o1.frequency.setValueAtTime(n.f, gt);
           o2.frequency.setValueAtTime(n.f * 2, gt);
           g1.gain.setValueAtTime(0.0001, gt);
-          g1.gain.exponentialRampToValueAtTime(n.g * 0.7, gt + 0.05);
-          g1.gain.exponentialRampToValueAtTime(0.0001, gt + n.dur);
+          g1.gain.exponentialRampToValueAtTime(n.g * (o.flat ? 0.95 : 0.7), gt + 0.05);
+          if (o.flat) {
+            g1.gain.setValueAtTime(n.g * 0.9, gt + Math.max(0.08, n.dur - 0.08));
+            g1.gain.exponentialRampToValueAtTime(0.0001, gt + n.dur);
+          } else {
+            g1.gain.exponentialRampToValueAtTime(0.0001, gt + n.dur);
+          }
           g2.gain.setValueAtTime(0.0001, gt);
-          g2.gain.exponentialRampToValueAtTime(n.g * 0.12, gt + 0.06);
+          g2.gain.exponentialRampToValueAtTime(n.g * (o.flat ? 0.2 : 0.12), gt + 0.06);
           g2.gain.exponentialRampToValueAtTime(0.0001, gt + n.dur);
           o1.connect(g1);
           o2.connect(g2);
@@ -1355,15 +1366,17 @@
       } catch {}
       return;
     }
+    // ۴ث: تا ته بلند و یکنواخت — ثانیهٔ آخر کم‌رنگ نشود
     playWarmChime({
       stack: false,
-      peak: 2.2,
-      total: 3.4,
+      peak: 2.6,
+      total: 3.6,
+      flat: true,
       notes: [
-        { f: 349.23, at: 0, dur: 1.1, g: 1.2 },
-        { f: 392.0, at: 0.85, dur: 1.15, g: 1.25 },
-        { f: 329.63, at: 1.75, dur: 1.1, g: 1.1 },
-        { f: 261.63, at: 2.55, dur: 0.85, g: 0.95 }
+        { f: 349.23, at: 0, dur: 0.95, g: 1.35 },
+        { f: 392.0, at: 0.85, dur: 0.95, g: 1.4 },
+        { f: 329.63, at: 1.7, dur: 0.95, g: 1.35 },
+        { f: 261.63, at: 2.55, dur: 1.0, g: 1.45 }
       ]
     });
   }
@@ -3371,7 +3384,7 @@
       const isRest = step.kind === "rest-set" || step.kind === "rest-move";
       const gen = soundGen;
       const tok = speakToken;
-      const alive = () => announceAlive(seq) && soundAlive(gen, tok);
+      const alive = () => announceAlive(seq) && soundAlive(gen, tok) && run && run.steps[run.i] === step;
       buzz(step.kind === "work" ? [80, 35, 90] : [55, 30, 70]);
       unlockAudio();
       startBgKeepAlive();
@@ -4661,16 +4674,16 @@
   function advance(fromSkip) {
     if (!run) return;
     const skip = !!fromSkip;
-    // بعدی: قطع سخت؛ خودکار: قطع نرم تا HTML آنلاک برای تلفظ سخت بماند
-    if (skip) {
-      // قطع سخت صدای فاز قبل تا وارد بعدی نشود
-      stopAllSound();
-      hushKeeperToSilence();
-      startBgKeepAlive();
-      startSilentCtxKeep();
-    } else {
-      softCutForAdvance();
-    }
+    // همیشه قطع سخت — هیچ کلمه/جملهٔ فاز قبل (حتی «حرکت بعد») وارد بعدی نشود
+    stopAllSound();
+    hushKeeperToSilence();
+    try {
+      if (window.speechSynthesis) speechSynthesis.cancel();
+    } catch {}
+    // فوراً کیپر/کیپ را دوباره آنلاک کن تا تلفظ فاز تازه ساکت نماند
+    unlockAudio();
+    startBgKeepAlive();
+    startSilentCtxKeep();
     run.i += 1;
     if (run.i >= run.steps.length) {
       finishRun();
@@ -4699,16 +4712,15 @@
       if (!run || run.i !== phaseIndex) return;
       if (soundGen !== myGen || announceSeq !== mySeq) return;
       stopBeep();
-      if (skip) {
-        // یک‌بار دیگر بکش تا «حرکت بعد» قبلی نیاید
-        stopVoiceFile();
-        killAllHtmlAudio();
-        killAllSources();
-        if (window.speechSynthesis) {
-          try {
-            speechSynthesis.cancel();
-          } catch {}
-        }
+      // همیشه دوباره بکش تا هیچ جملهٔ قبلی (حتی حرکت بعد) نیاید
+      stopVoiceFile();
+      hushKeeperToSilence();
+      killAllHtmlAudio();
+      killAllSources();
+      if (window.speechSynthesis) {
+        try {
+          speechSynthesis.cancel();
+        } catch {}
       }
       unlockAudio();
       startBgKeepAlive();
@@ -5227,6 +5239,9 @@
     try {
       lastGestureAt = Date.now();
     } catch {}
+    // اول قطع کامل جمله‌های قبلی، بعد آنلاک
+    stopAllSound();
+    hushKeeperToSilence();
     unlockAudio();
     startBgKeepAlive();
     try {
