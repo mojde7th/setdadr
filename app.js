@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "276";
+  const APP_VER = "277";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -70,7 +70,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=276";
+  const VOICE_Q = "?v=277";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -514,17 +514,7 @@
   }
 
   function startSilentCtxKeep() {
-    // فقط بیدار نگه داشتن کانتکست — بدون نوسان‌ساز شنیدنی
-    try {
-      unlockAudio();
-      if (!audioCtx) return false;
-      if (audioCtx.state === "suspended") {
-        audioCtx.resume().catch(() => {});
-      }
-      return true;
-    } catch {
-      return false;
-    }
+    return false;
   }
 
   function stopSilentCtxKeep() {
@@ -630,8 +620,7 @@
   // یک عنصر صوتی که با لمس شروع/بعدی آنلاک می‌شود و دیگر عوض نمی‌شود.
   // آیفون عنصر صوتی تازه را بدون لمس پخش نمی‌کند؛ این یکی را چرا.
   const KEEP_SILENCE = VOICE_BASE + "silence.wav" + VOICE_Q;
-  const KEEP_SOFT = VOICE_BASE + "keep-soft.wav" + VOICE_Q;
-  let keeperVoice = null;
+    let keeperVoice = null;
 
   function keeperOnSilence(a) {
     try {
@@ -651,37 +640,32 @@
   }
 
   function wireMediaSessionKeep() {
+    if (wireMediaSessionKeep._on) return;
     try {
       if (!navigator.mediaSession) return;
       const kick = () => {
         if (soundMuted || !run || run.paused) return;
-        startBgKeepAlive();
-        startSilentCtxKeep();
+        try {
+          const a = bgKeepAudio;
+          if (a && a.paused) a.play().catch(() => {});
+        } catch {}
       };
-      // سیستم‌عامل با زدن مکث نتواند سشن تمرین را بکشد
       navigator.mediaSession.setActionHandler("pause", kick);
       navigator.mediaSession.setActionHandler("play", kick);
       navigator.mediaSession.setActionHandler("stop", kick);
+      wireMediaSessionKeep._on = true;
     } catch {}
   }
 
   function startBgHeartbeat() {
     if (bgHeartbeatIv) return;
     bgHeartbeatIv = setInterval(() => {
-      if (!run || run.paused || soundMuted) return;
-      if (!isAppHidden()) return;
+      if (!run || run.paused || soundMuted || !isAppHidden()) return;
       try {
-        if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+        const a = bgKeepAudio;
+        if (a && a.paused) a.play().catch(() => {});
       } catch {}
-      startBgKeepAlive();
-      startSilentCtxKeep();
-      if (!tickIv) {
-        try {
-          run.lastTick = performance.now();
-          loop();
-        } catch {}
-      }
-    }, 1200);
+    }, 8000);
   }
 
   function stopBgHeartbeat() {
@@ -692,54 +676,34 @@
 
   function startBgKeepAlive() {
     if (soundMuted) return;
+    const now = Date.now();
+    if (bgKeepOn && startBgKeepAlive._t && now - startBgKeepAlive._t < 5000) {
+      return;
+    }
+    startBgKeepAlive._t = now;
     bgKeepOn = true;
     unlockAudio();
     try {
       if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
     } catch {}
-    startSilentCtxKeep();
+    // سبک‌ترین پس‌زمینه: فقط silence.wav با حجم نزدیک صفر
     const a = ensureKeeper();
-    const vol = isAppHidden() ? BG_KEEP_VOL : FG_KEEP_VOL;
-    const keepSrc = KEEP_SILENCE;
     try {
-      // فقط سکوت خیلی کم — بدون keep-soft (نویز)
       if (!keeperVoice) {
         if (!keeperOnSilence(a)) {
           a.loop = true;
           a.src = KEEP_SILENCE;
         }
         a.muted = false;
-        a.volume = vol;
+        a.volume = 0.001;
         a.loop = true;
         const p = a.play();
-        if (p && typeof p.catch === "function") {
-          p.catch(() => {
-            try {
-              a.load();
-              a.play().catch(() => {});
-            } catch {}
-          });
-        }
-      } else {
-        try {
-          a.volume = Math.max(a.volume || 0, vol * 0.5);
-        } catch {}
+        if (p && typeof p.catch === "function") p.catch(() => {});
       }
     } catch {}
-    // Wake Lock تا مرورگر زود نخوابد (اگر پشتیبانی کند)
     try {
-      if (isAppHidden() && run && !run.paused && navigator.wakeLock && !startBgKeepAlive._lock) {
-        navigator.wakeLock.request("screen").then((lk) => {
-          startBgKeepAlive._lock = lk;
-          try {
-            lk.addEventListener("release", () => {
-              startBgKeepAlive._lock = null;
-            });
-          } catch {}
-        }).catch(() => {});
-      }
+      setMediaPlaying(true, (run && (run.title || "تمرین")) || "ست‌یار");
     } catch {}
-    setMediaPlaying(true, (run && (run.title || "تمرین")) || "ست‌یار");
     wireMediaSessionKeep();
     if (isAppHidden()) startBgHeartbeat();
   }
