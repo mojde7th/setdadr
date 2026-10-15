@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "254";
+  const APP_VER = "255";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -71,7 +71,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=254";
+  const VOICE_Q = "?v=255";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -398,7 +398,7 @@
     } catch {}
     // پیش‌گرم بوق‌ها تا قبل از مینیمایز در کش/آنلاک باشند
     try {
-      ["beep-rest.wav", "beep-soft.wav", "beep-mid.wav", "beep-tick.wav", "beep-start.wav", "cue-pct-30.mp3", "cue-pct-80.mp3"].forEach((rel) => {
+      ["beep-rest.wav", "beep-soft.wav", "beep-mid.wav", "beep-tick.wav", "beep-start.wav", "cue-pct-30.mp3", "cue-pct-70.mp3"].forEach((rel) => {
         const u = VOICE_BASE + rel + VOICE_Q;
         const pre = new Audio(u);
         pre.preload = "auto";
@@ -3814,15 +3814,13 @@
     const p = Math.max(5, Math.min(95, Math.round(Number(pct) || 0)));
     const gen = soundGen;
     unlockAudio();
-    startBgKeepAlive();
-    const clip = p >= 70 ? "cue-pct-80.mp3" : "cue-pct-30.mp3";
-    // فایل محلی فوری — تا بعد از نصف دیر شنیده نشود
+    keepSilenceAlive();
+    const clip = p >= 50 ? "cue-pct-70.mp3" : "cue-pct-30.mp3";
     try {
       const ok = !!(await playOnKeeper(VOICE_BASE + clip + VOICE_Q, 1, {
-        startCap: 2500,
+        startCap: 2200,
         maxMs: 8000,
-        gen,
-        protect: true
+        gen
       }));
       if (ok && gen === soundGen) return true;
     } catch {}
@@ -4585,8 +4583,6 @@
     if (step.kind === "work") {
       const total = Math.max(1, Number(run.phaseDur) || 0);
       const elapsed = Math.max(0, total - (Number(run.left) || 0));
-      // درصد پرشده؛ ۱ث زودتر برای ۳۰٪ (مثلاً ۳۰ث → ثانیه ۸)
-      // اگر از پنجره رد شد دیگر نگو تا بعد از نصف دیر نیاید
       function fireAtFilled(pct, keySuffix, speakFn, leadSec) {
         if (total < 12) return;
         const key = run.i + ":" + keySuffix;
@@ -4594,7 +4590,11 @@
         const lead = leadSec == null ? 1 : leadSec;
         const target = total * (pct / 100);
         const fireAt = Math.max(0, target - lead);
-        const expireAt = Math.min(target + 1.0, total * 0.48);
+        // پنجرهٔ انقضا جدا برای زود/دیر — ۳۰٪ قبل از نصف منقضی؛ ۷۰٪ بعد از نصف
+        const expireAt =
+          pct <= 40
+            ? Math.min(target + 1.2, total * 0.45)
+            : Math.min(total - 4.5, target + 2.5);
         if (elapsed > expireAt) {
           run.announced[key] = true;
           return;
@@ -4609,8 +4609,9 @@
           speakFn();
         } catch {}
       }
+      // فقط دو تا: ۳۰٪ و ۷۰٪ — نه هر دو ۷۰ و ۸۰
       fireAtFilled(30, "pct30", () => speakPercentGone(30), 1);
-      fireAtFilled(80, "pct80", () => speakPercentGone(80), 3);
+      fireAtFilled(70, "pct70", () => speakPercentGone(70), 2);
 
       if (total >= 10 && !nameSpeechGuard) {
         const midKey = run.i + ":midBeep";
