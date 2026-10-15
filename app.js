@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "182";
+  const APP_VER = "187";
   // باشگاه: بلند ولی تمیز — گین خیلی بالا روی گوشی نویز/خش می‌سازد
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 6;
@@ -830,6 +830,21 @@
   function beepSoftDouble() {
     beepSoftRing(0);
     setTimeout(() => beepSoftRing(0), 520);
+  }
+
+  // ۴ ثانیه آخر: همان جنس بوق استراحت (آرام و گرم)، کمی بلندتر برای باشگاه
+  function beepReadyLikeRest() {
+    if (soundMuted) return;
+    playWarmChime({
+      stack: false,
+      peak: 2.4,
+      total: 1.35,
+      notes: [
+        { f: 349.23, at: 0, dur: 0.55, g: 1.0 },
+        { f: 392.0, at: 0.35, dur: 0.6, g: 1.05 },
+        { f: 329.63, at: 0.75, dur: 0.55, g: 0.95 }
+      ]
+    });
   }
 
   function beepWhite(ms, soft) {
