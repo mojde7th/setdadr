@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "246";
+  const APP_VER = "247";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -71,7 +71,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=246";
+  const VOICE_Q = "?v=247";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -1343,24 +1343,11 @@
     try {
       stopCueRail();
     } catch {}
-    try {
-      buzz([120, 40, 140]);
-    } catch {}
     const src = VOICE_BASE + "beep-mid.wav" + VOICE_Q;
     const a = ensureBgCueRail();
     try {
       a.pause();
     } catch {}
-    const playOnce = () => {
-      try {
-        a.loop = false;
-        a.muted = false;
-        a.volume = 1;
-        a.src = src;
-        const p = a.play();
-        if (p && typeof p.catch === "function") p.catch(() => {});
-      } catch {}
-    };
     try {
       a.onended = () => {
         beepMidExact._on = false;
@@ -1372,21 +1359,19 @@
       a.onerror = () => {
         beepMidExact._on = false;
       };
-      playOnce();
-      // تکرار فوری برای حس خیلی بلندتر روی گوشی
-      setTimeout(() => {
-        if (soundMuted) return;
-        try {
-          a.currentTime = 0;
-          a.volume = 1;
-          a.play().catch(() => {});
-        } catch {
-          playOnce();
-        }
-      }, 80);
+      a.loop = false;
+      a.muted = false;
+      a.volume = 1;
+      a.src = src;
+      const p = a.play();
+      if (p && typeof p.catch === "function") {
+        p.catch(() => {
+          beepMidExact._on = false;
+        });
+      }
       setTimeout(() => {
         beepMidExact._on = false;
-      }, 3500);
+      }, 2500);
     } catch {
       beepMidExact._on = false;
     }
@@ -1421,7 +1406,8 @@
         a.src = src;
         const p = a.play();
         if (p && typeof p.catch === "function") p.catch(() => finish(false));
-        setTimeout(() => finish(true), 700);
+        // سقف کوتاه تا اگر onended نیامد اپ هنگ نکند
+        setTimeout(() => finish(true), 500);
       } catch {
         finish(false);
       }
