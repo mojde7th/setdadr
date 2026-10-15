@@ -1,9 +1,9 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "187";
-  // باشگاه: بلند ولی تمیز — گین خیلی بالا روی گوشی نویز/خش می‌سازد
-  const VOICE_LOUD = 11;
-  const VOICE_STAT_LOUD = 6;
+  const APP_VER = "188";
+  // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
+  const VOICE_LOUD = 16;
+  const VOICE_STAT_LOUD = 7;
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -73,7 +73,7 @@
   const VOICE_Q = "?v=109";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
-  const DYN_FA_CACHE = "setdadr-fa-tts-v1";
+  const DYN_FA_CACHE = "setdadr-fa-tts-v2";
   let tickIv = 0;
   let bgKeepAudio = null;
   let bgKeepOn = false;
@@ -371,7 +371,41 @@
           o.stop(audioCtx.currentTime + 0.015);
         }
       } catch {}
+      // آنلاک HTML برای بعد از await شبکه (آی‌او‌اس)
+      try {
+        const a = ensureKeeper();
+        a.muted = false;
+        a.volume = 0.001;
+        const p = a.play();
+        if (p && typeof p.catch === "function") p.catch(() => {});
+      } catch {}
     }
+  }
+
+  async function playBlobHtmlFirst(blob, vol) {
+    if (!blob || soundMuted) return false;
+    const gen = soundGen;
+    try {
+      unlockAudio();
+      startBgKeepAlive();
+      startSilentCtxKeep();
+      try {
+        if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
+      } catch {}
+      if (gen !== soundGen) return false;
+      const url = URL.createObjectURL(blob);
+      const a = makeHtmlAudio(url);
+      dynFaAudio.set(String(url), a);
+      const ok = await playHtmlAudioEl(a, vol == null ? 1 : Math.min(1, Number(vol) || 1), 12000);
+      setTimeout(() => {
+        try {
+          URL.revokeObjectURL(url);
+        } catch {}
+      }, 20000);
+      if (ok && gen === soundGen) return true;
+    } catch {}
+    if (gen !== soundGen) return false;
+    return playBlobFa(blob, vol == null ? 1 : vol, "name");
   }
 
   function stopBeep() {
@@ -1004,8 +1038,7 @@
   function loudVol(vol, kind) {
     const base = vol == null ? 1 : Number(vol);
     const mult = kind === "stat" ? VOICE_STAT_LOUD : VOICE_LOUD;
-    // سقف پایین‌تر = بدون کلیپ دیجیتال و نویز گوشی
-    return Math.max(0.05, Math.min(14, base * mult));
+    return Math.max(0.08, Math.min(22, base * mult));
   }
 
   function connectLoudOut(srcNode, gainVal) {
@@ -1013,19 +1046,18 @@
     const hp = audioCtx.createBiquadFilter();
     const lp = audioCtx.createBiquadFilter();
     const comp = audioCtx.createDynamicsCompressor();
-    // حذف همهمه پایین + نرم‌کردن اوج‌ها تا خش ندهد
     hp.type = "highpass";
-    hp.frequency.value = 90;
+    hp.frequency.value = 80;
     hp.Q.value = 0.7;
     lp.type = "lowpass";
-    lp.frequency.value = 4600;
-    lp.Q.value = 0.5;
-    comp.threshold.value = -18;
-    comp.knee.value = 18;
-    comp.ratio.value = 3.5;
+    lp.frequency.value = 5500;
+    lp.Q.value = 0.35;
+    comp.threshold.value = -14;
+    comp.knee.value = 12;
+    comp.ratio.value = 2.5;
     comp.attack.value = 0.003;
-    comp.release.value = 0.18;
-    g.gain.value = Math.min(Number(gainVal) || 1, 12);
+    comp.release.value = 0.15;
+    g.gain.value = Math.min(Number(gainVal) || 1, 18);
     srcNode.connect(hp);
     hp.connect(g);
     g.connect(comp);
@@ -2145,8 +2177,18 @@
     const alive = aliveNow();
     try {
       unlockAudio();
+      startBgKeepAlive();
+      startSilentCtxKeep();
       const blob = await fetchDilaraOnly(text);
       if (!blob || !alive()) return false;
+      try {
+        if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
+      } catch {}
+      if (!alive()) return false;
+      // اول HTML — بعد از fetch ژست لمس از بین رفته و WebAudio گاهی ساکت می‌ماند
+      const okHtml = await playBlobHtmlFirst(blob, vol == null ? 1 : vol);
+      if (okHtml) return true;
+      if (!alive()) return false;
       return playBlobFa(blob, vol == null ? 1 : vol);
     } catch {
       return false;
@@ -2694,14 +2736,27 @@
       const alive = () => announceAlive(seq) && soundAlive(gen, tok);
       if (step.kind === "work") {
         const nm = normSpeakKey(step.name);
-        await sleep(380);
+        await sleep(120);
         // بوق را قبل از اسم قطع کن تا خش نماند
         stopBeep();
+        unlockAudio();
+        startBgKeepAlive();
+        startSilentCtxKeep();
+        try {
+          if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
+        } catch {}
         if (!nm || !alive()) return;
         let ok = false;
+        // اول دیلارا/زنده — مطمئن‌ترین مسیر اسم
         try {
-          ok = await playPrimedWorkName(nm, 1);
+          ok = !!(await speakFaAny(nm, 1));
         } catch {}
+        if (!alive()) return;
+        if (!ok) {
+          try {
+            ok = await playPrimedWorkName(nm, 1);
+          } catch {}
+        }
         if (!alive()) return;
         if (!ok) ok = await speakMoveNameOnly(nm, 1);
         if (!alive()) return;
@@ -2720,14 +2775,22 @@
         return;
       }
       if (step.kind === "rest-set") {
-        // بین ست: فقط حرکت بعدی — آمار فقط آخر کل تمرین
-        await sleep(350);
+        // بین ست: بوق استراحت را قطع کن، بعد اسم بعدی
+        await sleep(220);
+        stopBeep();
+        unlockAudio();
+        startBgKeepAlive();
+        startSilentCtxKeep();
         if (!alive()) return;
         await speakNextMoveName(step.nextName || "", seq);
         return;
       }
-      // استراحت بین حرکت: فقط حرکت بعدی
-      await sleep(280);
+      // استراحت بین حرکت: بوق را قطع کن، بعد اسم بعدی
+      await sleep(180);
+      stopBeep();
+      unlockAudio();
+      startBgKeepAlive();
+      startSilentCtxKeep();
       if (!alive()) return;
       if (isRest || step.nextName) await speakNextMoveName(step.nextName || "", seq);
     });
@@ -3452,14 +3515,14 @@
     unlockAudio();
     startBgKeepAlive();
     startSilentCtxKeep();
+    try {
+      if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+    } catch {}
     // صدا را در پس‌زمینه گرم کن؛ شروع را معطل نکن
     try {
       p.circuit.forEach((c) => {
         warmMoveVoice(c.name);
       });
-    } catch {}
-    try {
-      if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
     } catch {}
     run = {
       planId: p.id,
