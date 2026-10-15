@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "273";
+  const APP_VER = "274";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -70,7 +70,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=273";
+  const VOICE_Q = "?v=274";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -3444,50 +3444,38 @@
   };
 
   async function speakMidHalf() {
-    let ok = false;
-    try {
-      ok = !!(await playMidHalfClipDirect());
-    } catch {}
-    if (!ok) {
-      try {
-        ok = !!(await speakCueLine("نصفشو رفتی", CUE_CLIPS.half));
-      } catch {}
-    }
-    try {
-      const leftSec = Math.max(1, Math.round((run && run.left) || 0));
-      if (leftSec >= 3) {
-        await sleep(160);
-        await speakCueLine(faNum(leftSec) + " ثانیه");
-      }
-    } catch {}
-    return !!ok;
-  }
-
-  async function speakQuarterCue(kind) {
-    if (kind === "q1") {
-      let ok = false;
-      if (CUE_CLIPS.q1.indexOf("/x.mp3") < 0) {
-        ok = await speakCueLine("یه ربعش رفت", CUE_CLIPS.q1);
-      }
-      if (!ok) ok = await speakCueLine("یه ربعش رفت");
-      if (!ok) ok = await speakCueLine("شروع خوب");
-      return !!ok;
-    }
-    if (kind === "q3") {
-      let ok = false;
-      if (CUE_CLIPS.q3.indexOf("/x.mp3") < 0) {
-        ok = await speakCueLine("یه ربع مونده", CUE_CLIPS.q3);
-      }
-      if (!ok) ok = await speakCueLine("یه ربع مونده");
-      if (!ok) {
-        const leftSec = Math.max(1, Math.round((run && run.left) || 0));
-        ok = await speakCueLine(faNum(leftSec) + " ثانیه");
-      }
-      return !!ok;
-    }
     return false;
   }
 
+  async function speakQuarterCue(kind) {
+    return false;
+  }
+
+  async function speakPercentGone(pct) {
+    const p = Math.max(5, Math.min(95, Math.round(Number(pct) || 0)));
+    const gen = soundGen;
+    unlockAudio();
+    const clip = p >= 50 ? "cue-pct-70.mp3" : "cue-pct-30.mp3";
+    try {
+      const ok = !!(await playOnKeeper(VOICE_BASE + clip + VOICE_Q, 1, {
+        startCap: 2200,
+        maxMs: 8000,
+        gen
+      }));
+      if (ok && gen === soundGen) return true;
+    } catch {}
+    try {
+      const ok = !!(await playUnlockedHtmlCue(clip, 1));
+      if (ok && gen === soundGen) return true;
+    } catch {}
+    // فقط «N درصد» — بدون رفتی، بدون ربع/نصف
+    const line = faNum(p) + " درصد";
+    try {
+      return !!(await speakFaAny(line, 1));
+    } catch {
+      return false;
+    }
+  }
 
   async function speakDoneAmount(sec, total) {
     const n = Math.round(sec);
@@ -3505,7 +3493,7 @@
         if (sub) sub.textContent = "";
       } catch {}
       const phrase =
-        pct >= 45 ? "نصفشو رفتی" : faNum(pct) + " درصد رفتی";
+        faNum(pct) + " درصد";
       await speakFaAny(phrase, 1);
       if (!live()) return;
     });
@@ -4222,39 +4210,29 @@
     run.prevLeftCeil = cur;
     if (prev == null) return;
 
-    // کیوهای پیشرفت کار: ۱/۴، نصف(+ثانیه)، ۳/۴
+    // فقط ۳۰٪ و ۷۰٪ پرشده — «N درصد» بدون رفتی/ربع/نصف
     if (step.kind === "work") {
       const total = Math.max(1, Number(run.phaseDur) || 0);
-      if (total >= 16) {
-        const q1Left = total * 0.75;
-        const q1Key = run.i + ":q1";
-        if (!run.announced[q1Key] && run.left <= q1Left) {
-          run.announced[q1Key] = true;
-          try {
-            speakQuarterCue("q1");
-          } catch {}
+      const elapsed = Math.max(0, total - (Number(run.left) || 0));
+      function fireAtFilled(pct, keySuffix) {
+        if (total < 12) return;
+        const key = run.i + ":" + keySuffix;
+        if (run.announced[key]) return;
+        const target = total * (pct / 100);
+        const fireAt = Math.max(0, target - 1);
+        const expireAt = fireAt + 1;
+        if (elapsed > expireAt) {
+          run.announced[key] = true;
+          return;
         }
+        if (elapsed < fireAt) return;
+        run.announced[key] = true;
+        try {
+          speakPercentGone(pct);
+        } catch {}
       }
-      if (total >= 10) {
-        const midKey = run.i + ":halfPlus";
-        const halfLeft = total / 2;
-        if (!run.announced[midKey] && run.left <= halfLeft) {
-          run.announced[midKey] = true;
-          try {
-            speakMidHalf();
-          } catch {}
-        }
-      }
-      if (total >= 16) {
-        const q3Left = total * 0.25;
-        const q3Key = run.i + ":q3";
-        if (!run.announced[q3Key] && run.left <= q3Left && run.left > 4.2) {
-          run.announced[q3Key] = true;
-          try {
-            speakQuarterCue("q3");
-          } catch {}
-        }
-      }
+      fireAtFilled(30, "pct30");
+      fireAtFilled(70, "pct70");
     }
 
     // ۴ ثانیه مانده: بوق تمیز و بلند
