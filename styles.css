@@ -733,16 +733,23 @@ input[type="text"], input[type="number"] {
 }
 .done-bar-row {
   display: grid;
-  grid-template-columns: minmax(72px, 0.9fr) 1.4fr auto;
-  gap: 8px;
-  align-items: center;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  align-items: stretch;
 }
 .done-bar-name {
-  font: 800 13px/1.3 var(--font);
+  font: 800 15px/1.35 var(--font);
   color: var(--txt);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  text-overflow: unset;
+  white-space: normal;
+  word-break: break-word;
+}
+.done-bar-meta {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
 }
 .done-bar-track {
   height: 12px;
@@ -757,9 +764,11 @@ input[type="text"], input[type="number"] {
   min-width: 8px;
 }
 .done-bar-sec {
-  font: 800 11px/1.3 var(--font);
+  font: 800 12px/1.35 var(--font);
   color: var(--muted);
-  white-space: nowrap;
+  white-space: normal;
+  text-align: start;
+  max-width: 46vw;
 }
 .done-moves {
   list-style: none;
@@ -1146,13 +1155,23 @@ input[type="text"], input[type="number"] {
   font: 900 clamp(16px, 4.2vw, 20px) var(--font) !important;
 }
 .done-bar-name {
-  font: 800 clamp(14px, 3.6vw, 16px) var(--font) !important;
+  font: 800 clamp(15px, 4vw, 18px)/1.35 var(--font) !important;
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: unset !important;
 }
 .done-bar-sec {
-  font: 800 clamp(12px, 3.2vw, 14px) var(--font) !important;
-  white-space: normal;
-  max-width: 42vw;
+  font: 800 clamp(12px, 3.2vw, 14px)/1.35 var(--font) !important;
+  white-space: normal !important;
+  max-width: none;
 }
 .done-moves li {
   font: 800 clamp(14px, 3.6vw, 16px)/1.45 var(--font) !important;
+}
+
+/* v171 progress sub */
+#runSub {
+  min-height: 1.2em;
+  font: 900 clamp(18px, 4.5vw, 26px) var(--font);
+  color: #f6d7a4;
 }

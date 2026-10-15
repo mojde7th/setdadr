@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "170";
+  const APP_VER = "171";
   // باشگاه: بلند بدون خش — گین معقول، بدون دیستورت WaveShaper
   const VOICE_LOUD = 56;
   const VOICE_STAT_LOUD = 14;
@@ -2850,13 +2850,20 @@
       if (!announceAlive(seq)) return;
       const alive = aliveNow();
       const live = () => announceAlive(seq) && alive();
-      // حدود دو سوم حرکت: درصد پیشرفت
+      // حدود دو سوم حرکت: پیشرفت را صریح بگو
       const pct =
         tot > 0 ? Math.max(1, Math.min(99, Math.round((n / tot) * 100))) : 0;
+      try {
+        if (run && pct > 0) {
+          run.progressLabel = toFaDigits(pct) + "٪ پیشرفت";
+          const sub = $("#runSub");
+          if (sub) sub.textContent = run.progressLabel;
+        }
+      } catch {}
       const phrase =
         pct > 0
-          ? "تقریباً " + faNum(pct) + " درصد"
-          : faNum(n) + " ثانیه همین";
+          ? "پیشرفت تقریباً " + faNum(pct) + " درصد"
+          : timePhrase(n) + " از این حرکت";
       await speakFaAny(phrase, 1);
       if (!live()) return;
     });
@@ -3017,8 +3024,8 @@
         "بیشترین تمرین روی " +
           top.name +
           "، جمع " +
-          faNum(top.sec) +
-          " ثانیه در " +
+          timePhrase(top.sec) +
+          " در " +
           faNum(top.count) +
           " بار",
         null
@@ -3511,6 +3518,7 @@
     run.left = step.dur;
     run.phaseDur = step.dur;
     run.announced = {};
+    run.progressLabel = "";
     run.prevLeftCeil = Math.ceil(step.dur);
     run.lastTick = performance.now();
     paintRun(false);
@@ -3566,7 +3574,7 @@
           toFaDigits(step.moveIndex) + "<span>/</span>" + toFaDigits(step.moveCount);
       }
       if (mpi) mpi.hidden = false;
-      $("#runSub").textContent = "";
+      $("#runSub").textContent = (run && run.progressLabel) || "";
     } else {
       $("#runPhase").textContent = step.kind === "rest-set" ? "استراحت ست" : "استراحت";
       // اسم حرکت بعدی فقط داخل کارت پایین؛ بالا تکرار نشود
@@ -3752,12 +3760,12 @@
           .map((id) => (MUSCLE_META[id] && MUSCLE_META[id].fa) || id)
           .join("، ");
         row.innerHTML =
-          '<div class="done-bar-name"></div><div class="done-bar-track"><div class="done-bar-fill"></div></div><div class="done-bar-sec"></div>';
+          '<div class="done-bar-name"></div><div class="done-bar-meta"><div class="done-bar-track"><div class="done-bar-fill"></div></div><div class="done-bar-sec"></div></div>';
         row.querySelector(".done-bar-name").textContent = m.name;
         row.querySelector(".done-bar-fill").style.width = pct + "%";
         row.querySelector(".done-bar-sec").textContent =
-          toFaDigits(m.sec) +
-          "ث · " +
+          timePhrase(m.sec) +
+          " · " +
           toFaDigits(m.count) +
           " بار" +
           (ms ? " · " + ms : "");
@@ -3777,8 +3785,7 @@
           " — " +
           toFaDigits(m.count) +
           " بار · جمع " +
-          toFaDigits(m.sec) +
-          " ثانیه" +
+          timePhrase(m.sec) +
           (ms ? " · " + ms : "");
         movesEl.appendChild(li);
       });
