@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "210";
+  const APP_VER = "211";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -119,7 +119,7 @@
   }
   function markCloudTtsDead() {
     // ورکر/کلود پشت فیلتر: چند دقیقه نرو تا تمرین گیر نکند
-    cloudTtsDeadUntil = Date.now() + 10 * 60 * 1000;
+    cloudTtsDeadUntil = Date.now() + 45 * 1000;
   }
   function getTtsApiBases() {
     const out = [];
@@ -2988,6 +2988,9 @@
       } catch {}
       if (step.kind === "work") {
         const nm = normSpeakKey(step.name);
+        try {
+          cloudTtsDeadUntil = 0;
+        } catch {}
         // اول اسم را بگو (قبل از بوق طولانی) تا ژست لمس از دست نرود
         if (!nm || !alive()) return;
         let ok = false;
@@ -3403,25 +3406,35 @@
 
   async function speakCueLine(line, clipRel) {
     if (soundMuted || !line) return false;
+    const gen = soundGen;
+    unlockAudio();
+    startBgKeepAlive();
+    try {
+      if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
+    } catch {}
     let ok = false;
     if (clipRel) {
       try {
         ok = !!(await playVoiceFile(clipRel, 1));
       } catch {}
-      if (ok) return true;
+      if (ok && gen === soundGen) return true;
       try {
         ok = !!(await playVoiceFileHtml(clipRel, 1));
       } catch {}
-      if (ok) return true;
+      if (ok && gen === soundGen) return true;
     }
     try {
       ok = !!(await playBakedDynClip(line, 1));
     } catch {}
-    if (ok) return true;
+    if (ok && gen === soundGen) return true;
+    // اگر کلود قبلاً مرده بود، یک شانس تازه برای کیوهای کوتاه
+    try {
+      cloudTtsDeadUntil = 0;
+    } catch {}
     try {
       ok = !!(await speakFaAny(line, 1));
     } catch {}
-    if (ok) return true;
+    if (ok && gen === soundGen) return true;
     try {
       ok = !!(await speakSynthLang(line, 1, "fa", {
         noCancel: true,
@@ -3429,17 +3442,25 @@
         pitch: 1.0
       }));
     } catch {}
-    return !!ok;
+    return !!(ok && gen === soundGen);
   }
 
   const CUE_CLIPS = {
-    half: "dyn/5b47ffb16507f9a1.mp3",
-    q1: "dyn/bb7a803bd57eb121.mp3",
-    q3: "dyn/5f8689243f704f73.mp3",
-    good: "dyn/69e150b185a2a243.mp3"
+    half: "dyn/5b47ffb16507f9a1.mp3"
   };
 
+  function pctLeftNow() {
+    const total = Math.max(1, Number((run && run.phaseDur) || 0));
+    const left = Math.max(0, Number((run && run.left) || 0));
+    return Math.max(1, Math.min(99, Math.round((left / total) * 100)));
+  }
+
+  function pctGoneNow() {
+    return Math.max(1, Math.min(99, 100 - pctLeftNow()));
+  }
+
   async function speakMidHalf() {
+    // فقط وسط: نصفشو رفتی — بدون ربع
     let ok = false;
     try {
       ok = !!(await playMidHalfClipDirect());
@@ -3449,40 +3470,30 @@
         ok = !!(await speakCueLine("نصفشو رفتی", CUE_CLIPS.half));
       } catch {}
     }
-    try {
-      const leftSec = Math.max(1, Math.round((run && run.left) || 0));
-      if (leftSec >= 3) {
-        await sleep(160);
-        await speakCueLine(faNum(leftSec) + " ثانیه");
-      }
-    } catch {}
     return !!ok;
   }
 
-  async function speakQuarterCue(kind) {
-    if (kind === "q1") {
-      let ok = false;
-      if (CUE_CLIPS.q1.indexOf("/x.mp3") < 0) {
-        ok = await speakCueLine("یه ربعش رفت", CUE_CLIPS.q1);
-      }
-      if (!ok) ok = await speakCueLine("یه ربعش رفت");
-      if (!ok) ok = await speakCueLine("شروع خوب");
-      return !!ok;
+  async function speakPercentCue(kind) {
+    // early: چند درصد رفتی | late: چند درصد مونده — هرگز «ربع» نگو
+    if (kind === "early") {
+      let p = pctGoneNow();
+      p = Math.round(p / 5) * 5;
+      if (p < 20) p = 25;
+      if (p > 40) p = 35;
+      const line = faNum(p) + " درصد رفتی";
+      return !!(await speakCueLine(line));
     }
-    if (kind === "q3") {
-      let ok = false;
-      if (CUE_CLIPS.q3.indexOf("/x.mp3") < 0) {
-        ok = await speakCueLine("یه ربع مونده", CUE_CLIPS.q3);
-      }
-      if (!ok) ok = await speakCueLine("یه ربع مونده");
-      if (!ok) {
-        const leftSec = Math.max(1, Math.round((run && run.left) || 0));
-        ok = await speakCueLine(faNum(leftSec) + " ثانیه");
-      }
-      return !!ok;
+    if (kind === "late") {
+      let p = pctLeftNow();
+      p = Math.round(p / 5) * 5;
+      if (p < 10) p = 10;
+      if (p > 30) p = 20;
+      const line = faNum(p) + " درصد مونده";
+      return !!(await speakCueLine(line));
     }
     return false;
   }
+
 
 
   async function speakDoneAmount(sec, total) {
@@ -4218,16 +4229,16 @@
     run.prevLeftCeil = cur;
     if (prev == null) return;
 
-    // کیوهای پیشرفت کار: ۱/۴، نصف(+ثانیه)، ۳/۴
+    // وسط: نصفشو رفتی | جدا حداکثر ۲ بار درصد (بدون ربع)
     if (step.kind === "work") {
       const total = Math.max(1, Number(run.phaseDur) || 0);
-      if (total >= 16) {
-        const q1Left = total * 0.75;
-        const q1Key = run.i + ":q1";
-        if (!run.announced[q1Key] && run.left <= q1Left) {
-          run.announced[q1Key] = true;
+      if (total >= 18) {
+        const earlyLeft = total * 0.7;
+        const earlyKey = run.i + ":pctEarly";
+        if (!run.announced[earlyKey] && run.left <= earlyLeft) {
+          run.announced[earlyKey] = true;
           try {
-            speakQuarterCue("q1");
+            speakPercentCue("early");
           } catch {}
         }
       }
@@ -4241,13 +4252,13 @@
           } catch {}
         }
       }
-      if (total >= 16) {
-        const q3Left = total * 0.25;
-        const q3Key = run.i + ":q3";
-        if (!run.announced[q3Key] && run.left <= q3Left && run.left > 4.2) {
-          run.announced[q3Key] = true;
+      if (total >= 18) {
+        const lateLeft = total * 0.2;
+        const lateKey = run.i + ":pctLate";
+        if (!run.announced[lateKey] && run.left <= lateLeft && run.left > 4.5) {
+          run.announced[lateKey] = true;
           try {
-            speakQuarterCue("q3");
+            speakPercentCue("late");
           } catch {}
         }
       }
