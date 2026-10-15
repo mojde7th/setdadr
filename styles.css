@@ -1449,3 +1449,17 @@ input[type="text"], input[type="number"] {
 }
 .done-chart-wrap[hidden] { display: none !important; }
 .done-chart-wrap:not([hidden]) { display: block; margin-top: 12px; }
+
+
+/* v192 muscle motion + bar grow */
+.anatomy-live .mus-hot {
+  transform-origin: center;
+  animation: musPulse 1.35s ease-in-out infinite;
+}
+@keyframes musPulse {
+  0%, 100% { filter: brightness(1); opacity: 1; }
+  50% { filter: brightness(1.35); opacity: 0.82; }
+}
+.mus-fill {
+  transition: width 0.85s cubic-bezier(.22,.9,.3,1);
+}
