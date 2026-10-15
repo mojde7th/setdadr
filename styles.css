@@ -368,7 +368,7 @@ input[type="text"], input[type="number"] {
 }
 .progress-v {
   font-family: var(--display);
-  font-size: clamp(52px, 15vw, 72px);
+  font-size: clamp(64px, 20vw, 104px);
   font-weight: 700;
   line-height: 1;
   direction: ltr;
@@ -386,7 +386,7 @@ input[type="text"], input[type="number"] {
 }
 .run-stage.rest .move-big {
   display: block;
-  font-size: clamp(28px, 8vw, 40px);
+  font-size: clamp(52px, 16vw, 84px);
   color: #f0b75a;
 }
 .run-stage.rest .sub {
@@ -397,7 +397,7 @@ input[type="text"], input[type="number"] {
 }
 .frac {
   font-family: var(--display);
-  font-size: clamp(36px, 11vw, 64px);
+  font-size: clamp(48px, 14vw, 80px);
   font-weight: 700;
   line-height: .95;
   letter-spacing: .02em;
@@ -420,7 +420,7 @@ input[type="text"], input[type="number"] {
 }
 .move-count {
   font-family: var(--display);
-  font-size: clamp(32px, 10vw, 52px);
+  font-size: clamp(44px, 13vw, 72px);
   font-weight: 700;
   color: var(--txt);
   margin: 2px 0 4px;
@@ -429,7 +429,7 @@ input[type="text"], input[type="number"] {
 }
 .move-count[hidden] { display: none !important; }
 .move-big {
-  font-size: clamp(32px, 9vw, 48px);
+  font-size: clamp(56px, 18vw, 92px);
   font-weight: 900;
   margin: 6px 0 8px;
   max-width: 94vw;
@@ -508,7 +508,7 @@ input[type="text"], input[type="number"] {
   background: var(--work);
 }
 .flow-txt {
-  font-size: clamp(24px, 7vw, 34px);
+  font-size: clamp(44px, 14vw, 72px);
   font-weight: 900;
   line-height: 1.2;
   word-break: break-word;

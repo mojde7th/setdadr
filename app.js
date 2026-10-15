@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "158";
+  const APP_VER = "159";
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -793,6 +793,21 @@
       notes: [
         { f: 440, at: 0, dur: 0.32, g: 1.0 },
         { f: 554.37, at: 0.1, dur: 0.36, g: 0.95 }
+      ]
+    });
+  }
+
+  // استراحت: بوق آرام حدود پنج برابر زنگ شروع
+  function beepCalmLong() {
+    playWarmChime({
+      stack: false,
+      peak: 0.95,
+      total: 5.0,
+      notes: [
+        { f: 349.23, at: 0, dur: 1.4, g: 0.95 },
+        { f: 392.0, at: 1.1, dur: 1.5, g: 0.9 },
+        { f: 329.63, at: 2.3, dur: 1.6, g: 0.85 },
+        { f: 261.63, at: 3.5, dur: 1.45, g: 0.75 }
       ]
     });
   }
@@ -2123,17 +2138,15 @@
   }
 
   async function playGoogleQuick(text, vol, lang) {
-    // گوگل‌فا اغلب ۴۰۰ است — برای فارسی وقت تلف نکن
-    if (lang === "fa") return false;
     const key = String(text || "").trim().slice(0, 160);
     if (!key || soundMuted) return false;
-    const urls = faTtsUrls(key, lang).slice(0, 3);
+    const urls = faTtsUrls(key, lang || "fa").slice(0, 3);
     const alive = aliveNow();
     for (let i = 0; i < urls.length; i++) {
       if (!alive()) return false;
       try {
         const a = makeHtmlAudio(urls[i]);
-        const ok = await playHtmlAudioEl(a, vol, 4500);
+        const ok = await playHtmlAudioEl(a, vol, 16000);
         if (ok) {
           warmFaTts(key);
           return true;
@@ -2183,12 +2196,14 @@
       if (ok) return true;
     }
     {
-      const roman = romanizeFaMachine(key);
-      if (roman) {
-        const ok = await playGoogleQuick(roman, v, "en");
-        if (!alive()) return false;
-        if (ok) return true;
-      }
+      const ok = await playGoogleQuick(key, v, "fa");
+      if (!alive()) return false;
+      if (ok) return true;
+    }
+    {
+      const ok = await speakSynthLang(key, v, "fa", { noCancel: true, rate: 0.95, pitch: 1.05 });
+      if (!alive()) return false;
+      if (ok) return true;
     }
     return false;
   }
@@ -2387,19 +2402,13 @@
     const alive = () => soundAlive(gen, tok);
     if (!alive()) return false;
     const said = sayForMove(raw);
-    const v = vol == null ? 0.98 : vol;
-    const hasFa = /[\u0600-\u06FF]/.test(raw);
-    const hasLatin = /[A-Za-z]/.test(raw);
-    const speakText = raw;
-    const isEn = hasLatin && !hasFa;
+    const speakText = (said && said.text) || raw;
+    const v = vol == null ? 1 : vol;
     const keyLow = raw.toLowerCase();
-
-    if (isEn) {
-      unlockAudio();
-      return speakTextChain(speakText.slice(0, 400), v, EDGE_TTS_VOICE_EN, alive);
-    }
+    unlockAudio();
 
     const clip =
+      MOVE_CLIP[speakText] ||
       MOVE_CLIP[raw] ||
       MOVE_CLIP[keyLow] ||
       (said && MOVE_CLIP[said.text]);
@@ -2410,6 +2419,15 @@
     }
     {
       const ok = await speakFaAny(speakText, v);
+      if (!alive()) return false;
+      if (ok) return true;
+    }
+    {
+      const ok = await speakSynthLang(speakText, v, "fa", {
+        noCancel: true,
+        rate: 0.95,
+        pitch: 1.05
+      });
       if (!alive()) return false;
       if (ok) return true;
     }
@@ -2545,7 +2563,8 @@
       const isRest = step.kind === "rest-set" || step.kind === "rest-move";
       buzz(step.kind === "work" ? [80, 35, 90] : [55, 30, 70]);
       startBgKeepAlive();
-      beepSoftRing(0);
+      if (isRest) beepCalmLong();
+      else beepSoftRing(0);
       const gen = soundGen;
       const tok = speakToken;
       const alive = () => announceAlive(seq) && soundAlive(gen, tok);
