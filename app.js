@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "213";
+  const APP_VER = "214";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -600,14 +600,14 @@
     try {
       cutKeeperVoice(false);
     } catch {}
+    // فقط عنصر تلفظ — حلقهٔ پس‌زمینه را قطع نکن
     try {
-      const a = bgKeepAudio;
+      const a = voiceKeepAudio;
       if (!a) return;
       try {
         a.onended = null;
         a.onerror = null;
         a.onplaying = null;
-        a.ontimeupdate = null;
       } catch {}
       try {
         a.pause();
@@ -618,6 +618,9 @@
         a.muted = false;
         a.src = KEEP_SILENCE;
       } catch {}
+    } catch {}
+    try {
+      if (bgKeepOn && !soundMuted) startBgKeepAlive();
     } catch {}
   }
 
@@ -890,17 +893,16 @@
         try {
           a.pause();
         } catch {}
-        if (!handover && bgKeepAudio === a) {
+        if (!handover && voiceKeepAudio === a) {
           try {
             a.loop = true;
             a.volume = 0.001;
             a.src = KEEP_SILENCE;
-            if (bgKeepOn && !soundMuted) {
-              const p = a.play();
-              if (p && typeof p.catch === "function") p.catch(() => {});
-            }
           } catch {}
         }
+        try {
+          if (bgKeepOn && !soundMuted) startBgKeepAlive();
+        } catch {}
         resolve(!!ok && gen === soundGen && !soundMuted);
       }
       handle.finish = finish;
