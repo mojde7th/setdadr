@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "201";
+  const APP_VER = "202";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -1667,13 +1667,16 @@
       const ios = isIOSLike();
       const o = opts || {};
       const wantEn = lang === "en";
-      speakToken += 1;
-      const tok = speakToken;
-      if (!ios && !o.noCancel) {
-        try {
-          speechSynthesis.cancel();
-        } catch {}
+      // noCancel: توکن را بالا نبر — وگرنه speakFaAny بعد از synth زنده نمی‌ماند
+      if (!o.noCancel) {
+        speakToken += 1;
+        if (!ios) {
+          try {
+            speechSynthesis.cancel();
+          } catch {}
+        }
       }
+      const tok = speakToken;
       setTimeout(() => {
         if (tok !== speakToken) {
           resolve(false);
@@ -2381,20 +2384,20 @@
     // ۲) صدای فارسی گوشی — آفلاین، بدون کلود
     {
       const ok = await speakSynthLang(key, v * 0.92, "fa", { noCancel: true, rate: 0.92, pitch: 1.0 });
-      if (!alive()) return false;
       if (ok) return true;
+      if (!alive()) return false;
     }
     // ۳) ورکر دیلارا فقط اگر فیلتر نباشد؛ تایم‌اوت کوتاه
     if (!cloudTtsDead()) {
       const ok = await playDilaraFa(key, v);
-      if (!alive()) return false;
       if (ok) return true;
+      if (!alive()) return false;
     }
     // بدون انتظار پشت سرویس‌های فیلترشده (اج/گوگل/پروکسی)
     {
       const ok = await speakMachineAny(key, v);
-      if (!alive()) return false;
       if (ok) return true;
+      if (!alive()) return false;
     }
     if (hasFa) return false;
     return false;
@@ -3008,8 +3011,13 @@
         const sub = $("#runSub");
         if (sub) sub.textContent = "";
       } catch {}
-      // کوتاه و واضح
-      const ok = !!(await speakFaAny("نصفشو رفتی", 1));
+      const line = "نصفشو رفتی";
+      // اول کلیپ پختهٔ محلی؛ بعد زنجیرهٔ معمولی
+      let ok = !!(await playBakedDynClip(line, 1));
+      if (!live()) return;
+      if (!ok) ok = !!(await speakFaAny(line, 1));
+      if (!live()) return;
+      if (!ok) ok = !!(await playBakedDynClip("بیشتر از نصفش رفتی", 1));
       if (!live()) return;
       if (!ok) await speakFaAny("بیشتر از نصفش رفتی", 1);
     });
