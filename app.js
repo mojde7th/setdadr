@@ -1,8 +1,8 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "185";
-  // باشگاه: بلند و پایدار — بدون فِید زمان‌بندی‌شده که اسم را خفه می‌کرد
-  const VOICE_LOUD = 14;
+  const APP_VER = "186";
+  // باشگاه: بلند ولی تمیز — گین خیلی بالا روی گوشی نویز/خش می‌سازد
+  const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 6;
 
   const $ = (s, r = document) => r.querySelector(s);
@@ -748,10 +748,7 @@
         const master = audioCtx.createGain();
         const lp = audioCtx.createBiquadFilter();
         lp.type = "lowpass";
-        lp.frequency.setValueAtTime(
-          o.dark ? 880 : o.bright ? 1600 : 1200,
-          t0
-        );
+        lp.frequency.setValueAtTime(o.bright ? 1600 : 1200, t0);
         lp.Q.setValueAtTime(0.55, t0);
         const peak = o.peak != null ? o.peak : 3.2;
         const total = o.total != null ? o.total : 0.7;
@@ -835,36 +832,35 @@
     setTimeout(() => beepSoftRing(0), 520);
   }
 
-  // ۴ ثانیه آخر: بوق میانی بلند برای اسپیکر گوشی در باشگاه
+  // ۴ ثانیه آخر: میانی و پر برای گوشی در باشگاه
   function beepReadyPulse(n) {
     if (soundMuted) return;
     const step = Math.max(1, Math.min(4, Math.round(Number(n) || 4)));
-    // حدود ۴۴۰–۶۶۰Hz روی گوشی شنیده می‌شود؛ بمِ خیلی پایین نه
-    const roots = { 4: 440.0, 3: 493.88, 2: 523.25, 1: 587.33 };
-    const f = roots[step] || 523.25;
+    const roots = { 4: 392.0, 3: 440.0, 2: 493.88, 1: 523.25 };
+    const f = roots[step] || 440.0;
     playWarmChime({
       stack: false,
-      peak: 6.2,
-      total: 0.4,
+      peak: 4.4,
+      total: 0.45,
       notes: [
-        { f: f * 0.75, at: 0, dur: 0.28, g: 1.6 },
-        { f: f, at: 0.04, dur: 0.32, g: 2.2 },
-        { f: f * 1.25, at: 0.12, dur: 0.26, g: 1.1 }
+        { f: f * 0.75, at: 0, dur: 0.3, g: 1.5 },
+        { f: f, at: 0.05, dur: 0.34, g: 1.9 },
+        { f: f * 1.25, at: 0.14, dur: 0.28, g: 0.9 }
       ]
     });
     setTimeout(() => {
       if (soundMuted) return;
       playWarmChime({
         stack: false,
-        peak: 6.5,
-        total: 0.28,
+        peak: 4.6,
+        total: 0.3,
         notes: [
-          { f: f, at: 0, dur: 0.22, g: 2.3 },
-          { f: f * 1.33, at: 0.06, dur: 0.2, g: 1.4 }
+          { f: f, at: 0, dur: 0.24, g: 2.0 },
+          { f: f * 1.2, at: 0.08, dur: 0.22, g: 1.2 }
         ]
       });
-    }, 180);
-    buzz(step <= 2 ? [140, 40, 180] : [90, 35, 120]);
+    }, 200);
+    buzz(step <= 2 ? [130, 40, 160] : [90, 35, 110]);
   }
 
   function beepWhite(ms, soft) {
@@ -1024,7 +1020,8 @@
   function loudVol(vol, kind) {
     const base = vol == null ? 1 : Number(vol);
     const mult = kind === "stat" ? VOICE_STAT_LOUD : VOICE_LOUD;
-    return Math.max(0.08, Math.min(18, base * mult));
+    // سقف پایین‌تر = بدون کلیپ دیجیتال و نویز گوشی
+    return Math.max(0.05, Math.min(14, base * mult));
   }
 
   function connectLoudOut(srcNode, gainVal) {
@@ -1032,19 +1029,19 @@
     const hp = audioCtx.createBiquadFilter();
     const lp = audioCtx.createBiquadFilter();
     const comp = audioCtx.createDynamicsCompressor();
-    // ساده و پایدار مثل قبل — اسم حرکت باید قطع شنیده شود
+    // حذف همهمه پایین + نرم‌کردن اوج‌ها تا خش ندهد
     hp.type = "highpass";
-    hp.frequency.value = 80;
+    hp.frequency.value = 90;
     hp.Q.value = 0.7;
     lp.type = "lowpass";
-    lp.frequency.value = 5200;
-    lp.Q.value = 0.35;
-    comp.threshold.value = -16;
-    comp.knee.value = 16;
-    comp.ratio.value = 2.8;
+    lp.frequency.value = 4600;
+    lp.Q.value = 0.5;
+    comp.threshold.value = -18;
+    comp.knee.value = 18;
+    comp.ratio.value = 3.5;
     comp.attack.value = 0.003;
-    comp.release.value = 0.16;
-    g.gain.value = Math.min(Number(gainVal) || 1, 16);
+    comp.release.value = 0.18;
+    g.gain.value = Math.min(Number(gainVal) || 1, 12);
     srcNode.connect(hp);
     hp.connect(g);
     g.connect(comp);
@@ -2678,27 +2675,14 @@
     if (!nm) return false;
     stopVoiceFile();
     killAllHtmlAudio();
-    await sleep(40);
+    await sleep(50);
     if (!alive()) return false;
-    // مثل قبل: «حرکت بعد فلان» — یک‌خط تا وسطش قطع نشود
+    // یک‌خط: حرکت بعد فلان (اگر نشد، مثل قبل فقط اسم)
     if (!bare) {
       try {
-        const okLine = !!(await speakFaAny("حرکت بعد " + nm, 1));
-        if (okLine) return true;
+        const lineOk = !!(await speakFaAny("حرکت بعد " + nm, 1));
+        if (lineOk) return true;
       } catch {}
-      if (!alive()) return false;
-      let pref = false;
-      try {
-        pref = await playVoiceFile("phrase-next.mp3", 1);
-      } catch {}
-      if (!alive()) return false;
-      if (!pref) {
-        try {
-          await speakFaAny("حرکت بعد", 1);
-        } catch {}
-      }
-      if (!alive()) return false;
-      await sleep(60);
       if (!alive()) return false;
     }
     let ok = false;
@@ -2733,7 +2717,7 @@
       const alive = () => announceAlive(seq) && soundAlive(gen, tok);
       if (step.kind === "work") {
         const nm = normSpeakKey(step.name);
-        await sleep(220);
+        await sleep(380);
         // بوق را قبل از اسم قطع کن تا خش نماند
         stopBeep();
         if (!nm || !alive()) return;
@@ -2741,12 +2725,6 @@
         try {
           ok = await playPrimedWorkName(nm, 1);
         } catch {}
-        if (!alive()) return;
-        if (!ok) {
-          try {
-            ok = !!(await speakFaAny(nm, 1));
-          } catch {}
-        }
         if (!alive()) return;
         if (!ok) ok = await speakMoveNameOnly(nm, 1);
         if (!alive()) return;
@@ -3082,7 +3060,7 @@
     unlockAudio();
     startBgKeepAlive();
     startSilentCtxKeep();
-    // کوتاه و همان لحظه ورود
+    // کوتاه — همان لحظه ورود به داشبورد
     buzz([90, 50, 120]);
     if (!alive()) return;
     await speakStatLine("آفرین، تمرین تمام شد", null);
