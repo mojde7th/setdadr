@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "268";
+  const APP_VER = "269";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -71,7 +71,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=268";
+  const VOICE_Q = "?v=269";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -1265,9 +1265,13 @@
     if (soundMuted) return;
     if (beepClockTick._busy) return;
     beepClockTick._busy = true;
+    unlockAudio();
+    const src = VOICE_BASE + "beep-tick.wav" + VOICE_Q;
+    const a = ensureBgCueRail();
     try {
-      const src = VOICE_BASE + "beep-tick.wav" + VOICE_Q;
-      const a = ensureBgCueRail();
+      a.pause();
+    } catch {}
+    try {
       a.onended = null;
       a.onerror = null;
       a.loop = false;
@@ -1275,11 +1279,19 @@
       a.volume = 1;
       a.src = src;
       const p = a.play();
-      if (p && typeof p.catch === "function") p.catch(() => {});
+      if (p && typeof p.catch === "function") {
+        p.catch(() => {
+          try {
+            a.src = src;
+            a.volume = 1;
+            a.play().catch(() => {});
+          } catch {}
+        });
+      }
     } catch {}
     setTimeout(() => {
       beepClockTick._busy = false;
-    }, 480);
+    }, 220);
   }
 
   function beepFourSecWarning() {
@@ -1333,7 +1345,6 @@
   function beepPhaseStart() {
     if (soundMuted) return Promise.resolve(false);
     unlockAudio();
-    // یک بوق کلاسیک نرم و بلند (~۰٫۸ث) — فقط یک بار
     const src = VOICE_BASE + "beep-start.wav" + VOICE_Q;
     const a = ensureBgCueRail();
     try {
@@ -1353,17 +1364,17 @@
       try {
         a.loop = false;
         a.muted = false;
-        a.volume = 0.88;
+        a.volume = 1;
         a.onended = () => finish(true);
         a.onerror = () => finish(false);
         a.src = src;
         const p = a.play();
         if (p && typeof p.then === "function") {
           p.then(() => {
-            setTimeout(() => finish(true), 860);
+            setTimeout(() => finish(true), 700);
           }).catch(() => finish(false));
         } else {
-          setTimeout(() => finish(true), 860);
+          setTimeout(() => finish(true), 700);
         }
       } catch {
         finish(false);
@@ -4483,6 +4494,7 @@
       skipped: 0,
       announced: {},
       prevLeftCeil: Math.ceil(steps[0].dur),
+      prevLeftExact: steps[0].dur,
       lastTick: performance.now()
     };
     show("run");
@@ -4590,16 +4602,20 @@
       }
     }
 
-    // فقط ۳…۱ — هر ثانیه یک بوق تک، با فاصلهٔ طبیعی ۱ث (اگر چند ثانیه پرید فقط همان ثانیهٔ فعلی)
-    if (run.phaseDur > 5 && cur >= 1 && cur <= 3 && prev > cur) {
-      const s = cur;
-      const k = run.i + ":tick" + s;
-      if (!run.announced[k]) {
-        run.announced[k] = true;
-        beepClockTick(s);
-      }
-      for (let skipped = Math.min(3, prev - 1); skipped > cur; skipped--) {
-        if (skipped >= 1) run.announced[run.i + ":tick" + skipped] = true;
+    // ۴…۱ مثل v256 ولی روی عبور دقیق ثانیه — فاصله یکنواخت، یک بوق در هر ثانیه
+    if (run.phaseDur > 5) {
+      const leftNow = Number(run.left) || 0;
+      let prevLeft = run.prevLeftExact;
+      if (prevLeft == null || !Number.isFinite(prevLeft)) prevLeft = leftNow;
+      run.prevLeftExact = leftNow;
+      for (let s = 4; s >= 1; s--) {
+        const k = run.i + ":tick" + s;
+        if (run.announced[k]) continue;
+        if (prevLeft > s && leftNow <= s) {
+          run.announced[k] = true;
+          beepClockTick(s);
+          break;
+        }
       }
     }
   }
@@ -4626,6 +4642,7 @@
     run.announced = {};
     run.progressLabel = "";
     run.prevLeftCeil = Math.ceil(step.dur);
+    run.prevLeftExact = step.dur;
     run.lastTick = performance.now();
     paintRun(false);
     try {
