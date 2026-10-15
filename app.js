@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "214";
+  const APP_VER = "215";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -83,8 +83,8 @@
   let bgHeartbeatIv = 0;
   let bgTickWired = false;
   let lastBgAudioT = 0;
-  const BG_KEEP_VOL = 0.035;
-  const FG_KEEP_VOL = 0.001;
+  const BG_KEEP_VOL = 0.004;
+  const FG_KEEP_VOL = 0.004;
   // سرور دیلارا ابری دائمی (بدون لپ‌تاپ) + اختیاری تونل محلی
   const TTS_API_LS = "setdadr-tts-api";
   const CLOUD_EDGE_TTS = "https://edge-tts.vercel.app/api/tts";
@@ -520,34 +520,14 @@
   }
 
   function startSilentCtxKeep() {
+    // دیگر اسیلاتور به بلندگو وصل نشود — همان صدای «دوتو» بود
     try {
       unlockAudio();
       if (!audioCtx) return false;
       if (audioCtx.state === "suspended") {
         audioCtx.resume().catch(() => {});
       }
-      // فقط برای زنده ماندن کانتکست — نباید شنیده شود
-      const want = 0.00004;
-      if (silentCtxKeep && silentCtxGain) {
-        try {
-          silentCtxGain.gain.setValueAtTime(want, audioCtx.currentTime);
-        } catch {
-          try {
-            silentCtxGain.gain.value = want;
-          } catch {}
-        }
-        return true;
-      }
-      const g = audioCtx.createGain();
-      g.gain.value = want;
-      g.connect(audioCtx.destination);
-      const o = audioCtx.createOscillator();
-      o.type = "sine";
-      o.frequency.value = 18;
-      o.connect(g);
-      o.start();
-      silentCtxKeep = o;
-      silentCtxGain = g;
+      stopSilentCtxKeep();
       return true;
     } catch {
       return false;
@@ -660,7 +640,6 @@
   // یک عنصر صوتی که با لمس شروع/بعدی آنلاک می‌شود و دیگر عوض نمی‌شود.
   // آیفون عنصر صوتی تازه را بدون لمس پخش نمی‌کند؛ این یکی را چرا.
   const KEEP_SILENCE = VOICE_BASE + "silence.wav" + VOICE_Q;
-  const KEEP_QUIET = VOICE_BASE + "keep-quiet.wav" + VOICE_Q;
   let keeperVoice = null;
 
   function keeperOnSilence(a) {
@@ -672,9 +651,9 @@
   }
 
   function ensureBgLoop() {
-    // حلقهٔ پس‌زمینه — فقط برای زنده ماندن؛ هرگز برای تلفظ عوض نشود
+    // حلقهٔ سکوت واقعی — بدون فایل نویز/بوق
     if (bgKeepAudio) return bgKeepAudio;
-    const a = makeHtmlAudio(KEEP_QUIET);
+    const a = makeHtmlAudio(KEEP_SILENCE);
     a.loop = true;
     a.volume = FG_KEEP_VOL;
     a.setAttribute("data-setdadr-keep", "1");
@@ -777,15 +756,14 @@
     try {
       if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
     } catch {}
-    startSilentCtxKeep();
+    // اسیلاتور شنیدنی نه — فقط HTML سکوت مثل نسخه‌های پایدار قدیمی
     const a = ensureBgLoop();
     const hidden = isAppHidden();
-    const vol = hidden ? BG_KEEP_VOL : FG_KEEP_VOL;
+    const vol = BG_KEEP_VOL;
     try {
-      const cur = String(a.currentSrc || a.src || "");
-      if (!/keep-quiet\.wav/.test(cur)) {
+      if (!keeperOnSilence(a)) {
         a.loop = true;
-        a.src = KEEP_QUIET;
+        a.src = KEEP_SILENCE;
       }
       a.muted = false;
       a.volume = vol;
@@ -794,7 +772,8 @@
       if (p && typeof p.catch === "function") {
         p.catch(() => {
           try {
-            a.load();
+            a.src = KEEP_SILENCE;
+            a.loop = true;
             a.muted = false;
             a.volume = vol;
             a.play().catch(() => {});
@@ -4930,8 +4909,8 @@
         a.muted = false;
         a.volume = BG_KEEP_VOL;
         a.loop = true;
-        if (!/keep-quiet\.wav/.test(String(a.currentSrc || a.src || ""))) {
-          a.src = KEEP_QUIET;
+        if (!keeperOnSilence(a)) {
+          a.src = KEEP_SILENCE;
         }
         a.play().catch(() => {});
       } catch {}
