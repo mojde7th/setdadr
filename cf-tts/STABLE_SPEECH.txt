@@ -1,0 +1,18 @@
+SETDADR STABLE SPEECH — 2026-10-15
+================================
+Working baseline: v193 speech tree (shipped as v197/v198 app shell).
+Cloud worker: https://setdadr-tts.minasi24100.workers.dev  LOCK=dilara-locked-1
+DO NOT redeploy/replace worker unless owner explicitly asks.
+
+What broke speech before:
+- aggressive hushKeeper on auto-advance
+- experimental gain fade / compressor chains
+- long TTS phrase early-return paths
+
+What works now:
+- playDilaraFa -> playBlobFa (v181 path) + keeper backup
+- hardcoded worker base in getTtsApiBases
+- softCut without keeper hush on auto advance
+
+If cloud TTS fails at workout end, app plays local cheer-ali.mp3 only.
+On-screen stats/tips still show even if voice fails.

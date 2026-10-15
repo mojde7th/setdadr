@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "197";
+  const APP_VER = "198";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 16;
   const VOICE_STAT_LOUD = 6;
@@ -897,19 +897,19 @@
   // ۴ ثانیه آخر: بوق تمیز، شفاف، بلند
   function beepReadyLikeRest() {
     if (soundMuted) return;
-    // تمیز و واضح برای باشگاه — بدون تیغ بالا
+    // مثل بوق استراحت: کشیده و لطیف، ولی بلندترین هشدار ۴ث
     playWarmChime({
       stack: false,
-      peak: 3.8,
-      total: 0.9,
+      peak: 2.6,
+      total: 3.5,
       notes: [
-        { f: 392.0, at: 0, dur: 0.28, g: 1.6 },
-        { f: 523.25, at: 0.12, dur: 0.32, g: 1.9 },
-        { f: 392.0, at: 0.48, dur: 0.3, g: 1.5 },
-        { f: 523.25, at: 0.58, dur: 0.28, g: 1.8 }
+        { f: 349.23, at: 0, dur: 1.15, g: 1.35 },
+        { f: 392.0, at: 0.9, dur: 1.2, g: 1.45 },
+        { f: 329.63, at: 1.85, dur: 1.15, g: 1.25 },
+        { f: 261.63, at: 2.7, dur: 0.85, g: 1.05 }
       ]
     });
-    buzz([100, 40, 140]);
+    buzz([90, 45, 120]);
   }
 
   function beepWhite(ms, soft) {
@@ -3233,6 +3233,13 @@
         await speakStatLine(tipLines[sayi % tipLines.length], null);
       }
     }
+    // اگر ابر قطع بود، فقط فایل محلی تشویق (بدون دست‌زدن به ورکر)
+    if (alive()) {
+      try {
+        await playVoiceFile("cheer-ali.mp3", 0.9);
+      } catch {}
+    }
+
   }
 
   function bumpNumber(input, dir) {
