@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "272";
+  const APP_VER = "209";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -70,27 +70,18 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=272";
+  const VOICE_Q = "?v=203";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
   let tickIv = 0;
-  let bgCueRail = null;
-  let nameSpeechGuard = false;
   let bgKeepAudio = null;
-  let voiceKeepAudio = null;
-  let stickySpeakAudio = null;
   let bgKeepOn = false;
   let silentCtxKeep = null;
   let silentCtxGain = null;
   let bgHeartbeatIv = 0;
-  let bgWatchIv = 0;
-  let bgTickWired = false;
-  let lastBgAudioT = 0;
-  let wakeLockSentinel = null;
-  let quietKeepUrl = "";
-  const BG_KEEP_VOL = 0.008;
-  const FG_KEEP_VOL = 0.008;
+  const BG_KEEP_VOL = 0.08;
+  const FG_KEEP_VOL = 0.002;
   // سرور دیلارا ابری دائمی (بدون لپ‌تاپ) + اختیاری تونل محلی
   const TTS_API_LS = "setdadr-tts-api";
   const CLOUD_EDGE_TTS = "https://edge-tts.vercel.app/api/tts";
@@ -128,7 +119,7 @@
   }
   function markCloudTtsDead() {
     // ورکر/کلود پشت فیلتر: چند دقیقه نرو تا تمرین گیر نکند
-    cloudTtsDeadUntil = Date.now() + 45 * 1000;
+    cloudTtsDeadUntil = Date.now() + 10 * 60 * 1000;
   }
   function getTtsApiBases() {
     const out = [];
@@ -396,16 +387,6 @@
       const p = a.play();
       if (p && typeof p.catch === "function") p.catch(() => {});
     } catch {}
-    // پیش‌گرم بوق‌ها تا قبل از مینیمایز در کش/آنلاک باشند
-    try {
-      ["beep-rest.wav", "beep-soft.wav"].forEach((rel) => {
-        const u = VOICE_BASE + rel + VOICE_Q;
-        const pre = new Audio(u);
-        pre.preload = "auto";
-        pre.load();
-      });
-      ensureStickySpeakAudio();
-    } catch {}
     if (!speechWarmed) {
       speechWarmed = true;
       try {
@@ -498,12 +479,8 @@
 
   function killAllHtmlAudio() {
     const keep = bgKeepAudio;
-    const voice = voiceKeepAudio;
-    const sticky = stickySpeakAudio;
     liveAudios.forEach((a) => {
       if (keep && a === keep) return;
-      if (voice && a === voice) return;
-      if (sticky && a === sticky) return;
       try {
         a.onended = null;
         a.onerror = null;
@@ -522,8 +499,6 @@
     });
     liveAudios.clear();
     if (keep) liveAudios.add(keep);
-    if (voiceKeepAudio) liveAudios.add(voiceKeepAudio);
-    if (stickySpeakAudio) liveAudios.add(stickySpeakAudio);
   }
 
   function killAllSources() {
@@ -539,23 +514,32 @@
   }
 
   function startSilentCtxKeep() {
-    // مثل v122: ۱۸کیلوهرتز تقریباً نشنیدنی — فقط کانتکست زنده بماند
     try {
       unlockAudio();
       if (!audioCtx) return false;
       if (audioCtx.state === "suspended") {
         audioCtx.resume().catch(() => {});
       }
-      if (silentCtxKeep) return true;
-      const osc = audioCtx.createOscillator();
+      const want = isAppHidden() ? 0.012 : 0.00012;
+      if (silentCtxKeep && silentCtxGain) {
+        try {
+          silentCtxGain.gain.setValueAtTime(want, audioCtx.currentTime);
+        } catch {
+          try {
+            silentCtxGain.gain.value = want;
+          } catch {}
+        }
+        return true;
+      }
       const g = audioCtx.createGain();
-      g.gain.value = 0.00003;
-      osc.frequency.value = 18000;
-      osc.type = "sine";
-      osc.connect(g);
+      g.gain.value = want;
       g.connect(audioCtx.destination);
-      osc.start();
-      silentCtxKeep = osc;
+      const o = audioCtx.createOscillator();
+      o.type = "sine";
+      o.frequency.value = isAppHidden() ? 55 : 28;
+      o.connect(g);
+      o.start();
+      silentCtxKeep = o;
       silentCtxGain = g;
       return true;
     } catch {
@@ -609,14 +593,14 @@
     try {
       cutKeeperVoice(false);
     } catch {}
-    // فقط عنصر تلفظ — حلقهٔ پس‌زمینه را قطع نکن
     try {
-      const a = voiceKeepAudio;
+      const a = bgKeepAudio;
       if (!a) return;
       try {
         a.onended = null;
         a.onerror = null;
         a.onplaying = null;
+        a.ontimeupdate = null;
       } catch {}
       try {
         a.pause();
@@ -627,9 +611,6 @@
         a.muted = false;
         a.src = KEEP_SILENCE;
       } catch {}
-    } catch {}
-    try {
-      if (bgKeepOn && !soundMuted) startBgKeepAlive();
     } catch {}
   }
 
@@ -669,6 +650,7 @@
   // یک عنصر صوتی که با لمس شروع/بعدی آنلاک می‌شود و دیگر عوض نمی‌شود.
   // آیفون عنصر صوتی تازه را بدون لمس پخش نمی‌کند؛ این یکی را چرا.
   const KEEP_SILENCE = VOICE_BASE + "silence.wav" + VOICE_Q;
+  const KEEP_SOFT = VOICE_BASE + "keep-soft.wav" + VOICE_Q;
   let keeperVoice = null;
 
   function keeperOnSilence(a) {
@@ -679,151 +661,14 @@
     }
   }
 
-  async function requestWakeLock() {
-    try {
-      if (!("wakeLock" in navigator)) return;
-      if (wakeLockSentinel) return;
-      wakeLockSentinel = await navigator.wakeLock.request("screen");
-      try {
-        wakeLockSentinel.addEventListener("release", () => {
-          wakeLockSentinel = null;
-        });
-      } catch {}
-    } catch {
-      wakeLockSentinel = null;
-    }
-  }
-
-  async function releaseWakeLock() {
-    try {
-      if (wakeLockSentinel) await wakeLockSentinel.release();
-    } catch {}
-    wakeLockSentinel = null;
-  }
-
-  function makeQuietKeepUrl() {
-    // نویز بسیار ضعیف (مثل v122) — شنیده نمی‌شود ولی سشن مدیا زنده می‌ماند
-    if (quietKeepUrl) return quietKeepUrl;
-    try {
-      const sr = 44100;
-      const sec = 2;
-      const n = sr * sec;
-      const data = new ArrayBuffer(44 + n * 2);
-      const view = new DataView(data);
-      const w = (o, s) => {
-        for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i));
-      };
-      w(0, "RIFF");
-      view.setUint32(4, 36 + n * 2, true);
-      w(8, "WAVE");
-      w(12, "fmt ");
-      view.setUint32(16, 16, true);
-      view.setUint16(20, 1, true);
-      view.setUint16(22, 1, true);
-      view.setUint32(24, sr, true);
-      view.setUint32(28, sr * 2, true);
-      view.setUint16(32, 2, true);
-      view.setUint16(34, 16, true);
-      w(36, "data");
-      view.setUint32(40, n * 2, true);
-      for (let i = 0; i < n; i++) {
-        const sample = (Math.random() * 2 - 1) * 0.0012;
-        view.setInt16(44 + i * 2, (sample * 32767) | 0, true);
-      }
-      quietKeepUrl = URL.createObjectURL(new Blob([data], { type: "audio/wav" }));
-      return quietKeepUrl;
-    } catch {
-      return KEEP_SILENCE;
-    }
-  }
-
-  function startBgWatch() {
-    if (bgWatchIv) return;
-    bgWatchIv = setInterval(() => {
-      if (!run || run.paused || soundMuted) return;
-      resumeBgIfNeeded();
-      startSilentCtxKeep();
-      requestWakeLock();
-    }, 3500);
-  }
-
-  function stopBgWatch() {
-    if (bgWatchIv) clearInterval(bgWatchIv);
-    bgWatchIv = 0;
-  }
-
-  function ensureBgLoop() {
-    // مثل نسخهٔ اولیهٔ درست‌شده: dither خیلی آروم، نه بوق keep-quiet
-    if (bgKeepAudio) return bgKeepAudio;
-    const a = makeHtmlAudio(makeQuietKeepUrl());
-    a.loop = true;
-    a.volume = BG_KEEP_VOL;
-    a.muted = false;
-    a.setAttribute("data-setdadr-keep", "1");
-    bgKeepAudio = a;
-    liveAudios.add(a);
-    wireBgAudioTick(a);
-    return a;
-  }
-
-  function ensureStickySpeakAudio() {
-    if (stickySpeakAudio) return stickySpeakAudio;
-    const a = new Audio();
-    a.playsInline = true;
-    a.setAttribute("playsinline", "");
-    a.setAttribute("webkit-playsinline", "");
-    a.preload = "auto";
-    stickySpeakAudio = a;
-    liveAudios.add(a);
-    return a;
-  }
-
-
   function ensureKeeper() {
-    // عنصر جدا برای تلفظ — حلقهٔ پس‌زمینه را قطع نکند
-    if (voiceKeepAudio) return voiceKeepAudio;
+    if (bgKeepAudio) return bgKeepAudio;
     const a = makeHtmlAudio(KEEP_SILENCE);
     a.loop = true;
     a.volume = 0.001;
-    a.setAttribute("data-setdadr-voice", "1");
-    voiceKeepAudio = a;
-    liveAudios.add(a);
+    bgKeepAudio = a;
     return a;
   }
-
-  function wireBgAudioTick(a) {
-    if (bgTickWired || !a) return;
-    bgTickWired = true;
-    lastBgAudioT = 0;
-    const onTu = () => {
-      if (!run || run.paused || soundMuted) return;
-      if (!isAppHidden()) return;
-      // با مینیمایز setInterval می‌میرد؛ تیک را از پخش صدا بران
-      try {
-        const t = Number(a.currentTime) || 0;
-        let dt = t - lastBgAudioT;
-        if (dt < 0) dt = 0.05;
-        if (dt > 1.2) dt = 0.25;
-        lastBgAudioT = t;
-        if (dt > 0.02) {
-          run.left -= dt;
-          maybeAnnounce();
-          if (run.left <= 0) {
-            advance();
-            return;
-          }
-          paintRun(false);
-        }
-      } catch {}
-    };
-    try {
-      a.addEventListener("timeupdate", onTu);
-      a.addEventListener("playing", () => {
-        lastBgAudioT = Number(a.currentTime) || 0;
-      });
-    } catch {}
-  }
-
 
   function wireMediaSessionKeep() {
     try {
@@ -848,15 +693,15 @@
       try {
         if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
       } catch {}
-      try {
-        const a = ensureBgLoop();
-        a.muted = false;
-        a.volume = BG_KEEP_VOL;
-        if (a.paused) a.play().catch(() => {});
-      } catch {}
       startBgKeepAlive();
       startSilentCtxKeep();
-    }, 500);
+      if (!tickIv) {
+        try {
+          run.lastTick = performance.now();
+          loop();
+        } catch {}
+      }
+    }, 1200);
   }
 
   function stopBgHeartbeat() {
@@ -872,104 +717,81 @@
     try {
       if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
     } catch {}
-    let dead = false;
-    if (bgKeepAudio) {
-      try {
-        if (!bgKeepAudio.src && !bgKeepAudio.currentSrc) dead = true;
-      } catch {
-        dead = true;
-      }
-    }
-    if (!bgKeepAudio || dead) {
-      try {
-        if (bgKeepAudio) {
-          liveAudios.delete(bgKeepAudio);
-          try {
-            bgKeepAudio.pause();
-          } catch {}
-        }
-      } catch {}
-      bgKeepAudio = null;
-      bgTickWired = false;
-      const a = ensureBgLoop();
-      a.volume = isAppHidden() ? Math.max(BG_KEEP_VOL, 0.03) : BG_KEEP_VOL;
-      a.muted = false;
-      a.loop = true;
-    } else {
-      try {
-        bgKeepAudio.muted = false;
-        bgKeepAudio.volume = isAppHidden() ? Math.max(BG_KEEP_VOL, 0.03) : BG_KEEP_VOL;
-        bgKeepAudio.loop = true;
-      } catch {}
-    }
+    startSilentCtxKeep();
+    const a = ensureKeeper();
+    const vol = isAppHidden() ? BG_KEEP_VOL : FG_KEEP_VOL;
+    const keepSrc = isAppHidden() ? KEEP_SOFT : KEEP_SILENCE;
     try {
-      const p = bgKeepAudio.play();
-      if (p && typeof p.then === "function") {
-        p.catch(() => {
-          bgKeepAudio = null;
-          bgTickWired = false;
-        });
+      // در پس‌زمینه فایل نرمِ شنیدنی؛ سکوت مطلق را گوشی می‌کشد
+      const wantSoft = /keep-soft\.wav/.test(keepSrc);
+      const onSoft = /keep-soft\.wav/.test(String(a.currentSrc || a.src || ""));
+      if (!keeperVoice) {
+        if (wantSoft && !onSoft) {
+          a.loop = true;
+          a.src = keepSrc;
+        } else if (!wantSoft && !keeperOnSilence(a)) {
+          a.loop = true;
+          a.src = KEEP_SILENCE;
+        }
+        a.muted = false;
+        a.volume = vol;
+        a.loop = true;
+        const p = a.play();
+        if (p && typeof p.catch === "function") {
+          p.catch(() => {
+            try {
+              a.load();
+              a.play().catch(() => {});
+            } catch {}
+          });
+        }
+      } else {
+        try {
+          a.volume = Math.max(a.volume || 0, vol * 0.5);
+        } catch {}
       }
     } catch {}
-    startSilentCtxKeep();
+    // Wake Lock تا مرورگر زود نخوابد (اگر پشتیبانی کند)
+    try {
+      if (isAppHidden() && run && !run.paused && navigator.wakeLock && !startBgKeepAlive._lock) {
+        navigator.wakeLock.request("screen").then((lk) => {
+          startBgKeepAlive._lock = lk;
+          try {
+            lk.addEventListener("release", () => {
+              startBgKeepAlive._lock = null;
+            });
+          } catch {}
+        }).catch(() => {});
+      }
+    } catch {}
     setMediaPlaying(true, (run && (run.title || "تمرین")) || "ست‌یار");
     wireMediaSessionKeep();
-    startBgWatch();
-    requestWakeLock();
     if (isAppHidden()) startBgHeartbeat();
   }
 
   function stopBgKeepAlive() {
     bgKeepOn = false;
     stopBgHeartbeat();
-    stopBgWatch();
     cutKeeperVoice();
     setMediaPlaying(false);
     stopSilentCtxKeep();
-    releaseWakeLock();
     const a = bgKeepAudio;
     if (!a) return;
     try {
-      a.onended = null;
-      a.onerror = null;
       a.pause();
       a.removeAttribute("src");
       a.load();
     } catch {}
-    bgKeepAudio = null;
-    bgTickWired = false;
   }
 
   function resumeBgIfNeeded() {
     if (!run || run.paused || soundMuted) return;
     bgKeepOn = true;
-    unlockAudio();
-    try {
-      if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
-    } catch {}
-    if (bgKeepAudio) {
-      try {
-        bgKeepAudio.muted = false;
-        bgKeepAudio.volume = BG_KEEP_VOL;
-      } catch {}
-      const p = bgKeepAudio.play();
-      if (p && typeof p.then === "function") {
-        p.catch(() => {
-          bgKeepAudio = null;
-          bgTickWired = false;
-          startBgKeepAlive();
-        });
-      }
-    } else {
-      startBgKeepAlive();
-    }
+    startBgKeepAlive();
     startSilentCtxKeep();
     try {
       if (window.speechSynthesis) speechSynthesis.resume();
     } catch {}
-    setMediaPlaying(true, (run && (run.title || "تمرین")) || "ست‌یار");
-    startBgWatch();
-    requestWakeLock();
     if (isAppHidden()) startBgHeartbeat();
     else stopBgHeartbeat();
   }
@@ -1020,16 +842,17 @@
         try {
           a.pause();
         } catch {}
-        if (!handover && voiceKeepAudio === a) {
+        if (!handover && bgKeepAudio === a) {
           try {
             a.loop = true;
             a.volume = 0.001;
             a.src = KEEP_SILENCE;
+            if (bgKeepOn && !soundMuted) {
+              const p = a.play();
+              if (p && typeof p.catch === "function") p.catch(() => {});
+            }
           } catch {}
         }
-        try {
-          if (bgKeepOn && !soundMuted) startBgKeepAlive();
-        } catch {}
         resolve(!!ok && gen === soundGen && !soundMuted);
       }
       handle.finish = finish;
@@ -1149,251 +972,21 @@
     } catch {}
   }
 
-  // پس‌زمینه: اول روی حلقهٔ زندهٔ bgKeep (سشن مدیا)، بعد کیپر آنلاک‌شده
-  function restoreBgKeepAfterCue() {
-    try {
-      if (!bgKeepOn || soundMuted || !run || run.paused) return;
-      const a = ensureBgLoop();
-      a.loop = true;
-      a.muted = false;
-      a.volume = isAppHidden() ? Math.max(BG_KEEP_VOL, 0.03) : BG_KEEP_VOL;
-      try {
-        const want = makeQuietKeepUrl();
-        if (a.src !== want && a.currentSrc !== want) a.src = want;
-      } catch {
-        try {
-          a.src = makeQuietKeepUrl();
-        } catch {}
-      }
-      a.play().catch(() => {});
-      startBgKeepAlive();
-    } catch {}
-  }
-
-  function playCueOnBgKeep(src, vol) {
-    return new Promise((resolve) => {
-      try {
-        if (!src || soundMuted) {
-          resolve(false);
-          return;
-        }
-        startBgKeepAlive();
-        const a = ensureBgLoop();
-        let done = false;
-        const finish = (ok) => {
-          if (done) return;
-          done = true;
-          try {
-            a.onended = null;
-            a.onerror = null;
-            a.onplaying = null;
-          } catch {}
-          restoreBgKeepAfterCue();
-          resolve(!!ok);
-        };
-        a.loop = false;
-        a.muted = false;
-        a.volume = Math.max(0.7, Math.min(1, vol == null ? 1 : Number(vol) || 1));
-        let heard = false;
-        a.onplaying = () => {
-          heard = true;
-        };
-        a.onended = () => finish(true);
-        a.onerror = () => finish(false);
-        a.src = src;
-        const p = a.play();
-        if (p && typeof p.catch === "function") {
-          p.catch(() => finish(false));
-        }
-        // فقط تشخیص شروع؛ بوق را وسط قطع نکن — با onended برگردان
-        setTimeout(() => {
-          if (done) return;
-          if (heard || (!a.paused && (a.currentTime || 0) > 0.02)) {
-            heard = true;
-            // موفق محسوب کن ولی restore را به onended بسپار
-            // اگر onended نیامد، حداکثر بعد از طول فایل برگردان
-            setTimeout(() => {
-              if (!done) finish(true);
-            }, 9000);
-            return;
-          }
-          finish(false);
-        }, 2500);
-      } catch {
-        resolve(false);
-      }
-    });
-  }
-
-  function ensureBgCueRail() {
-    if (bgCueRail) return bgCueRail;
-    const a = makeHtmlAudio(KEEP_SILENCE);
-    a.loop = false;
-    a.volume = 0;
-    a.muted = false;
-    a.setAttribute("data-setdadr-cue", "1");
-    try {
-      a.playsInline = true;
-      a.setAttribute("playsinline", "");
-    } catch {}
-    bgCueRail = a;
-    liveAudios.add(a);
-    try {
-      const p = a.play();
-      if (p && typeof p.then === "function") {
-        p.then(() => {
-          try {
-            a.pause();
-            a.currentTime = 0;
-            a.volume = 0;
-          } catch {}
-        }).catch(() => {});
-      }
-    } catch {}
-    return a;
-  }
-
-  function stopCueRail() {
-    try {
-      beepFourSecWarning._on = false;
-    } catch {}
-    try {
-      beepMidExact._on = false;
-    } catch {}
-    try {
-      const a = bgCueRail;
-      if (!a) return;
-      a.onended = null;
-      a.onerror = null;
-      a.pause();
-      a.volume = 0;
-      a.src = KEEP_SILENCE;
-    } catch {}
-  }
-
-  function playBgCueFile(rel, vol, opts) {
-    if (soundMuted || !rel) return Promise.resolve(false);
-    const o = opts || {};
-    const src = VOICE_BASE + rel + VOICE_Q;
-    const v = Math.max(0.85, Math.min(1, vol == null ? 1 : Number(vol) || 1));
-    const waitMs = Math.max(3000, Math.min(10000, o.waitMs || 8000));
-    unlockAudio();
-    keepSilenceAlive();
-    const a = ensureBgCueRail();
-    try {
-      a.pause();
-    } catch {}
-    return new Promise((resolve) => {
-      let done = false;
-      const finish = (ok, cut) => {
-        if (done) return;
-        done = true;
-        try {
-          a.onended = null;
-          a.onerror = null;
-        } catch {}
-        if (cut !== false) {
-          try {
-            a.pause();
-            a.volume = 0;
-            a.src = KEEP_SILENCE;
-          } catch {}
-        }
-        resolve(!!ok);
-      };
-      try {
-        a.loop = false;
-        a.muted = false;
-        a.volume = v;
-        a.onended = () => finish(true);
-        a.onerror = () => finish(false);
-        a.src = src;
-        const p = a.play();
-        if (p && typeof p.catch === "function") {
-          p.catch(() => finish(false));
-        }
-        // فقط اگر هنوز شروع نشده؛ وسط بوق بلند را قطع نکن
-        setTimeout(() => {
-          if (done) return;
-          if (!a.paused && (a.currentTime || 0) > 0.05) {
-            // هنوز دارد پخش می‌شود — صبر تا onended یا سقف
-            setTimeout(() => {
-              if (!done) finish(true);
-            }, Math.max(500, waitMs - 2800));
-            return;
-          }
-          finish(false);
-        }, 2800);
-      } catch {
-        finish(false);
-      }
-    });
-  }
-
-  function playUnlockedHtmlCue(rel, vol) {
-    if (soundMuted || !rel) return Promise.resolve(false);
-    const src = VOICE_BASE + rel + VOICE_Q;
-    const v = Math.max(0.7, Math.min(1, vol == null ? 1 : Number(vol) || 1));
-    unlockAudio();
-    startBgKeepAlive();
-    startSilentCtxKeep();
-    // ۱) همان عنصر در حال پخش پس‌زمینه (معتبرترین مسیر گوشی)
-    return playCueOnBgKeep(src, v).then((ok) => {
-      if (ok) return true;
-      // ۲) کیپر آنلاک‌شده (همان مسیر ready قبلی)
-      return playOnKeeper(src, v, { startCap: 4500, maxMs: 10000 }).then((ok2) => {
-        if (ok2) return true;
-        try {
-          const a = ensureStickySpeakAudio();
-          a._setdadrGen = soundGen;
-          liveAudios.add(a);
-          a.loop = false;
-          a.muted = false;
-          a.volume = v;
-          a.src = src;
-          const p = a.play();
-          if (p && typeof p.then === "function") {
-            return p.then(() => true).catch(() => false);
-          }
-          return !a.paused;
-        } catch {
-          return false;
-        }
-      });
-    });
-  }
-
   function beepSoftRing(atMs) {
-    if (soundMuted) return;
-    const fire = () => {
-      if (isAppHidden()) {
-        playUnlockedHtmlCue("beep-soft.wav", 0.85);
-        return;
-      }
-      playWarmChime({
-        atMs: 0,
-        stack: false,
-        peak: 0.14,
-        total: 0.26,
-        notes: [
-          { f: 329.63, at: 0, dur: 0.18, g: 0.55 },
-          { f: 392.0, at: 0.05, dur: 0.2, g: 0.4 }
-        ]
-      });
-    };
-    // در پس‌زمینه setTimeout اغلب نمی‌آید — فوری بزن
-    if (isAppHidden() || !atMs) fire();
-    else setTimeout(fire, atMs);
+    playWarmChime({
+      atMs: atMs || 0,
+      stack: false,
+      peak: 0.14,
+      total: 0.26,
+      notes: [
+        { f: 329.63, at: 0, dur: 0.18, g: 0.55 },
+        { f: 392.0, at: 0.05, dur: 0.2, g: 0.4 }
+      ]
+    });
   }
 
+  // استراحت: بوق آرام حدود پنج برابر زنگ شروع
   function beepCalmLong() {
-    if (soundMuted) return;
-    unlockAudio();
-    startBgKeepAlive();
-    if (isAppHidden()) {
-      playUnlockedHtmlCue("beep-rest.wav", 1);
-      return;
-    }
     playWarmChime({
       stack: false,
       peak: 0.95,
@@ -1409,150 +1002,12 @@
 
   function beepSoftDouble() {
     beepSoftRing(0);
-    if (isAppHidden()) {
-      // بدون setTimeout دوم: همان مسیر آنلاک، دوباره بعد از تمام‌شدن کوتاه
-      playUnlockedHtmlCue("beep-soft.wav", 0.85);
-      return;
-    }
     setTimeout(() => beepSoftRing(0), 520);
   }
 
-  function beepClockTick(secLeft) {
-    if (soundMuted) return;
-    if (beepClockTick._busy) return;
-    beepClockTick._busy = true;
-    unlockAudio();
-    const src = VOICE_BASE + "beep-tick.wav" + VOICE_Q;
-    const a = ensureBgCueRail();
-    try {
-      a.pause();
-    } catch {}
-    try {
-      a.onended = null;
-      a.onerror = null;
-      a.loop = false;
-      a.muted = false;
-      a.volume = 1;
-      a.src = src;
-      const p = a.play();
-      if (p && typeof p.catch === "function") {
-        p.catch(() => {
-          try {
-            a.src = src;
-            a.volume = 1;
-            a.play().catch(() => {});
-          } catch {}
-        });
-      }
-    } catch {}
-    setTimeout(() => {
-      beepClockTick._busy = false;
-    }, 220);
-  }
-
-  function beepLastSecond(secLeft) {
-    beepClockTick(secLeft);
-  }
-
-  function beepFourSecWarning() {
-    beepClockTick(4);
-  }
-
-  function beepMidExact() {
-    if (soundMuted) return;
-    if (beepMidExact._on) return;
-    if (nameSpeechGuard) return;
-    beepMidExact._on = true;
-    unlockAudio();
-    try {
-      stopCueRail();
-    } catch {}
-    const src = VOICE_BASE + "beep-mid.wav" + VOICE_Q;
-    const a = ensureBgCueRail();
-    try {
-      a.pause();
-    } catch {}
-    try {
-      a.onended = () => {
-        beepMidExact._on = false;
-        try {
-          a.volume = 0;
-          a.src = KEEP_SILENCE;
-        } catch {}
-      };
-      a.onerror = () => {
-        beepMidExact._on = false;
-      };
-      a.loop = false;
-      a.muted = false;
-      a.volume = 1;
-      a.src = src;
-      const p = a.play();
-      if (p && typeof p.catch === "function") {
-        p.catch(() => {
-          beepMidExact._on = false;
-        });
-      }
-      setTimeout(() => {
-        beepMidExact._on = false;
-      }, 2500);
-    } catch {
-      beepMidExact._on = false;
-    }
-  }
-
-  function beepPhaseStart() {
-    if (soundMuted) return Promise.resolve(false);
-    unlockAudio();
-    const src = VOICE_BASE + "beep-start.wav" + VOICE_Q;
-    const a = ensureBgCueRail();
-    try {
-      a.pause();
-    } catch {}
-    return new Promise((resolve) => {
-      let done = false;
-      const finish = (ok) => {
-        if (done) return;
-        done = true;
-        try {
-          a.onended = null;
-          a.onerror = null;
-        } catch {}
-        resolve(!!ok);
-      };
-      try {
-        a.loop = false;
-        a.muted = false;
-        a.volume = 1;
-        a.onended = () => finish(true);
-        a.onerror = () => finish(false);
-        a.src = src;
-        const p = a.play();
-        if (p && typeof p.then === "function") {
-          p.then(() => {
-            setTimeout(() => finish(true), 1000);
-          }).catch(() => finish(false));
-        } else {
-          setTimeout(() => finish(true), 1000);
-        }
-      } catch {
-        finish(false);
-      }
-    });
-  }
-
+  // ۴ ثانیه آخر: همان حس بوق استراحت — گرم و کشیده
   function beepReadyLikeRest() {
     if (soundMuted) return;
-    unlockAudio();
-    startBgKeepAlive();
-    startSilentCtxKeep();
-    if (isAppHidden()) {
-      playUnlockedHtmlCue("beep-rest.wav", 1);
-      try {
-        buzz([120, 40, 160, 40, 120]);
-      } catch {}
-      return;
-    }
     playWarmChime({
       stack: false,
       peak: 2.2,
@@ -2786,14 +2241,6 @@
       unlockAudio();
       startBgKeepAlive();
       startSilentCtxKeep();
-      // پس‌زمینه: مستقیم HTML
-      if (isAppHidden()) {
-        try {
-          const a = makeHtmlAudio(VOICE_BASE + MID_HALF_CLIP + VOICE_Q);
-          const ok = await playHtmlAudioEl(a, 1, 8000);
-          if (ok) return true;
-        } catch {}
-      }
       try {
         if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
       } catch {}
@@ -3532,58 +2979,82 @@
   async function speakPhase(step) {
     return queueAnnounce(async (seq) => {
       if (!announceAlive(seq)) return;
+      const isRest = step.kind === "rest-set" || step.kind === "rest-move";
       const gen = soundGen;
       const tok = speakToken;
-      const alive = () => announceAlive(seq) && soundAlive(gen, tok) && run && run.steps[run.i] === step;
+      const alive = () => announceAlive(seq) && soundAlive(gen, tok);
+      buzz(step.kind === "work" ? [80, 35, 90] : [55, 30, 70]);
       unlockAudio();
+      startBgKeepAlive();
+      startSilentCtxKeep();
+      try {
+        if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
+      } catch {}
       if (step.kind === "work") {
         const nm = normSpeakKey(step.name);
+        // اول اسم را بگو (قبل از بوق طولانی) تا ژست لمس از دست نرود
         if (!nm || !alive()) return;
-        // همزمان با بوق شروع، اسم را گرم کن تا بعد از بوق تأخیر نباشد
+        let ok = false;
         try {
-          warmMoveVoice(nm);
-        } catch {}
-        try {
-          await beepPhaseStart();
+          ok = await playPrimedWorkName(nm, 1);
         } catch {}
         if (!alive()) return;
-        nameSpeechGuard = true;
-        const guardTimer = setTimeout(() => {
-          nameSpeechGuard = false;
-        }, 10000);
-        try {
-          let ok = false;
+        if (!ok) {
           try {
-            ok = !!(await speakMoveNameOnly(nm, 1));
+            ok = await speakMoveNameOnly(nm, 1);
           } catch {}
-          if (!ok && alive()) {
-            try {
-              await speakFaAny(nm, 1);
-            } catch {}
-          }
-        } finally {
-          clearTimeout(guardTimer);
-          nameSpeechGuard = false;
+        }
+        if (!alive()) return;
+        if (!ok) {
+          try {
+            ok = !!(await speakFaAny(nm, 1));
+          } catch {}
+        }
+        if (!alive()) return;
+        if (!ok) {
+          try {
+            const clipRel =
+              MOVE_CLIP[nm] ||
+              MOVE_CLIP[String(step.name || "").trim()] ||
+              "";
+            if (clipRel) ok = !!(await playVoiceFileHtml(clipRel, 1));
+          } catch {}
+        }
+        if (!alive()) return;
+        // بوق کوتاه بعد از اسم — قطع فوری نکن
+        beepSoftRing(0);
+        const next = run && run.steps[run.i + 1];
+        if (!next) {
+          await sleep(160);
+          if (!alive()) return;
+          await speakFaAny("حرکتی نیست، آخرین حرکت بود", 1);
         }
         return;
       }
-      try {
-        stopCueRail();
-      } catch {}
-      await sleep(140);
-      if (!alive()) return;
-      nameSpeechGuard = true;
-      const guardTimer = setTimeout(() => {
-        nameSpeechGuard = false;
-      }, 10000);
-      try {
+      if (isRest) beepCalmLong();
+      else beepSoftRing(0);
+      if (step.kind === "rest-set") {
+        // بین ست: بوق استراحت را قطع کن، بعد اسم بعدی
+        await sleep(220);
+        stopBeep();
+        unlockAudio();
+        startBgKeepAlive();
+        startSilentCtxKeep();
+        if (!alive()) return;
         await speakNextMoveName(step.nextName || "", seq);
-      } finally {
-        clearTimeout(guardTimer);
-        nameSpeechGuard = false;
+        return;
       }
+      // استراحت بین حرکت: بوق را قطع کن، بعد اسم بعدی
+      await sleep(180);
+      stopBeep();
+      unlockAudio();
+      startBgKeepAlive();
+      startSilentCtxKeep();
+      if (!alive()) return;
+      if (isRest || step.nextName) await speakNextMoveName(step.nextName || "", seq);
     });
   }
+
 
   const MUSCLE_META = {
     chest: {
@@ -3936,35 +3407,25 @@
 
   async function speakCueLine(line, clipRel) {
     if (soundMuted || !line) return false;
-    const gen = soundGen;
-    unlockAudio();
-    startBgKeepAlive();
-    try {
-      if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
-    } catch {}
     let ok = false;
     if (clipRel) {
       try {
         ok = !!(await playVoiceFile(clipRel, 1));
       } catch {}
-      if (ok && gen === soundGen) return true;
+      if (ok) return true;
       try {
         ok = !!(await playVoiceFileHtml(clipRel, 1));
       } catch {}
-      if (ok && gen === soundGen) return true;
+      if (ok) return true;
     }
     try {
       ok = !!(await playBakedDynClip(line, 1));
     } catch {}
-    if (ok && gen === soundGen) return true;
-    // اگر کلود قبلاً مرده بود، یک شانس تازه برای کیوهای کوتاه
-    try {
-      cloudTtsDeadUntil = 0;
-    } catch {}
+    if (ok) return true;
     try {
       ok = !!(await speakFaAny(line, 1));
     } catch {}
-    if (ok && gen === soundGen) return true;
+    if (ok) return true;
     try {
       ok = !!(await speakSynthLang(line, 1, "fa", {
         noCancel: true,
@@ -3972,45 +3433,61 @@
         pitch: 1.0
       }));
     } catch {}
-    return !!(ok && gen === soundGen);
+    return !!ok;
   }
 
   const CUE_CLIPS = {
-    half: "dyn/5b47ffb16507f9a1.mp3"
+    half: "dyn/5b47ffb16507f9a1.mp3",
+    q1: "dyn/bb7a803bd57eb121.mp3",
+    q3: "dyn/5f8689243f704f73.mp3",
+    good: "dyn/69e150b185a2a243.mp3"
   };
 
   async function speakMidHalf() {
+    let ok = false;
+    try {
+      ok = !!(await playMidHalfClipDirect());
+    } catch {}
+    if (!ok) {
+      try {
+        ok = !!(await speakCueLine("نصفشو رفتی", CUE_CLIPS.half));
+      } catch {}
+    }
+    try {
+      const leftSec = Math.max(1, Math.round((run && run.left) || 0));
+      if (leftSec >= 3) {
+        await sleep(160);
+        await speakCueLine(faNum(leftSec) + " ثانیه");
+      }
+    } catch {}
+    return !!ok;
+  }
+
+  async function speakQuarterCue(kind) {
+    if (kind === "q1") {
+      let ok = false;
+      if (CUE_CLIPS.q1.indexOf("/x.mp3") < 0) {
+        ok = await speakCueLine("یه ربعش رفت", CUE_CLIPS.q1);
+      }
+      if (!ok) ok = await speakCueLine("یه ربعش رفت");
+      if (!ok) ok = await speakCueLine("شروع خوب");
+      return !!ok;
+    }
+    if (kind === "q3") {
+      let ok = false;
+      if (CUE_CLIPS.q3.indexOf("/x.mp3") < 0) {
+        ok = await speakCueLine("یه ربع مونده", CUE_CLIPS.q3);
+      }
+      if (!ok) ok = await speakCueLine("یه ربع مونده");
+      if (!ok) {
+        const leftSec = Math.max(1, Math.round((run && run.left) || 0));
+        ok = await speakCueLine(faNum(leftSec) + " ثانیه");
+      }
+      return !!ok;
+    }
     return false;
   }
 
-  async function speakPercentGone(pct) {
-    const p = Math.max(5, Math.min(95, Math.round(Number(pct) || 0)));
-    const gen = soundGen;
-    unlockAudio();
-    keepSilenceAlive();
-    const clip = p >= 50 ? "cue-pct-70.mp3" : "cue-pct-30.mp3";
-    try {
-      const ok = !!(await playOnKeeper(VOICE_BASE + clip + VOICE_Q, 1, {
-        startCap: 2200,
-        maxMs: 8000,
-        gen
-      }));
-      if (ok && gen === soundGen) return true;
-    } catch {}
-    try {
-      const ok = !!(await playBgCueFile(clip, 1, { waitMs: 5000 }));
-      if (ok && gen === soundGen) return true;
-    } catch {}
-    const line = faNum(p) + " درصد";
-    try {
-      cloudTtsDeadUntil = 0;
-    } catch {}
-    try {
-      return !!(await speakFaAny(line, 1));
-    } catch {
-      return false;
-    }
-  }
 
   async function speakDoneAmount(sec, total) {
     const n = Math.round(sec);
@@ -4745,59 +4222,46 @@
     run.prevLeftCeil = cur;
     if (prev == null) return;
 
+    // کیوهای پیشرفت کار: ۱/۴، نصف(+ثانیه)، ۳/۴
     if (step.kind === "work") {
       const total = Math.max(1, Number(run.phaseDur) || 0);
-      const elapsed = Math.max(0, total - (Number(run.left) || 0));
-      function fireAtFilled(pct, keySuffix, speakFn) {
-        if (total < 12) return;
-        const key = run.i + ":" + keySuffix;
-        if (run.announced[key]) return;
-        // یک ثانیه زودتر؛ اگر حتی یک ثانیه دیر شد اصلاً نگو
-        const target = total * (pct / 100);
-        const fireAt = Math.max(0, target - 1);
-        const expireAt = fireAt + 1;
-        if (elapsed > expireAt) {
-          run.announced[key] = true;
-          return;
+      if (total >= 16) {
+        const q1Left = total * 0.75;
+        const q1Key = run.i + ":q1";
+        if (!run.announced[q1Key] && run.left <= q1Left) {
+          run.announced[q1Key] = true;
+          try {
+            speakQuarterCue("q1");
+          } catch {}
         }
-        if (elapsed < fireAt) return;
-        if (nameSpeechGuard) return;
-        run.announced[key] = true;
-        try {
-          stopCueRail();
-        } catch {}
-        try {
-          speakFn();
-        } catch {}
       }
-      fireAtFilled(30, "pct30", () => speakPercentGone(30));
-      fireAtFilled(70, "pct70", () => speakPercentGone(70));
-
-      if (total >= 10 && !nameSpeechGuard) {
-        const midKey = run.i + ":midBeep";
-        const midMark = Math.ceil(total / 2);
-        if (!run.announced[midKey] && prev > midMark && cur <= midMark) {
+      if (total >= 10) {
+        const midKey = run.i + ":halfPlus";
+        const halfLeft = total / 2;
+        if (!run.announced[midKey] && run.left <= halfLeft) {
           run.announced[midKey] = true;
-          beepMidExact();
+          try {
+            speakMidHalf();
+          } catch {}
+        }
+      }
+      if (total >= 16) {
+        const q3Left = total * 0.25;
+        const q3Key = run.i + ":q3";
+        if (!run.announced[q3Key] && run.left <= q3Left && run.left > 4.2) {
+          run.announced[q3Key] = true;
+          try {
+            speakQuarterCue("q3");
+          } catch {}
         }
       }
     }
 
-    // ۴…۱ مثل v256 ولی روی عبور دقیق ثانیه — فاصله یکنواخت، یک بوق در هر ثانیه
-    if (run.phaseDur > 5) {
-      const leftNow = Number(run.left) || 0;
-      let prevLeft = run.prevLeftExact;
-      if (prevLeft == null || !Number.isFinite(prevLeft)) prevLeft = leftNow;
-      run.prevLeftExact = leftNow;
-      for (let s = 4; s >= 1; s--) {
-        const k = run.i + ":tick" + s;
-        if (run.announced[k]) continue;
-        if (prevLeft > s && leftNow <= s) {
-          run.announced[k] = true;
-          beepClockTick(s);
-          break;
-        }
-      }
+    // ۴ ثانیه مانده: بوق تمیز و بلند
+    const softKey = run.i + ":soft4";
+    if (run.phaseDur > 5 && !run.announced[softKey] && prev > 4 && cur <= 4) {
+      run.announced[softKey] = true;
+      beepReadyLikeRest();
     }
   }
 
@@ -4825,7 +4289,6 @@
     run.announced = {};
     run.progressLabel = "";
     run.prevLeftCeil = Math.ceil(step.dur);
-    run.prevLeftExact = step.dur;
     run.lastTick = performance.now();
     paintRun(false);
     unlockAudio();
@@ -5311,34 +4774,7 @@
     });
   }
 
-  
-  function clampPickWork(n) {
-    n = Math.round(Number(n) || 40);
-    if (!Number.isFinite(n)) n = 40;
-    return Math.max(5, Math.min(600, Math.round(n / 5) * 5));
-  }
-  function syncPickWorkUi(val) {
-    const v = String(clampPickWork(val));
-    const el = $("#pickWork");
-    const wheel = $("#pickWorkWheel");
-    if (el) el.value = v;
-    if (wheel) wheel.value = v;
-  }
-  function bumpPickWork(delta) {
-    const el = $("#pickWork");
-    if (!el) return;
-    syncPickWorkUi(clampPickWork(el.value) + delta * 5);
-  }
-  const btnSecMinus = $("#btnSecMinus");
-  const btnSecPlus = $("#btnSecPlus");
-  if (btnSecMinus) btnSecMinus.addEventListener("click", (e) => { e.preventDefault(); bumpPickWork(-1); });
-  if (btnSecPlus) btnSecPlus.addEventListener("click", (e) => { e.preventDefault(); bumpPickWork(1); });
-  const pickWorkEl = $("#pickWork");
-  const pickWorkWheel = $("#pickWorkWheel");
-  if (pickWorkEl) pickWorkEl.addEventListener("change", () => syncPickWorkUi(pickWorkEl.value));
-  if (pickWorkWheel) pickWorkWheel.addEventListener("change", () => syncPickWorkUi(pickWorkWheel.value));
-
-$("#addToSetForm").addEventListener("submit", (e) => {
+  $("#addToSetForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const name = ($("#pickMoveName").value || "").trim();
     if (!name) {
@@ -5430,21 +4866,13 @@ $("#addToSetForm").addEventListener("submit", (e) => {
       resumeBgIfNeeded();
       if (run && !run.paused) {
         run.lastTick = performance.now();
-        loop();
+        if (!tickIv) loop();
       }
     } else if (run && !run.paused && !soundMuted) {
+      // اپ دیگر باز شد ولی تمرین باز است — صدا کم ولی زنده بماند
       bgKeepOn = true;
-      unlockAudio();
-      startBgKeepAlive();
       resumeBgIfNeeded();
       startBgHeartbeat();
-      startBgWatch();
-      requestWakeLock();
-      try {
-        const k = ensureKeeper();
-        k.muted = false;
-        if (k.paused) k.play().catch(() => {});
-      } catch {}
     }
   });
   window.addEventListener("pagehide", () => {
@@ -5452,8 +4880,6 @@ $("#addToSetForm").addEventListener("submit", (e) => {
       bgKeepOn = true;
       resumeBgIfNeeded();
       startBgHeartbeat();
-      startBgWatch();
-      requestWakeLock();
     }
   });
   window.addEventListener("pageshow", () => {
