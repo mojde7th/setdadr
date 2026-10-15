@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "233";
+  const APP_VER = "234";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -70,7 +70,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=233";
+  const VOICE_Q = "?v=234";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -1263,9 +1263,15 @@
     try {
       stopBeep();
     } catch {}
-    // نرم و کم‌تیز؛ ۴ث کمی بلندتر از ۱ث
-    const vol = secLeft >= 4 ? 1 : secLeft >= 2 ? 0.92 : 0.88;
-    playBgCueFile("beep-rest.wav", vol);
+    // بوق استراحت بلند (~۳٫۶ث) روی کیپر تا در پس‌زمینه قطع نشود
+    const vol = secLeft >= 4 ? 1 : secLeft >= 2 ? 0.95 : 0.9;
+    const src = VOICE_BASE + "beep-rest.wav" + VOICE_Q;
+    playOnKeeper(src, vol, {
+      startCap: isAppHidden() ? 3500 : 2200,
+      maxMs: 6000
+    }).then((ok) => {
+      if (!ok) playBgCueFile("beep-rest.wav", vol);
+    });
   }
 
   function beepReadyLikeRest() {
@@ -3639,34 +3645,33 @@
   };
 
   async function speakMidHalf() {
-    // وسط: فقط «نصفشو رفتی» — بدون بوق/مسیر دوم
-    try {
-      stopBeep();
-    } catch {}
-    let ok = false;
-    try {
-      ok = !!(await playMidHalfClipDirect());
-    } catch {}
-    if (!ok) {
-      try {
-        ok = !!(await playOnKeeper(VOICE_BASE + CUE_CLIPS.half + VOICE_Q, 1, {
-          startCap: 1800,
-          maxMs: 5000
-        }));
-      } catch {}
-    }
-    return !!ok;
+    // فقط درصد ۲۰ و ۶۰
+    return false;
   }
 
   async function speakPercentGone(pct) {
-    // فقط «رفت» — نه مونده، نه ربع
     const p = Math.max(5, Math.min(95, Math.round(Number(pct) || 0)));
     const line = faNum(p) + " درصد رفتی";
+    const gen = soundGen;
+    unlockAudio();
+    startBgKeepAlive();
+    try {
+      stopBeep();
+    } catch {}
+    // اول کیپر با سقف کافی تا وسط جمله قطع نشود
+    try {
+      const baked = await playBakedDynClip(line, 1);
+      if (baked && gen === soundGen) return true;
+    } catch {}
+    try {
+      cloudTtsDeadUntil = 0;
+    } catch {}
+    try {
+      const ok = !!(await speakFaAny(line, 1));
+      if (ok && gen === soundGen) return true;
+    } catch {}
     return !!(await speakCueLine(line));
   }
-
-
-
 
   async function speakDoneAmount(sec, total) {
     const n = Math.round(sec);
@@ -3684,7 +3689,7 @@
         if (sub) sub.textContent = "";
       } catch {}
       const phrase =
-        pct >= 45 ? "نصفشو رفتی" : faNum(pct) + " درصد رفتی";
+        faNum(pct) + " درصد رفتی";
       await speakFaAny(phrase, 1);
       if (!live()) return;
     });
@@ -4415,14 +4420,13 @@
     run.prevLeftCeil = cur;
     if (prev == null) return;
 
-    // درصدِ رفته — ۲ ثانیه زودتر از نقطهٔ هدف؛ وسط هم نصفشو رفتی
     if (step.kind === "work") {
       const total = Math.max(1, Number(run.phaseDur) || 0);
-      // نقطهٔ اعلام = (۱ - درصد/۱۰۰)*کل + ۲ث
       function fireAtGone(pct, keySuffix, speakFn) {
         if (total < 14) return;
         const key = run.i + ":" + keySuffix;
         if (run.announced[key]) return;
+        // ۲ ثانیه زودتر تا جمله کامل شنیده شود
         const targetLeft = total * (1 - pct / 100) + 2;
         if (run.left <= targetLeft) {
           run.announced[key] = true;
@@ -4431,22 +4435,12 @@
           } catch {}
         }
       }
-      // حدود ۲۵٪ و ۸۰٪ رفته (+ وسط)
-      fireAtGone(25, "pct25", () => speakPercentGone(25));
-      if (total >= 10) {
-        const midKey = run.i + ":halfPlus";
-        const halfLeft = total / 2 + 2;
-        if (!run.announced[midKey] && run.left <= halfLeft) {
-          run.announced[midKey] = true;
-          try {
-            speakMidHalf();
-          } catch {}
-        }
-      }
-      fireAtGone(80, "pct80", () => speakPercentGone(80));
+      // فقط یک‌بار ۲۰٪ و یک‌بار ۶۰٪
+      fireAtGone(20, "pct20", () => speakPercentGone(20));
+      fireAtGone(60, "pct60", () => speakPercentGone(60));
     }
 
-    // ثانیه‌های آخر: چند بوق نرم کوتاه (۴→۱) تا شمارش حس شود
+    // ثانیه‌های آخر: بوق ۴→۱
     if (run.phaseDur > 5) {
       for (let s = 4; s >= 1; s--) {
         const k = run.i + ":tick" + s;
