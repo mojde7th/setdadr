@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "171";
+  const APP_VER = "172";
   // باشگاه: بلند بدون خش — گین معقول، بدون دیستورت WaveShaper
   const VOICE_LOUD = 56;
   const VOICE_STAT_LOUD = 14;
@@ -2673,6 +2673,23 @@
         if (!ok) ok = await speakMoveNameOnly(nm, 1);
         if (!alive()) return;
         if (!ok) await speakFaAny(nm, 1);
+        if (!alive()) return;
+        // حرکت آخر مدار: حرکت بعدی را هم بگو؛ اگر آخر کل ست بود بگو آخرین حرکت
+        const isLastInCircuit =
+          Number(step.moveIndex) > 0 &&
+          Number(step.moveIndex) === Number(step.moveCount);
+        if (isLastInCircuit) {
+          const next = run && run.steps[run.i + 1];
+          await sleep(100);
+          if (!alive()) return;
+          if (!next) {
+            await speakFaAny("آخرین حرکت", 1);
+          } else {
+            const nxt =
+              next.nextName || (next.kind === "work" ? next.name : "");
+            if (nxt) await speakNextMoveName(nxt, seq);
+          }
+        }
         return;
       }
       if (step.kind === "rest-set") {
@@ -3605,7 +3622,7 @@
 
     function hideNext() {
       card.hidden = true;
-      card.classList.remove("is-rest-next", "is-next-only");
+      card.classList.remove("is-rest-next", "is-next-only", "is-finale");
       if (arrowLead) arrowLead.hidden = true;
       if (arrow) arrow.hidden = true;
       if (row2) row2.hidden = true;
@@ -3668,10 +3685,25 @@
     card.classList.remove("is-rest-next");
     const next = run.steps[run.i + 1];
     if (!next) {
-      hideNext();
+      // آخرین حرکت کل ست
+      card.hidden = false;
+      card.classList.add("is-rest-next", "is-next-only", "is-finale");
+      if (nextLbl) {
+        nextLbl.hidden = false;
+        nextLbl.textContent = "پایان ست";
+      }
+      if (arrowLead) {
+        arrowLead.hidden = false;
+        arrowLead.textContent = "🎉";
+      }
+      flow1.textContent = "آفرین، تموم شد";
+      if (flow2) flow2.textContent = "";
+      if (row2) row2.hidden = true;
+      if (arrow) arrow.hidden = true;
       return;
     }
 
+    card.classList.remove("is-finale");
     if (next.kind === "work") {
       showNextMoveOnly(next.name);
       return;
@@ -3808,8 +3840,10 @@
       toFaDigits(rounds) + "<span>/</span>" + toFaDigits(rounds);
     const msg = $("#doneMsg");
     if (msg) {
-      msg.textContent = "آفرین، تمرین تمام شد";
+      msg.textContent = "🎉 آفرین، تمرین تمام شد 🏆";
     }
+    const kick = document.querySelector(".done-kicker");
+    if (kick) kick.textContent = "✨ داشبورد پایان تمرین ✨";
     renderDoneStats(stats);
     show("done");
     Promise.resolve()

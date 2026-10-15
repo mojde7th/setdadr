@@ -1175,3 +1175,22 @@ input[type="text"], input[type="number"] {
   font: 900 clamp(18px, 4.5vw, 26px) var(--font);
   color: #f6d7a4;
 }
+
+/* v172 finale */
+.done-emoji {
+  font-size: clamp(48px, 14vw, 72px);
+  line-height: 1;
+  margin: 4px 0 8px;
+  filter: drop-shadow(0 8px 18px rgba(232, 165, 75, 0.35));
+}
+.next-card.is-finale {
+  border-color: rgba(232, 165, 75, 0.55);
+  background: linear-gradient(160deg, rgba(232,165,75,.2), rgba(20,17,13,.92));
+}
+.next-card.is-finale .next-label {
+  color: var(--accent);
+  font-weight: 900;
+}
+.next-card.is-finale #flow1 {
+  font-size: clamp(22px, 5.5vw, 32px);
+}
