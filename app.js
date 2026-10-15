@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "217";
+  const APP_VER = "218";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -70,7 +70,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=203";
+  const VOICE_Q = "?v=218";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -87,8 +87,8 @@
   let lastBgAudioT = 0;
   let wakeLockSentinel = null;
   let quietKeepUrl = "";
-  const BG_KEEP_VOL = 0.004;
-  const FG_KEEP_VOL = 0.004;
+  const BG_KEEP_VOL = 0.008;
+  const FG_KEEP_VOL = 0.008;
   // سرور دیلارا ابری دائمی (بدون لپ‌تاپ) + اختیاری تونل محلی
   const TTS_API_LS = "setdadr-tts-api";
   const CLOUD_EDGE_TTS = "https://edge-tts.vercel.app/api/tts";
@@ -393,6 +393,16 @@
       }
       const p = a.play();
       if (p && typeof p.catch === "function") p.catch(() => {});
+    } catch {}
+    // پیش‌گرم بوق‌ها تا قبل از مینیمایز در کش/آنلاک باشند
+    try {
+      ["beep-rest.wav", "beep-soft.wav"].forEach((rel) => {
+        const u = VOICE_BASE + rel + VOICE_Q;
+        const pre = new Audio(u);
+        pre.preload = "auto";
+        pre.load();
+      });
+      ensureStickySpeakAudio();
     } catch {}
     if (!speechWarmed) {
       speechWarmed = true;
@@ -715,7 +725,7 @@
       w(36, "data");
       view.setUint32(40, n * 2, true);
       for (let i = 0; i < n; i++) {
-        const sample = (Math.random() * 2 - 1) * 0.00035;
+        const sample = (Math.random() * 2 - 1) * 0.0012;
         view.setInt16(44 + i * 2, (sample * 32767) | 0, true);
       }
       quietKeepUrl = URL.createObjectURL(new Blob([data], { type: "audio/wav" }));
@@ -880,13 +890,13 @@
       bgKeepAudio = null;
       bgTickWired = false;
       const a = ensureBgLoop();
-      a.volume = BG_KEEP_VOL;
+      a.volume = isAppHidden() ? Math.max(BG_KEEP_VOL, 0.03) : BG_KEEP_VOL;
       a.muted = false;
       a.loop = true;
     } else {
       try {
         bgKeepAudio.muted = false;
-        bgKeepAudio.volume = BG_KEEP_VOL;
+        bgKeepAudio.volume = isAppHidden() ? Math.max(BG_KEEP_VOL, 0.03) : BG_KEEP_VOL;
         bgKeepAudio.loop = true;
       } catch {}
     }
@@ -1137,22 +1147,136 @@
     } catch {}
   }
 
+  // پس‌زمینه: اول روی حلقهٔ زندهٔ bgKeep (سشن مدیا)، بعد کیپر آنلاک‌شده
+  function restoreBgKeepAfterCue() {
+    try {
+      if (!bgKeepOn || soundMuted || !run || run.paused) return;
+      const a = ensureBgLoop();
+      a.loop = true;
+      a.muted = false;
+      a.volume = isAppHidden() ? Math.max(BG_KEEP_VOL, 0.03) : BG_KEEP_VOL;
+      try {
+        const want = makeQuietKeepUrl();
+        if (a.src !== want && a.currentSrc !== want) a.src = want;
+      } catch {
+        try {
+          a.src = makeQuietKeepUrl();
+        } catch {}
+      }
+      a.play().catch(() => {});
+      startBgKeepAlive();
+    } catch {}
+  }
+
+  function playCueOnBgKeep(src, vol) {
+    return new Promise((resolve) => {
+      try {
+        if (!src || soundMuted) {
+          resolve(false);
+          return;
+        }
+        startBgKeepAlive();
+        const a = ensureBgLoop();
+        let done = false;
+        const finish = (ok) => {
+          if (done) return;
+          done = true;
+          try {
+            a.onended = null;
+            a.onerror = null;
+            a.onplaying = null;
+          } catch {}
+          restoreBgKeepAfterCue();
+          resolve(!!ok);
+        };
+        a.loop = false;
+        a.muted = false;
+        a.volume = Math.max(0.7, Math.min(1, vol == null ? 1 : Number(vol) || 1));
+        let heard = false;
+        a.onplaying = () => {
+          heard = true;
+        };
+        a.onended = () => finish(true);
+        a.onerror = () => finish(false);
+        a.src = src;
+        const p = a.play();
+        if (p && typeof p.catch === "function") {
+          p.catch(() => finish(false));
+        }
+        // فقط تشخیص شروع؛ بوق را وسط قطع نکن — با onended برگردان
+        setTimeout(() => {
+          if (done) return;
+          if (heard || (!a.paused && (a.currentTime || 0) > 0.02)) {
+            heard = true;
+            // موفق محسوب کن ولی restore را به onended بسپار
+            // اگر onended نیامد، حداکثر بعد از طول فایل برگردان
+            setTimeout(() => {
+              if (!done) finish(true);
+            }, 9000);
+            return;
+          }
+          finish(false);
+        }, 2500);
+      } catch {
+        resolve(false);
+      }
+    });
+  }
+
+  function playUnlockedHtmlCue(rel, vol) {
+    if (soundMuted || !rel) return Promise.resolve(false);
+    const src = VOICE_BASE + rel + VOICE_Q;
+    const v = Math.max(0.7, Math.min(1, vol == null ? 1 : Number(vol) || 1));
+    unlockAudio();
+    startBgKeepAlive();
+    startSilentCtxKeep();
+    // ۱) همان عنصر در حال پخش پس‌زمینه (معتبرترین مسیر گوشی)
+    return playCueOnBgKeep(src, v).then((ok) => {
+      if (ok) return true;
+      // ۲) کیپر آنلاک‌شده (همان مسیر ready قبلی)
+      return playOnKeeper(src, v, { startCap: 4500, maxMs: 10000 }).then((ok2) => {
+        if (ok2) return true;
+        try {
+          const a = ensureStickySpeakAudio();
+          a._setdadrGen = soundGen;
+          liveAudios.add(a);
+          a.loop = false;
+          a.muted = false;
+          a.volume = v;
+          a.src = src;
+          const p = a.play();
+          if (p && typeof p.then === "function") {
+            return p.then(() => true).catch(() => false);
+          }
+          return !a.paused;
+        } catch {
+          return false;
+        }
+      });
+    });
+  }
+
   function beepSoftRing(atMs) {
     if (soundMuted) return;
-    if (isAppHidden()) {
-      setTimeout(() => playHtmlBeep("beep-soft.wav", 0.7), atMs || 0);
-      return;
-    }
-    playWarmChime({
-      atMs: atMs || 0,
-      stack: false,
-      peak: 0.14,
-      total: 0.26,
-      notes: [
-        { f: 329.63, at: 0, dur: 0.18, g: 0.55 },
-        { f: 392.0, at: 0.05, dur: 0.2, g: 0.4 }
-      ]
-    });
+    const fire = () => {
+      if (isAppHidden()) {
+        playUnlockedHtmlCue("beep-soft.wav", 0.85);
+        return;
+      }
+      playWarmChime({
+        atMs: 0,
+        stack: false,
+        peak: 0.14,
+        total: 0.26,
+        notes: [
+          { f: 329.63, at: 0, dur: 0.18, g: 0.55 },
+          { f: 392.0, at: 0.05, dur: 0.2, g: 0.4 }
+        ]
+      });
+    };
+    // در پس‌زمینه setTimeout اغلب نمی‌آید — فوری بزن
+    if (isAppHidden() || !atMs) fire();
+    else setTimeout(fire, atMs);
   }
 
   function beepCalmLong() {
@@ -1160,7 +1284,7 @@
     unlockAudio();
     startBgKeepAlive();
     if (isAppHidden()) {
-      playHtmlBeep("beep-rest.wav", 0.95);
+      playUnlockedHtmlCue("beep-rest.wav", 1);
       return;
     }
     playWarmChime({
@@ -1178,29 +1302,25 @@
 
   function beepSoftDouble() {
     beepSoftRing(0);
+    if (isAppHidden()) {
+      // بدون setTimeout دوم: همان مسیر آنلاک، دوباره بعد از تمام‌شدن کوتاه
+      playUnlockedHtmlCue("beep-soft.wav", 0.85);
+      return;
+    }
     setTimeout(() => beepSoftRing(0), 520);
   }
 
-  function playHtmlBeep(rel, vol) {
-    if (soundMuted || !rel) return;
-    try {
-      unlockAudio();
-      startBgKeepAlive();
-      const a = makeHtmlAudio(VOICE_BASE + rel + VOICE_Q);
-      a.loop = false;
-      const v = vol == null ? 0.95 : vol;
-      const p = playHtmlAudioEl(a, v, 8000);
-      if (p && typeof p.catch === "function") p.catch(() => {});
-    } catch {}
-  }
-
-  // ۴ ثانیه آخر: بوق استراحت — در پس‌زمینه فقط بوق فایل (نه ready/آماده)
+  // ۴ ثانیه آخر: بوق استراحت — پس‌زمینه همان مسیر unlocked HTML (نه آماده)
   function beepReadyLikeRest() {
     if (soundMuted) return;
     unlockAudio();
     startBgKeepAlive();
+    startSilentCtxKeep();
     if (isAppHidden()) {
-      playHtmlBeep("beep-rest.wav", 1);
+      playUnlockedHtmlCue("beep-rest.wav", 1);
+      try {
+        buzz([120, 40, 160, 40, 120]);
+      } catch {}
       return;
     }
     playWarmChime({
@@ -5057,10 +5177,17 @@
       }
     } else if (run && !run.paused && !soundMuted) {
       bgKeepOn = true;
+      unlockAudio();
+      startBgKeepAlive();
       resumeBgIfNeeded();
       startBgHeartbeat();
       startBgWatch();
       requestWakeLock();
+      try {
+        const k = ensureKeeper();
+        k.muted = false;
+        if (k.paused) k.play().catch(() => {});
+      } catch {}
     }
   });
   window.addEventListener("pagehide", () => {

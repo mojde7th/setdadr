@@ -186,7 +186,7 @@
         location.reload();
       });
       navigator.serviceWorker
-        .register("./sw.js?v=217", { updateViaCache: "none" })
+        .register("./sw.js?v=218", { updateViaCache: "none" })
         .then(function (reg) {
           reg.update();
           if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
