@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "207";
+  const APP_VER = "208";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -79,6 +79,9 @@
   let bgKeepOn = false;
   let silentCtxKeep = null;
   let silentCtxGain = null;
+  let bgHeartbeatIv = 0;
+  const BG_KEEP_VOL = 0.04;
+  const FG_KEEP_VOL = 0.002;
   // سرور دیلارا ابری دائمی (بدون لپ‌تاپ) + اختیاری تونل محلی
   const TTS_API_LS = "setdadr-tts-api";
   const CLOUD_EDGE_TTS = "https://edge-tts.vercel.app/api/tts";
@@ -517,12 +520,23 @@
       if (audioCtx.state === "suspended") {
         audioCtx.resume().catch(() => {});
       }
-      if (silentCtxKeep) return true;
+      const want = isAppHidden() ? 0.006 : 0.00012;
+      if (silentCtxKeep && silentCtxGain) {
+        try {
+          silentCtxGain.gain.setValueAtTime(want, audioCtx.currentTime);
+        } catch {
+          try {
+            silentCtxGain.gain.value = want;
+          } catch {}
+        }
+        return true;
+      }
       const g = audioCtx.createGain();
-      g.gain.value = 0.00008;
+      g.gain.value = want;
       g.connect(audioCtx.destination);
       const o = audioCtx.createOscillator();
-      o.frequency.value = 28;
+      o.type = "sine";
+      o.frequency.value = isAppHidden() ? 55 : 28;
       o.connect(g);
       o.start();
       silentCtxKeep = o;
@@ -655,6 +669,46 @@
     return a;
   }
 
+  function wireMediaSessionKeep() {
+    try {
+      if (!navigator.mediaSession) return;
+      const kick = () => {
+        if (soundMuted || !run || run.paused) return;
+        startBgKeepAlive();
+        startSilentCtxKeep();
+      };
+      // سیستم‌عامل با زدن مکث نتواند سشن تمرین را بکشد
+      navigator.mediaSession.setActionHandler("pause", kick);
+      navigator.mediaSession.setActionHandler("play", kick);
+      navigator.mediaSession.setActionHandler("stop", kick);
+    } catch {}
+  }
+
+  function startBgHeartbeat() {
+    if (bgHeartbeatIv) return;
+    bgHeartbeatIv = setInterval(() => {
+      if (!run || run.paused || soundMuted) return;
+      if (!isAppHidden()) return;
+      try {
+        if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+      } catch {}
+      startBgKeepAlive();
+      startSilentCtxKeep();
+      if (!tickIv) {
+        try {
+          run.lastTick = performance.now();
+          loop();
+        } catch {}
+      }
+    }, 1800);
+  }
+
+  function stopBgHeartbeat() {
+    if (!bgHeartbeatIv) return;
+    clearInterval(bgHeartbeatIv);
+    bgHeartbeatIv = 0;
+  }
+
   function startBgKeepAlive() {
     if (soundMuted) return;
     bgKeepOn = true;
@@ -662,25 +716,34 @@
     try {
       if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
     } catch {}
+    startSilentCtxKeep();
     const a = ensureKeeper();
-    if (!keeperVoice) {
-      try {
+    const vol = isAppHidden() ? BG_KEEP_VOL : FG_KEEP_VOL;
+    try {
+      if (!keeperVoice) {
         if (!keeperOnSilence(a)) {
           a.loop = true;
-          a.volume = 0.001;
           a.src = KEEP_SILENCE;
         }
-        if (a.paused) {
-          const p = a.play();
-          if (p && typeof p.catch === "function") p.catch(() => {});
-        }
-      } catch {}
-    }
-    setMediaPlaying(true, (run && run.title) || "ست‌یار");
+        a.muted = false;
+        a.volume = vol;
+        a.loop = true;
+        const p = a.play();
+        if (p && typeof p.catch === "function") p.catch(() => {});
+      } else {
+        try {
+          a.volume = Math.max(a.volume || 0, vol);
+        } catch {}
+      }
+    } catch {}
+    setMediaPlaying(true, (run && (run.title || "تمرین")) || "ست‌یار");
+    wireMediaSessionKeep();
+    if (isAppHidden()) startBgHeartbeat();
   }
 
   function stopBgKeepAlive() {
     bgKeepOn = false;
+    stopBgHeartbeat();
     cutKeeperVoice();
     setMediaPlaying(false);
     stopSilentCtxKeep();
@@ -694,11 +757,15 @@
   }
 
   function resumeBgIfNeeded() {
-    if (!run || run.paused || soundMuted || !bgKeepOn) return;
+    if (!run || run.paused || soundMuted) return;
+    bgKeepOn = true;
     startBgKeepAlive();
+    startSilentCtxKeep();
     try {
       if (window.speechSynthesis) speechSynthesis.resume();
     } catch {}
+    if (isAppHidden()) startBgHeartbeat();
+    else stopBgHeartbeat();
   }
 
   function cutKeeperVoice(handover) {
@@ -1083,8 +1150,28 @@
   function loudVol(vol, kind) {
     const base = vol == null ? 1 : Number(vol);
     const mult = kind === "stat" ? VOICE_STAT_LOUD : VOICE_LOUD;
-    // مثل ۱۸۱: بلند برای باشگاه — پایدار
-    return Math.max(0.08, Math.min(10, base * mult));
+    let v = Math.max(0.08, Math.min(10, base * mult));
+    // پس‌زمینه: همان صدا، کمی آرام‌تر
+    try {
+      if (document.visibilityState === "hidden") v *= 0.55;
+    } catch {}
+    return v;
+  }
+
+  function isAppHidden() {
+    try {
+      return document.visibilityState === "hidden";
+    } catch {
+      return false;
+    }
+  }
+
+  function htmlVol(vol) {
+    let v = Math.max(0.05, Math.min(1, vol == null ? 0.98 : Number(vol) || 0.98));
+    try {
+      if (document.visibilityState === "hidden") v = Math.min(v, 0.62);
+    } catch {}
+    return v;
   }
 
   function connectLoudOut(srcNode, gainVal) {
@@ -1427,7 +1514,7 @@
     try {
       a.muted = false;
     } catch {}
-    a.volume = Math.max(0.05, Math.min(1, vol == null ? 0.98 : vol));
+    a.volume = htmlVol(vol);
     voicePlayer = a;
     const waitCap = maxWaitMs != null ? maxWaitMs : 12000;
     const startCap = Math.min(2800, waitCap);
@@ -1514,6 +1601,21 @@
     try {
       unlockAudio();
       if (gen !== soundGen) return false;
+      // پس‌زمینه: اول HTML — WebAudio روی گوشی اغلب suspend می‌شود
+      if (isAppHidden()) {
+        try {
+          const url = URL.createObjectURL(blob);
+          const a = makeHtmlAudio(url);
+          dynFaAudio.set(String(url), a);
+          const ok = await playHtmlAudioEl(a, vol == null ? 1 : Math.min(1, Number(vol) || 1), 12000);
+          setTimeout(() => {
+            try {
+              URL.revokeObjectURL(url);
+            } catch {}
+          }, 20000);
+          if (ok && gen === soundGen) return true;
+        } catch {}
+      }
       // اول WebAudio با گین بالای ۱ — فقط این در باشگاه واقعاً بلند است
       if (audioCtx) {
         try {
@@ -4640,19 +4742,34 @@
 
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
+      stopBgHeartbeat();
       resumeBgIfNeeded();
       if (run && !run.paused) {
         run.lastTick = performance.now();
         if (!tickIv) loop();
       }
-    } else if (run && !run.paused) {
+    } else if (run && !run.paused && !soundMuted) {
+      // اپ دیگر باز شد ولی تمرین باز است — صدا کم ولی زنده بماند
+      bgKeepOn = true;
       resumeBgIfNeeded();
+      startBgHeartbeat();
     }
   });
   window.addEventListener("pagehide", () => {
-    if (run && !run.paused) resumeBgIfNeeded();
+    if (run && !run.paused && !soundMuted) {
+      bgKeepOn = true;
+      resumeBgIfNeeded();
+      startBgHeartbeat();
+    }
   });
-  window.addEventListener("pageshow", () => resumeBgIfNeeded());
+  window.addEventListener("pageshow", () => {
+    stopBgHeartbeat();
+    resumeBgIfNeeded();
+  });
+  window.addEventListener("freeze", () => {
+    if (run && !run.paused && !soundMuted) resumeBgIfNeeded();
+  }, true);
+  window.addEventListener("resume", () => resumeBgIfNeeded(), true);
 
   // Unlock audio on first tap (iOS/Android)
   const unlockOnce = () => unlockAudio();

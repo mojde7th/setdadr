@@ -3,6 +3,7 @@
   "short_name": "ست‌یار",
   "start_url": "./",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "background_color": "#12100c",
   "theme_color": "#12100c",
   "lang": "fa",
