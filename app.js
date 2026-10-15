@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "270";
+  const APP_VER = "271";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -71,7 +71,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=270";
+  const VOICE_Q = "?v=271";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -81,6 +81,7 @@
   let stickySpeakAudio = null;
   let bgKeepOn = false;
   let bgKeepStamp = 0;
+  let silenceKeepStamp = 0;
   let mediaSessionWired = false;
   let silentCtxKeep = null;
   let silentCtxGain = null;
@@ -680,7 +681,7 @@
       if (!run || run.paused || soundMuted) return;
       if (!isAppHidden()) return;
       keepSilenceAlive();
-    }, 8000);
+    }, 12000);
   }
 
   function stopBgWatch() {
@@ -690,6 +691,9 @@
 
   function keepSilenceAlive() {
     if (soundMuted) return;
+    const now = Date.now();
+    if (now - silenceKeepStamp < 900) return;
+    silenceKeepStamp = now;
     try {
       const bg = ensureBgLoop();
       if (bg.paused) {
@@ -920,7 +924,7 @@
     bgHeartbeatIv = setInterval(() => {
       if (!run || run.paused || soundMuted || !isAppHidden()) return;
       keepSilenceAlive();
-    }, 4500);
+    }, 7000);
   }
 
   function stopBgHeartbeat() {
@@ -932,7 +936,7 @@
   function startBgKeepAlive() {
     if (soundMuted) return;
     const now = Date.now();
-    if (bgKeepOn && now - bgKeepStamp < 4500) {
+    if (bgKeepOn && now - bgKeepStamp < 7000) {
       keepSilenceAlive();
       return;
     }
@@ -4505,7 +4509,7 @@
     // گرم‌کردن بقیه بعد از شروع تلفظ اول
     setTimeout(() => {
       try {
-        const names = (p.circuit || []).map((c) => c && c.name).filter(Boolean).slice(0, 3);
+        const names = (p.circuit || []).map((c) => c && c.name).filter(Boolean).slice(0, 2);
         let i = 0;
         const stepWarm = () => {
           if (i >= names.length || !run || run.paused) return;
@@ -4513,11 +4517,11 @@
             warmMoveVoice(names[i]);
           } catch {}
           i += 1;
-          setTimeout(stepWarm, 700);
+          setTimeout(stepWarm, 1100);
         };
         stepWarm();
       } catch {}
-    }, 1800);
+    }, 2500);
   }
 
   function stopLoop() {
@@ -4552,7 +4556,7 @@
       }
     };
     tick();
-    tickIv = setInterval(tick, 400);
+    tickIv = setInterval(tick, 500);
   }
 
   function maybeAnnounce() {
