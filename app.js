@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "261";
+  const APP_VER = "262";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -71,7 +71,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=261";
+  const VOICE_Q = "?v=262";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -1329,7 +1329,7 @@
   function beepPhaseStart() {
     if (soundMuted) return Promise.resolve(false);
     unlockAudio();
-    // فقط یک بار — فایل ملایم؛ تمام‌شدن واقعی تا اسم بلافاصله بعدش بیاید
+    // یک بوق کلاسیک نرم و بلند (~۰٫۸ث) — فقط یک بار
     const src = VOICE_BASE + "beep-start.wav" + VOICE_Q;
     const a = ensureBgCueRail();
     try {
@@ -1349,18 +1349,17 @@
       try {
         a.loop = false;
         a.muted = false;
-        a.volume = 0.72;
+        a.volume = 0.95;
         a.onended = () => finish(true);
         a.onerror = () => finish(false);
         a.src = src;
         const p = a.play();
         if (p && typeof p.then === "function") {
           p.then(() => {
-            // اگر ended نیامد، کمی بعد از طول فایل جمع کن
-            setTimeout(() => finish(true), 560);
+            setTimeout(() => finish(true), 880);
           }).catch(() => finish(false));
         } else {
-          setTimeout(() => finish(true), 560);
+          setTimeout(() => finish(true), 880);
         }
       } catch {
         finish(false);
