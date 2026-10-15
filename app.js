@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "236";
+  const APP_VER = "237";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -70,7 +70,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=236";
+  const VOICE_Q = "?v=237";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -771,6 +771,21 @@
     return a;
   }
 
+  function stopCueRail() {
+    try {
+      beepFourSecWarning._on = false;
+    } catch {}
+    try {
+      const a = bgCueRail;
+      if (!a) return;
+      a.onended = null;
+      a.onerror = null;
+      a.pause();
+      a.volume = 0;
+      a.src = KEEP_SILENCE;
+    } catch {}
+  }
+
   function playBgCueFile(rel, vol, opts) {
     if (soundMuted || !rel) return Promise.resolve(false);
     const o = opts || {};
@@ -1275,6 +1290,13 @@
   function beepFourSecWarning() {
     if (soundMuted) return;
     if (beepFourSecWarning._on) return;
+    // اگر هنوز اسم/حرکت بعد روی کیپر است، اول قطع کن تا با بوق قاطی نشود
+    try {
+      cutKeeperVoice(false);
+    } catch {}
+    try {
+      hushKeeperToSilence();
+    } catch {}
     beepFourSecWarning._on = true;
     unlockAudio();
     startBgKeepAlive();
@@ -1304,11 +1326,8 @@
       const p = a.play();
       if (p && typeof p.catch === "function") {
         p.catch(() => {
+          // هرگز روی کیپر نرو — کیپر مال تلفظ است؛ دوبل/قاطی می‌شود
           beepFourSecWarning._on = false;
-          // فقط اگر ریل شکست — یک‌بار روی کیپر، بدون دوبل
-          playOnKeeper(src, 1, { startCap: 2500, maxMs: 7000 }).finally(() => {
-            beepFourSecWarning._on = false;
-          });
         });
       }
       setTimeout(() => {
@@ -1323,8 +1342,7 @@
     if (soundMuted) return;
     unlockAudio();
     startBgKeepAlive();
-    // فقط بوق نرم شروع — بدون buzz اضافه و بدون دوبل
-    playBgCueFile("beep-soft.wav", 1, { waitMs: 2000 });
+    playBgCueFile("beep-soft.wav", 1, { waitMs: 1800 });
   }
 
   function beepReadyLikeRest() {
@@ -3221,6 +3239,10 @@
     if (!alive() || !nm) return false;
     unlockAudio();
     startBgKeepAlive();
+    // بوق استراحت را ببند تا با «حرکت بعد» قاطی نشود
+    try {
+      stopCueRail();
+    } catch {}
     try {
       const k = ensureKeeper();
       k.muted = false;
@@ -3239,6 +3261,8 @@
           gen
         });
       } catch {}
+      if (!alive()) return false;
+      await sleep(180);
       if (!alive()) return false;
     }
     let ok = false;
@@ -3282,13 +3306,15 @@
         if (!k.src) k.src = KEEP_SILENCE;
         k.play().catch(() => {});
       } catch {}
-      // بوق شروع فاز
-      try {
-        beepPhaseStart();
-      } catch {}
       if (step.kind === "work") {
+        // بوق شروع جدا، بعد فاصله، بعد فقط اسم
+        try {
+          beepPhaseStart();
+        } catch {}
+        await sleep(380);
+        if (!alive()) return;
         const nm = normSpeakKey(step.name);
-        if (!nm || !alive()) return;
+        if (!nm) return;
         let ok = false;
         try {
           ok = await speakMoveNameOnly(nm, 1);
@@ -3301,6 +3327,11 @@
         }
         return;
       }
+      // استراحت: بدون بوق شروع — اول سکوت کوتاه، بعد حرکت بعد، بعد اسم
+      try {
+        stopCueRail();
+      } catch {}
+      await sleep(220);
       if (!alive()) return;
       await speakNextMoveName(step.nextName || "", seq);
     });
@@ -4469,10 +4500,12 @@
         if (total < 12) return;
         const key = run.i + ":" + keySuffix;
         if (run.announced[key]) return;
-        // لحظهٔ هدف = ۱ث قبل از درصد؛ ۴ث زودتر تریگر تا تلفظ دیر نرسد
         const mark = Math.ceil(total * (1 - pct / 100) + 1 + 4);
         if (prev > mark && cur <= mark) {
           run.announced[key] = true;
+          try {
+            stopCueRail();
+          } catch {}
           try {
             speakFn();
           } catch {}
@@ -4482,10 +4515,15 @@
       fireAtGone(60, "pct60", () => speakPercentGone(60));
     }
 
+    // بوق ۴ث: اگر تلفظ هنوز جاری است صبر نکن — قطع تلفظ، فقط بوق
     if (run.phaseDur > 5) {
       const k4 = run.i + ":beep4";
       if (!run.announced[k4] && prev > 4 && cur <= 4) {
         run.announced[k4] = true;
+        try {
+          announceSeq += 1;
+          announceChain = Promise.resolve();
+        } catch {}
         beepFourSecWarning();
       }
     }
