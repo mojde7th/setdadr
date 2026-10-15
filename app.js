@@ -1,9 +1,9 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "183";
-  // باشگاه: بلند ولی تمیز — گین خیلی بالا روی گوشی نویز/خش می‌سازد
-  const VOICE_LOUD = 11;
-  const VOICE_STAT_LOUD = 6;
+  const APP_VER = "184";
+  // باشگاه: بلند ولی تمیز — انتهای جمله هم فِید می‌شود تا خش نماند
+  const VOICE_LOUD = 9;
+  const VOICE_STAT_LOUD = 5;
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -748,7 +748,10 @@
         const master = audioCtx.createGain();
         const lp = audioCtx.createBiquadFilter();
         lp.type = "lowpass";
-        lp.frequency.setValueAtTime(o.bright ? 1600 : 1200, t0);
+        lp.frequency.setValueAtTime(
+          o.dark ? 880 : o.bright ? 1600 : 1200,
+          t0
+        );
         lp.Q.setValueAtTime(0.55, t0);
         const peak = o.peak != null ? o.peak : 3.2;
         const total = o.total != null ? o.total : 0.7;
@@ -832,33 +835,37 @@
     setTimeout(() => beepSoftRing(0), 520);
   }
 
-  // ۴ ثانیه آخر: بلند و واضح برای آماده‌باش
+  // ۴ ثانیه آخر: بم و پر برای باشگاه — نه تیز
   function beepReadyPulse(n) {
     if (soundMuted) return;
     const step = Math.max(1, Math.min(4, Math.round(Number(n) || 4)));
-    const base = 523.25 + (4 - step) * 65;
+    const roots = { 4: 174.61, 3: 196.0, 2: 220.0, 1: 246.94 };
+    const f = roots[step] || 196.0;
     playWarmChime({
       stack: false,
-      peak: 1.85,
-      total: 0.42,
+      dark: true,
+      peak: 4.6,
+      total: 0.58,
       notes: [
-        { f: base, at: 0, dur: 0.2, g: 1.35 },
-        { f: base * 1.25, at: 0.1, dur: 0.28, g: 1.55 }
+        { f: f, at: 0, dur: 0.48, g: 1.7 },
+        { f: f * 1.5, at: 0.06, dur: 0.42, g: 0.7 },
+        { f: f * 2, at: 0.1, dur: 0.32, g: 0.2 }
       ]
     });
-    if (step === 4) {
+    if (step === 1) {
       setTimeout(() => {
         if (soundMuted) return;
         playWarmChime({
           stack: false,
-          peak: 1.9,
-          total: 0.5,
+          dark: true,
+          peak: 4.8,
+          total: 0.45,
           notes: [
-            { f: 659.25, at: 0, dur: 0.22, g: 1.45 },
-            { f: 880.0, at: 0.16, dur: 0.32, g: 1.65 }
+            { f: 196.0, at: 0, dur: 0.35, g: 1.8 },
+            { f: 293.66, at: 0.08, dur: 0.35, g: 0.85 }
           ]
         });
-      }, 380);
+      }, 300);
     }
   }
 
@@ -1020,27 +1027,36 @@
     const base = vol == null ? 1 : Number(vol);
     const mult = kind === "stat" ? VOICE_STAT_LOUD : VOICE_LOUD;
     // سقف پایین‌تر = بدون کلیپ دیجیتال و نویز گوشی
-    return Math.max(0.05, Math.min(14, base * mult));
+    return Math.max(0.05, Math.min(11, base * mult));
   }
 
-  function connectLoudOut(srcNode, gainVal) {
+  function connectLoudOut(srcNode, gainVal, durSec) {
     const g = audioCtx.createGain();
     const hp = audioCtx.createBiquadFilter();
     const lp = audioCtx.createBiquadFilter();
     const comp = audioCtx.createDynamicsCompressor();
-    // حذف همهمه پایین + نرم‌کردن اوج‌ها تا خش ندهد
+    // حذف همهمه + تیغ بالا؛ فِید نرم انتها = کمتر خش
     hp.type = "highpass";
-    hp.frequency.value = 90;
+    hp.frequency.value = 100;
     hp.Q.value = 0.7;
     lp.type = "lowpass";
-    lp.frequency.value = 4600;
-    lp.Q.value = 0.5;
-    comp.threshold.value = -18;
-    comp.knee.value = 18;
-    comp.ratio.value = 3.5;
-    comp.attack.value = 0.003;
-    comp.release.value = 0.18;
-    g.gain.value = Math.min(Number(gainVal) || 1, 12);
+    lp.frequency.value = 3400;
+    lp.Q.value = 0.45;
+    comp.threshold.value = -20;
+    comp.knee.value = 22;
+    comp.ratio.value = 4;
+    comp.attack.value = 0.004;
+    comp.release.value = 0.22;
+    const peak = Math.min(Number(gainVal) || 1, 9);
+    const now = audioCtx.currentTime;
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.linearRampToValueAtTime(peak, now + 0.025);
+    const dur = Number(durSec) || 0;
+    if (dur > 0.18) {
+      const fadeAt = now + Math.max(0.06, dur - 0.12);
+      g.gain.setValueAtTime(peak, fadeAt);
+      g.gain.linearRampToValueAtTime(0.0001, now + dur + 0.02);
+    }
     srcNode.connect(hp);
     hp.connect(g);
     g.connect(comp);
@@ -1476,7 +1492,7 @@
             }
             const src = audioCtx.createBufferSource();
             src.buffer = buf;
-            connectLoudOut(src, gainVal);
+            connectLoudOut(src, gainVal, buf.duration);
             liveSources.add(src);
             voicePlayer = src;
             const drop = () => {
@@ -1563,7 +1579,7 @@
             }
             const src = audioCtx.createBufferSource();
             src.buffer = buf;
-            connectLoudOut(src, gain);
+            connectLoudOut(src, gain, buf.duration);
             liveSources.add(src);
             voicePlayer = src;
             src.onended = () => {
@@ -2640,7 +2656,11 @@
         }
         const src = audioCtx.createBufferSource();
         src.buffer = primedWorkAudioBuffer;
-        connectLoudOut(src, loudVol(vol == null ? 1 : vol, "name"));
+        connectLoudOut(
+          src,
+          loudVol(vol == null ? 1 : vol, "name"),
+          primedWorkAudioBuffer.duration
+        );
         liveSources.add(src);
         voicePlayer = src;
         src.onended = () => {
@@ -2672,11 +2692,26 @@
     const alive = () => soundAlive(gen, tok) && (seq == null || announceAlive(seq));
     if (!alive()) return false;
     if (!nm) return false;
-    // هرگز «حرکت بعد» نگو — فقط اسم بعدی
     stopVoiceFile();
     killAllHtmlAudio();
-    await sleep(50);
+    await sleep(40);
     if (!alive()) return false;
+    // بگو: حرکت بعد + اسم
+    if (!bare) {
+      let pref = false;
+      try {
+        pref = await playVoiceFile("phrase-next.mp3", 1);
+      } catch {}
+      if (!alive()) return false;
+      if (!pref) {
+        try {
+          pref = !!(await speakFaAny("حرکت بعد", 1));
+        } catch {}
+      }
+      if (!alive()) return false;
+      await sleep(70);
+      if (!alive()) return false;
+    }
     let ok = false;
     try {
       ok = await playPrimedWorkName(nm, 1);
@@ -3044,6 +3079,7 @@
     const s = stats || {};
     const n = Math.max(1, Math.round(Number(s.rounds) || 0));
     const { moves, workSec, calories, walkMin } = statNumbers(s);
+    const restSec = Math.max(0, Math.round(Number(s.restSec) || 0));
     const myGen = soundGen;
     const alive = () => {
       const doneOn = $("#view-done") && $("#view-done").classList.contains("on");
@@ -3052,59 +3088,38 @@
     unlockAudio();
     startBgKeepAlive();
     startSilentCtxKeep();
+    // همان لحظه ورود به داشبورد — بدون تأخیر وسط صفحه
     buzz([90, 50, 90, 50, 140]);
-    beepWhite(300);
-    await sleep(800);
     if (!alive()) return;
     await speakStatLine("آفرین، تمرین تمام شد", null);
     if (!alive()) return;
-    await sleep(150);
-    await speakStatLine(
-      "شما " +
-        setCountPhrase(n) +
-        (moves > 0 ? " و " + moveCountPhrase(moves) : "") +
-        " انجام دادید",
-      null
-    );
-    if (!alive()) return;
+    // فقط آمار کارت‌های روی صفحه
     const bits = [];
-    if (workSec > 0) bits.push("مجموعاً " + timePhrase(workSec) + " تمرین کردید");
-    if (calories > 0) bits.push("حدود " + faNum(calories) + " کالری سوزاندید");
-    if (walkMin > 0) bits.push("معادل حدود " + faNum(walkMin) + " دقیقه پیاده‌روی");
+    if (n > 0) bits.push(setCountPhrase(n));
+    if (moves > 0) bits.push(moveCountPhrase(moves));
+    if (workSec > 0) bits.push("زمان تمرین " + timePhrase(workSec));
+    if (restSec > 0) bits.push("استراحت " + timePhrase(restSec));
+    if (calories > 0) bits.push("حدود " + faNum(calories) + " کالری");
+    if (walkMin > 0) bits.push("معادل " + faNum(walkMin) + " دقیقه پیاده‌روی");
     if (bits.length) {
-      await sleep(150);
       await speakStatLine(bits.join("، "), null);
     }
     if (!alive()) return;
-    const byMove = Array.isArray(s.byMove) ? s.byMove : [];
-    if (byMove.length) {
-      const top = byMove[0];
-      await sleep(150);
-      if (!alive()) return;
-      await speakStatLine(
-        "بیشترین تمرین روی " +
-          top.name +
-          "، جمع " +
-          timePhrase(top.sec) +
-          " در " +
-          faNum(top.count) +
-          " بار",
-        null
-      );
-    }
-    if (!alive()) return;
     const load = muscleLoadFromStats(s);
-    const tops = topMuscles(load, 2);
+    const tops = topMuscles(load, 3);
     if (tops.length) {
-      await sleep(150);
-      if (!alive()) return;
       await speakStatLine(
-        "عضلات اصلی درگیر: " + tops.map((x) => x.fa).join(" و "),
+        "عضلات درگیر: " + tops.map((x) => x.fa).join(" و "),
         null
       );
+      if (!alive()) return;
+      // ارزش‌افزوده همان نکته زیر میله روی صفحه
+      const tip = MUSCLE_META[tops[0].id] && MUSCLE_META[tops[0].id].tip;
+      if (tip) {
+        await speakStatLine("نکته " + tops[0].fa + ": " + tip, null);
+      }
     }
     if (!alive()) return;
-    await sleep(180);
     const ali = await playVoiceFile("cheer-ali.mp3", 1);
     if (!ali && alive()) await speakStatLine("خیلی عالی بود", null);
   }
