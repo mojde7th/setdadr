@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "166";
+  const APP_VER = "167";
   // باشگاه: بلند بدون خش — گین معقول، بدون دیستورت WaveShaper
   const VOICE_LOUD = 56;
   const VOICE_STAT_LOUD = 14;
@@ -2658,23 +2658,10 @@
         return;
       }
       if (step.kind === "rest-set") {
-        // بین ست: عالی → حرکت بعدی (اولویت) → چندمین ست
-        const doneSets = Math.max(1, Math.round(Number(step.round) || 1));
-        const totalSets = Math.max(
-          doneSets,
-          Math.round(Number(step.rounds) || doneSets)
-        );
+        // بین ست: فقط حرکت بعدی — آمار فقط آخر کل تمرین
         await sleep(350);
         if (!alive()) return;
-        const ali = await playVoiceFile("cheer-ali.mp3", 1);
-        if (!alive()) return;
-        if (!ali) await speakFaAny("عالی", 1);
-        if (!alive()) return;
-        await sleep(80);
         await speakNextMoveName(step.nextName || "", seq);
-        if (!alive()) return;
-        await sleep(100);
-        await speakStatLine(setDoneLine(doneSets, totalSets), seq);
         return;
       }
       // استراحت بین حرکت: فقط حرکت بعدی
@@ -2688,31 +2675,19 @@
     const n = Math.round(sec);
     const tot = Math.round(total || (run && run.phaseDur) || 0);
     if (n <= 0) return;
-    return queueAnnounce(async (seq) => {
+    return voidAnnounce(async (seq) => {
       if (!announceAlive(seq)) return;
       const alive = aliveNow();
       const live = () => announceAlive(seq) && alive();
-      await speakCheerOnly(seq);
-      if (!live()) return;
-      await sleep(120);
-      if (!live()) return;
-      const ofKey = tot + ":" + n;
-      if (VOICE_FILES.wentOf && VOICE_FILES.wentOf[ofKey]) {
-        let ok = await playVoiceFile("went-" + n + "-of-" + tot + ".mp3", 0.98);
-        if (ok || !live()) return;
-      }
-      if (VOICE_FILES.went[n]) {
-        let ok = await playVoiceFile("went-" + n + ".mp3", 0.98);
-        if (ok || !live()) return;
-      }
+      // وسط حرکت: فقط پیشرفت همین فاز
       const phrase =
         tot > 0
-          ? faNum(n) + " ثانیه از " + faNum(tot) + " ثانیه رو رفتی"
-          : faNum(n) + " ثانیه رو رفتی";
+          ? faNum(n) + " ثانیه از " + faNum(tot) + " ثانیه همین"
+          : faNum(n) + " ثانیه همین";
       await speakFaAny(phrase, 1);
+      if (!live()) return;
     });
   }
-
   function setCountPhrase(n) {
     const k = Math.max(0, Math.round(Number(n) || 0));
     return faNum(k) + " تا ست کامل";
@@ -2751,6 +2726,19 @@
       (a, s) => a + Math.max(0, Math.round(Number(s.dur) || 0)),
       0
     );
+    const byMoveMap = new Map();
+    works.forEach((s) => {
+      const name = String(s.name || "").trim() || "حرکت";
+      const sec = Math.max(0, Math.round(Number(s.dur) || 0));
+      const prev = byMoveMap.get(name) || { name, sec: 0, count: 0 };
+      prev.sec += sec;
+      prev.count += 1;
+      byMoveMap.set(name, prev);
+    });
+    const byMove = [...byMoveMap.values()].sort((a, b) => b.sec - a.sec);
+    const restSec = slice
+      .filter((s) => s && (s.kind === "rest-set" || s.kind === "rest-move"))
+      .reduce((a, s) => a + Math.max(0, Math.round(Number(s.dur) || 0)), 0);
     const calories = estimateCalories(workSec);
     const walkMin = estimateWalkMinutes(calories);
     return {
@@ -2759,8 +2747,10 @@
       totalMoves,
       moveCount: totalMoves,
       workSec,
+      restSec,
       calories,
-      walkMin
+      walkMin,
+      byMove
     };
   }
 
@@ -2845,6 +2835,23 @@
       await speakStatLine(bits.join("، "), null);
     }
     if (!alive()) return;
+    const byMove = Array.isArray(s.byMove) ? s.byMove : [];
+    if (byMove.length) {
+      const top = byMove[0];
+      await sleep(150);
+      if (!alive()) return;
+      await speakStatLine(
+        "بیشترین کار روی " +
+          top.name +
+          "، جمع " +
+          faNum(top.sec) +
+          " ثانیه در " +
+          faNum(top.count) +
+          " بار",
+        null
+      );
+    }
+    if (!alive()) return;
     await sleep(180);
     const ali = await playVoiceFile("cheer-ali.mp3", 1);
     if (!ali && alive()) await speakStatLine("خیلی عالی بود", null);
@@ -2870,10 +2877,25 @@
       const input = wrap.querySelector('input[type="number"]');
       if (!input) return;
       wrap.querySelectorAll(".num-btn").forEach((btn) => {
+        const clearPress = () => {
+          btn.classList.remove("is-press");
+          try {
+            btn.blur();
+          } catch {}
+        };
+        btn.addEventListener("pointerdown", () => {
+          wrap.querySelectorAll(".num-btn").forEach((b) => b.classList.remove("is-press"));
+          btn.classList.add("is-press");
+        });
+        btn.addEventListener("pointerup", clearPress);
+        btn.addEventListener("pointercancel", clearPress);
+        btn.addEventListener("pointerleave", clearPress);
         btn.addEventListener("click", (e) => {
           e.preventDefault();
+          e.stopPropagation();
           const dir = Number(btn.getAttribute("data-dir")) || 0;
           bumpNumber(input, dir);
+          clearPress();
         });
       });
     });
@@ -2909,9 +2931,9 @@
       toFaDigits(moves) +
       " حرکت · استراحت ست " +
       toFaDigits(restSet) +
-      "ث · استراحت حرکت " +
+      " ثانیه · استراحت حرکت " +
       toFaDigits(restMove) +
-      "ث";
+      " ثانیه";
   }
 
   function uid() {
@@ -3000,7 +3022,12 @@
         '<div class="row"><div><div class="title"></div><div class="meta"></div></div></div><div class="row"></div>';
       li.querySelector(".title").textContent = p.title || autoTitle(p.circuit);
       li.querySelector(".meta").textContent =
-        p.circuit.length + " حرکت · " + p.rounds + " ست · استراحت ست " + p.restSet + "ث";
+        p.circuit.length +
+        " حرکت · " +
+        p.rounds +
+        " ست · استراحت ست " +
+        p.restSet +
+        " ثانیه";
       const actions = li.children[1];
       actions.className = "row actions-row";
       const start = document.createElement("button");
@@ -3411,7 +3438,7 @@
 
     if (next.nextName) {
       showRestThenNext(
-        "استراحت " + toFaDigits(next.dur) + "ث",
+        "استراحت " + toFaDigits(next.dur) + " ثانیه",
         next.nextName
       );
       return;
@@ -3420,12 +3447,74 @@
     hideNext();
   }
 
+  function renderDoneStats(stats) {
+    const tiles = $("#doneTiles");
+    const chart = $("#doneChart");
+    const movesEl = $("#doneMoves");
+    if (tiles) tiles.innerHTML = "";
+    if (chart) chart.innerHTML = "";
+    if (movesEl) movesEl.innerHTML = "";
+    if (!stats) return;
+    const rounds = Math.max(0, Math.round(Number(stats.rounds) || 0));
+    const workSec = Math.max(0, Math.round(Number(stats.workSec) || 0));
+    const restSec = Math.max(0, Math.round(Number(stats.restSec) || 0));
+    const calories = Math.max(0, Math.round(Number(stats.calories) || 0));
+    const walkMin = Math.max(0, Math.round(Number(stats.walkMin) || 0));
+    const byMove = Array.isArray(stats.byMove) ? stats.byMove : [];
+    const tileData = [
+      ["ست", toFaDigits(rounds)],
+      ["کار", timePhrase(workSec)],
+      ["استراحت", timePhrase(restSec)],
+      ["کالری", toFaDigits(calories)]
+    ];
+    if (walkMin > 0) tileData.push(["پیاده‌روی", toFaDigits(walkMin) + " دقیقه"]);
+    if (tiles) {
+      tileData.forEach(([k, v]) => {
+        const d = document.createElement("div");
+        d.className = "done-tile";
+        d.innerHTML = '<div class="done-tile-v"></div><div class="done-tile-k"></div>';
+        d.querySelector(".done-tile-v").textContent = v;
+        d.querySelector(".done-tile-k").textContent = k;
+        tiles.appendChild(d);
+      });
+    }
+    const maxSec = Math.max(1, ...byMove.map((m) => m.sec || 0));
+    if (chart && byMove.length) {
+      byMove.forEach((m) => {
+        const row = document.createElement("div");
+        row.className = "done-bar-row";
+        const pct = Math.max(6, Math.round(((m.sec || 0) / maxSec) * 100));
+        row.innerHTML =
+          '<div class="done-bar-name"></div><div class="done-bar-track"><div class="done-bar-fill"></div></div><div class="done-bar-sec"></div>';
+        row.querySelector(".done-bar-name").textContent = m.name;
+        row.querySelector(".done-bar-fill").style.width = pct + "%";
+        row.querySelector(".done-bar-sec").textContent =
+          toFaDigits(m.sec) + " ثانیه · " + toFaDigits(m.count) + " بار";
+        chart.appendChild(row);
+      });
+    } else if (chart) {
+      chart.textContent = "حرکتی ثبت نشد";
+    }
+    if (movesEl && byMove.length) {
+      byMove.forEach((m) => {
+        const li = document.createElement("li");
+        li.textContent =
+          m.name +
+          " — " +
+          toFaDigits(m.count) +
+          " بار · جمع " +
+          toFaDigits(m.sec) +
+          " ثانیه";
+        movesEl.appendChild(li);
+      });
+    }
+  }
+
   function finishRun() {
     stopLoop();
     const steps = run && run.steps ? run.steps.slice() : [];
     const stats = workStatsFromSteps(steps);
     const rounds = stats.rounds || 0;
-    // صدا را برای آمار نهایی نکش
     stopBeep();
     killAllSources();
     stopVoiceFile();
@@ -3433,18 +3522,18 @@
     startBgKeepAlive();
     startSilentCtxKeep();
     run = null;
-    $("#doneFrac").innerHTML = toFaDigits(rounds) + "<span>/</span>" + toFaDigits(rounds);
+    $("#doneFrac").innerHTML =
+      toFaDigits(rounds) + "<span>/</span>" + toFaDigits(rounds);
     const msg = $("#doneMsg");
     if (msg) {
-      const bits = ["آفرین، تمام شد", toFaDigits(rounds) + " ست"];
-      if (stats.totalMoves) bits.push(toFaDigits(stats.totalMoves) + " حرکت");
-      if (stats.workSec) bits.push(timePhrase(stats.workSec));
-      if (stats.calories) bits.push("حدود " + toFaDigits(stats.calories) + " کالری");
-      if (stats.walkMin) {
-        bits.push("معادل " + toFaDigits(stats.walkMin) + " دقیقه پیاده‌روی");
-      }
-      msg.textContent = bits.join(" · ");
+      msg.textContent =
+        "آفرین، تمام شد · " +
+        toFaDigits(rounds) +
+        " ست · " +
+        toFaDigits(stats.totalMoves || 0) +
+        " حرکت کاری";
     }
+    renderDoneStats(stats);
     show("done");
     Promise.resolve()
       .then(() => speakDone(stats))
