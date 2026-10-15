@@ -1463,3 +1463,16 @@ input[type="text"], input[type="number"] {
 .mus-fill {
   transition: width 0.85s cubic-bezier(.22,.9,.3,1);
 }
+
+/* v201 done tiles */
+.done-tiles {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (min-width: 420px) {
+  .done-tiles {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.done-tile {
+  min-height: 78px;
+}

@@ -1,9 +1,9 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "200";
+  const APP_VER = "201";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
-  const VOICE_LOUD = 16;
-  const VOICE_STAT_LOUD = 6;
+  const VOICE_LOUD = 11;
+  const VOICE_STAT_LOUD = 5;
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -902,22 +902,20 @@
     setTimeout(() => beepSoftRing(0), 520);
   }
 
-  // ۴ ثانیه آخر: بوق تمیز، شفاف، بلند
+  // ۴ ثانیه آخر: همان حس بوق استراحت — گرم و کشیده
   function beepReadyLikeRest() {
     if (soundMuted) return;
-    // تمیز و واضح برای باشگاه — بدون تیغ بالا
     playWarmChime({
       stack: false,
-      peak: 3.8,
-      total: 0.9,
+      peak: 2.2,
+      total: 3.4,
       notes: [
-        { f: 392.0, at: 0, dur: 0.28, g: 1.6 },
-        { f: 523.25, at: 0.12, dur: 0.32, g: 1.9 },
-        { f: 392.0, at: 0.48, dur: 0.3, g: 1.5 },
-        { f: 523.25, at: 0.58, dur: 0.28, g: 1.8 }
+        { f: 349.23, at: 0, dur: 1.1, g: 1.2 },
+        { f: 392.0, at: 0.85, dur: 1.15, g: 1.25 },
+        { f: 329.63, at: 1.75, dur: 1.1, g: 1.1 },
+        { f: 261.63, at: 2.55, dur: 0.85, g: 0.95 }
       ]
     });
-    buzz([100, 40, 140]);
   }
 
   function beepWhite(ms, soft) {
@@ -1078,24 +1076,24 @@
     const base = vol == null ? 1 : Number(vol);
     const mult = kind === "stat" ? VOICE_STAT_LOUD : VOICE_LOUD;
     // مثل ۱۸۱: بلند برای باشگاه — پایدار
-    return Math.max(0.08, Math.min(22, base * mult));
+    return Math.max(0.08, Math.min(10, base * mult));
   }
 
   function connectLoudOut(srcNode, gainVal) {
     const g = audioCtx.createGain();
     const hp = audioCtx.createBiquadFilter();
     const lp = audioCtx.createBiquadFilter();
-    // همهمه پایین و تیغ بالا را کم کن تا نویز/خش کم شود
+    // نرم‌تر: خش و دیستورت کمتر روی گوشی
     hp.type = "highpass";
-    hp.frequency.value = 140;
-    hp.Q.value = 0.7;
+    hp.frequency.value = 120;
+    hp.Q.value = 0.6;
     lp.type = "lowpass";
-    lp.frequency.value = 3800;
-    lp.Q.value = 0.4;
-    const peak = Math.min(Number(gainVal) || 1, 18);
+    lp.frequency.value = 3200;
+    lp.Q.value = 0.35;
+    const peak = Math.min(Number(gainVal) || 1, 10);
     const t = audioCtx.currentTime;
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(peak, t + 0.03);
+    g.gain.linearRampToValueAtTime(peak, t + 0.05);
     srcNode.connect(hp);
     hp.connect(g);
     g.connect(lp);
@@ -2382,7 +2380,7 @@
     }
     // ۲) صدای فارسی گوشی — آفلاین، بدون کلود
     {
-      const ok = await speakSynthLang(key, v, "fa", { noCancel: true, rate: 0.95, pitch: 1.05 });
+      const ok = await speakSynthLang(key, v * 0.92, "fa", { noCancel: true, rate: 0.92, pitch: 1.0 });
       if (!alive()) return false;
       if (ok) return true;
     }
@@ -3982,13 +3980,6 @@
       ["حرکت‌ها", toFaDigits(movesN)],
       ["دورها", toFaDigits(rounds)]
     ];
-    // کارت آخر حذف؛ زمان هر حرکت همان بالا
-    byMove.slice(0, 4).forEach((mv) => {
-      tileData.push([
-        String(mv.name || "حرکت"),
-        timePhrase(Math.max(0, Math.round(Number(mv.sec) || 0)))
-      ]);
-    });
     if (tiles) {
       tileData.forEach(([k, v]) => {
         const d = document.createElement("div");
