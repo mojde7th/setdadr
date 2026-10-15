@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "209";
+  const APP_VER = "210";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -80,8 +80,8 @@
   let silentCtxKeep = null;
   let silentCtxGain = null;
   let bgHeartbeatIv = 0;
-  const BG_KEEP_VOL = 0.08;
-  const FG_KEEP_VOL = 0.002;
+  const BG_KEEP_VOL = 0.001;
+  const FG_KEEP_VOL = 0.001;
   // سرور دیلارا ابری دائمی (بدون لپ‌تاپ) + اختیاری تونل محلی
   const TTS_API_LS = "setdadr-tts-api";
   const CLOUD_EDGE_TTS = "https://edge-tts.vercel.app/api/tts";
@@ -520,7 +520,8 @@
       if (audioCtx.state === "suspended") {
         audioCtx.resume().catch(() => {});
       }
-      const want = isAppHidden() ? 0.012 : 0.00012;
+      // فقط برای زنده ماندن کانتکست — نباید شنیده شود
+      const want = 0.00004;
       if (silentCtxKeep && silentCtxGain) {
         try {
           silentCtxGain.gain.setValueAtTime(want, audioCtx.currentTime);
@@ -536,7 +537,7 @@
       g.connect(audioCtx.destination);
       const o = audioCtx.createOscillator();
       o.type = "sine";
-      o.frequency.value = isAppHidden() ? 55 : 28;
+      o.frequency.value = 18;
       o.connect(g);
       o.start();
       silentCtxKeep = o;
@@ -650,7 +651,6 @@
   // یک عنصر صوتی که با لمس شروع/بعدی آنلاک می‌شود و دیگر عوض نمی‌شود.
   // آیفون عنصر صوتی تازه را بدون لمس پخش نمی‌کند؛ این یکی را چرا.
   const KEEP_SILENCE = VOICE_BASE + "silence.wav" + VOICE_Q;
-  const KEEP_SOFT = VOICE_BASE + "keep-soft.wav" + VOICE_Q;
   let keeperVoice = null;
 
   function keeperOnSilence(a) {
@@ -719,17 +719,11 @@
     } catch {}
     startSilentCtxKeep();
     const a = ensureKeeper();
-    const vol = isAppHidden() ? BG_KEEP_VOL : FG_KEEP_VOL;
-    const keepSrc = isAppHidden() ? KEEP_SOFT : KEEP_SILENCE;
+    const vol = BG_KEEP_VOL;
     try {
-      // در پس‌زمینه فایل نرمِ شنیدنی؛ سکوت مطلق را گوشی می‌کشد
-      const wantSoft = /keep-soft\.wav/.test(keepSrc);
-      const onSoft = /keep-soft\.wav/.test(String(a.currentSrc || a.src || ""));
+      // فقط سکوت حلقه‌ای — بدون بوق پس‌زمینهٔ اذیت‌کننده
       if (!keeperVoice) {
-        if (wantSoft && !onSoft) {
-          a.loop = true;
-          a.src = keepSrc;
-        } else if (!wantSoft && !keeperOnSilence(a)) {
+        if (!keeperOnSilence(a)) {
           a.loop = true;
           a.src = KEEP_SILENCE;
         }
@@ -747,21 +741,23 @@
         }
       } else {
         try {
-          a.volume = Math.max(a.volume || 0, vol * 0.5);
+          a.volume = Math.min(a.volume || vol, vol);
         } catch {}
       }
     } catch {}
-    // Wake Lock تا مرورگر زود نخوابد (اگر پشتیبانی کند)
     try {
       if (isAppHidden() && run && !run.paused && navigator.wakeLock && !startBgKeepAlive._lock) {
-        navigator.wakeLock.request("screen").then((lk) => {
-          startBgKeepAlive._lock = lk;
-          try {
-            lk.addEventListener("release", () => {
-              startBgKeepAlive._lock = null;
-            });
-          } catch {}
-        }).catch(() => {});
+        navigator.wakeLock
+          .request("screen")
+          .then((lk) => {
+            startBgKeepAlive._lock = lk;
+            try {
+              lk.addEventListener("release", () => {
+                startBgKeepAlive._lock = null;
+              });
+            } catch {}
+          })
+          .catch(() => {});
       }
     } catch {}
     setMediaPlaying(true, (run && (run.title || "تمرین")) || "ست‌یار");
