@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "186";
+  const APP_VER = "182";
   // باشگاه: بلند ولی تمیز — گین خیلی بالا روی گوشی نویز/خش می‌سازد
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 6;
@@ -830,37 +830,6 @@
   function beepSoftDouble() {
     beepSoftRing(0);
     setTimeout(() => beepSoftRing(0), 520);
-  }
-
-  // ۴ ثانیه آخر: میانی و پر برای گوشی در باشگاه
-  function beepReadyPulse(n) {
-    if (soundMuted) return;
-    const step = Math.max(1, Math.min(4, Math.round(Number(n) || 4)));
-    const roots = { 4: 392.0, 3: 440.0, 2: 493.88, 1: 523.25 };
-    const f = roots[step] || 440.0;
-    playWarmChime({
-      stack: false,
-      peak: 4.4,
-      total: 0.45,
-      notes: [
-        { f: f * 0.75, at: 0, dur: 0.3, g: 1.5 },
-        { f: f, at: 0.05, dur: 0.34, g: 1.9 },
-        { f: f * 1.25, at: 0.14, dur: 0.28, g: 0.9 }
-      ]
-    });
-    setTimeout(() => {
-      if (soundMuted) return;
-      playWarmChime({
-        stack: false,
-        peak: 4.6,
-        total: 0.3,
-        notes: [
-          { f: f, at: 0, dur: 0.24, g: 2.0 },
-          { f: f * 1.2, at: 0.08, dur: 0.22, g: 1.2 }
-        ]
-      });
-    }, 200);
-    buzz(step <= 2 ? [130, 40, 160] : [90, 35, 110]);
   }
 
   function beepWhite(ms, soft) {
@@ -2673,18 +2642,11 @@
     const alive = () => soundAlive(gen, tok) && (seq == null || announceAlive(seq));
     if (!alive()) return false;
     if (!nm) return false;
+    // هرگز «حرکت بعد» نگو — فقط اسم بعدی
     stopVoiceFile();
     killAllHtmlAudio();
     await sleep(50);
     if (!alive()) return false;
-    // یک‌خط: حرکت بعد فلان (اگر نشد، مثل قبل فقط اسم)
-    if (!bare) {
-      try {
-        const lineOk = !!(await speakFaAny("حرکت بعد " + nm, 1));
-        if (lineOk) return true;
-      } catch {}
-      if (!alive()) return false;
-    }
     let ok = false;
     try {
       ok = await playPrimedWorkName(nm, 1);
@@ -3053,32 +3015,65 @@
     const n = Math.max(1, Math.round(Number(s.rounds) || 0));
     const { moves, workSec, calories, walkMin } = statNumbers(s);
     const myGen = soundGen;
-    const alive = () => {
-      const doneOn = $("#view-done") && $("#view-done").classList.contains("on");
-      return myGen === soundGen && !soundMuted && !!doneOn;
-    };
+    const alive = () => myGen === soundGen && !soundMuted;
     unlockAudio();
     startBgKeepAlive();
     startSilentCtxKeep();
-    // کوتاه — همان لحظه ورود به داشبورد
-    buzz([90, 50, 120]);
+    buzz([90, 50, 90, 50, 140]);
+    beepWhite(300);
+    await sleep(800);
     if (!alive()) return;
     await speakStatLine("آفرین، تمرین تمام شد", null);
     if (!alive()) return;
+    await sleep(150);
+    await speakStatLine(
+      "شما " +
+        setCountPhrase(n) +
+        (moves > 0 ? " و " + moveCountPhrase(moves) : "") +
+        " انجام دادید",
+      null
+    );
+    if (!alive()) return;
     const bits = [];
-    if (n > 0) bits.push(faNum(n) + " ست");
-    if (moves > 0) bits.push(faNum(moves) + " حرکت");
-    if (workSec > 0) bits.push(timePhrase(workSec));
-    if (calories > 0) bits.push(faNum(calories) + " کالری");
-    if (walkMin > 0) bits.push(faNum(walkMin) + " دقیقه پیاده‌روی");
-    if (bits.length) await speakStatLine(bits.join("، "), null);
+    if (workSec > 0) bits.push("مجموعاً " + timePhrase(workSec) + " تمرین کردید");
+    if (calories > 0) bits.push("حدود " + faNum(calories) + " کالری سوزاندید");
+    if (walkMin > 0) bits.push("معادل حدود " + faNum(walkMin) + " دقیقه پیاده‌روی");
+    if (bits.length) {
+      await sleep(150);
+      await speakStatLine(bits.join("، "), null);
+    }
+    if (!alive()) return;
+    const byMove = Array.isArray(s.byMove) ? s.byMove : [];
+    if (byMove.length) {
+      const top = byMove[0];
+      await sleep(150);
+      if (!alive()) return;
+      await speakStatLine(
+        "بیشترین تمرین روی " +
+          top.name +
+          "، جمع " +
+          timePhrase(top.sec) +
+          " در " +
+          faNum(top.count) +
+          " بار",
+        null
+      );
+    }
     if (!alive()) return;
     const load = muscleLoadFromStats(s);
-    const tops = topMuscles(load, 1);
+    const tops = topMuscles(load, 2);
     if (tops.length) {
-      const tip = MUSCLE_META[tops[0].id] && MUSCLE_META[tops[0].id].tip;
-      if (tip) await speakStatLine("نکته: " + tip, null);
+      await sleep(150);
+      if (!alive()) return;
+      await speakStatLine(
+        "عضلات اصلی درگیر: " + tops.map((x) => x.fa).join(" و "),
+        null
+      );
     }
+    if (!alive()) return;
+    await sleep(180);
+    const ali = await playVoiceFile("cheer-ali.mp3", 1);
+    if (!ali && alive()) await speakStatLine("خیلی عالی بود", null);
   }
 
   function bumpNumber(input, dir) {
@@ -3127,11 +3122,6 @@
 
   function show(name) {
     if (name === "moves") name = "home";
-    const wasDone = $("#view-done") && $("#view-done").classList.contains("on");
-    if (wasDone && name !== "done") {
-      // خروج از داشبورد = قطع کامل اعلام آمار
-      stopAllSound();
-    }
     viewIds.forEach((k) => {
       const el = document.getElementById("view-" + k);
       if (!el) return;
@@ -3533,17 +3523,12 @@
       }
     }
 
-    // ۴ ثانیه آخر: هر ثانیه بوق آماده‌باش بلند و واضح
-    if (run.phaseDur > 5) {
-      for (let n = 4; n >= 1; n -= 1) {
-        const readyKey = run.i + ":ready" + n;
-        if (!run.announced[readyKey] && prev > n && cur <= n) {
-          run.announced[readyKey] = true;
-          beepReadyPulse(n);
-          if (n === 4) buzz([110, 35, 150, 35, 180]);
-          else if (n === 1) buzz([160, 40, 200]);
-        }
-      }
+    // ۴ ثانیه مانده: کار و استراحت (ست و حرکت)
+    const softKey = run.i + ":soft4";
+    if (run.phaseDur > 5 && !run.announced[softKey] && prev > 4 && cur <= 4) {
+      run.announced[softKey] = true;
+      beepSoftDouble();
+      buzz([90, 40, 120, 40, 140]);
     }
   }
 
@@ -3943,10 +3928,7 @@
   if (btnDoneHome) btnDoneHome.addEventListener("click", () => show("home"));
   const btnDoneAgain = $("#btnDoneAgain");
   if (btnDoneAgain) {
-    btnDoneAgain.addEventListener("click", () => {
-      stopAllSound();
-      show("home");
-    });
+    btnDoneAgain.addEventListener("click", () => show("home"));
   }
 
   function openDashboard() {
