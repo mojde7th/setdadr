@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "212";
+  const APP_VER = "213";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -76,11 +76,14 @@
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
   let tickIv = 0;
   let bgKeepAudio = null;
+  let voiceKeepAudio = null;
   let bgKeepOn = false;
   let silentCtxKeep = null;
   let silentCtxGain = null;
   let bgHeartbeatIv = 0;
-  const BG_KEEP_VOL = 0.001;
+  let bgTickWired = false;
+  let lastBgAudioT = 0;
+  const BG_KEEP_VOL = 0.035;
   const FG_KEEP_VOL = 0.001;
   // سرور دیلارا ابری دائمی (بدون لپ‌تاپ) + اختیاری تونل محلی
   const TTS_API_LS = "setdadr-tts-api";
@@ -479,8 +482,10 @@
 
   function killAllHtmlAudio() {
     const keep = bgKeepAudio;
+    const voice = voiceKeepAudio;
     liveAudios.forEach((a) => {
       if (keep && a === keep) return;
+      if (voice && a === voice) return;
       try {
         a.onended = null;
         a.onerror = null;
@@ -499,6 +504,7 @@
     });
     liveAudios.clear();
     if (keep) liveAudios.add(keep);
+    if (voiceKeepAudio) liveAudios.add(voiceKeepAudio);
   }
 
   function killAllSources() {
@@ -662,14 +668,64 @@
     }
   }
 
-  function ensureKeeper() {
+  function ensureBgLoop() {
+    // حلقهٔ پس‌زمینه — فقط برای زنده ماندن؛ هرگز برای تلفظ عوض نشود
     if (bgKeepAudio) return bgKeepAudio;
+    const a = makeHtmlAudio(KEEP_QUIET);
+    a.loop = true;
+    a.volume = FG_KEEP_VOL;
+    a.setAttribute("data-setdadr-keep", "1");
+    bgKeepAudio = a;
+    liveAudios.add(a);
+    wireBgAudioTick(a);
+    return a;
+  }
+
+  function ensureKeeper() {
+    // عنصر جدا برای تلفظ — حلقهٔ پس‌زمینه را قطع نکند
+    if (voiceKeepAudio) return voiceKeepAudio;
     const a = makeHtmlAudio(KEEP_SILENCE);
     a.loop = true;
     a.volume = 0.001;
-    bgKeepAudio = a;
+    a.setAttribute("data-setdadr-voice", "1");
+    voiceKeepAudio = a;
+    liveAudios.add(a);
     return a;
   }
+
+  function wireBgAudioTick(a) {
+    if (bgTickWired || !a) return;
+    bgTickWired = true;
+    lastBgAudioT = 0;
+    const onTu = () => {
+      if (!run || run.paused || soundMuted) return;
+      if (!isAppHidden()) return;
+      // با مینیمایز setInterval می‌میرد؛ تیک را از پخش صدا بران
+      try {
+        const t = Number(a.currentTime) || 0;
+        let dt = t - lastBgAudioT;
+        if (dt < 0) dt = 0.05;
+        if (dt > 1.2) dt = 0.25;
+        lastBgAudioT = t;
+        if (dt > 0.02) {
+          run.left -= dt;
+          maybeAnnounce();
+          if (run.left <= 0) {
+            advance();
+            return;
+          }
+          paintRun(false);
+        }
+      } catch {}
+    };
+    try {
+      a.addEventListener("timeupdate", onTu);
+      a.addEventListener("playing", () => {
+        lastBgAudioT = Number(a.currentTime) || 0;
+      });
+    } catch {}
+  }
+
 
   function wireMediaSessionKeep() {
     try {
@@ -694,15 +750,15 @@
       try {
         if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
       } catch {}
+      try {
+        const a = ensureBgLoop();
+        a.muted = false;
+        a.volume = BG_KEEP_VOL;
+        if (a.paused) a.play().catch(() => {});
+      } catch {}
       startBgKeepAlive();
       startSilentCtxKeep();
-      if (!tickIv) {
-        try {
-          run.lastTick = performance.now();
-          loop();
-        } catch {}
-      }
-    }, 800);
+    }, 500);
   }
 
   function stopBgHeartbeat() {
@@ -719,45 +775,32 @@
       if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
     } catch {}
     startSilentCtxKeep();
-    const a = ensureKeeper();
-    // پس‌زمینه: فایل خیلی‌آروم (نه بوق) تا سشن زنده بماند
-    const vol = isAppHidden() ? 0.012 : BG_KEEP_VOL;
-    const src = isAppHidden() ? KEEP_QUIET : KEEP_SILENCE;
+    const a = ensureBgLoop();
+    const hidden = isAppHidden();
+    const vol = hidden ? BG_KEEP_VOL : FG_KEEP_VOL;
     try {
-      if (!keeperVoice) {
-        const cur = String(a.currentSrc || a.src || "");
-        const wantQ = /keep-quiet\.wav/.test(src);
-        const onQ = /keep-quiet\.wav/.test(cur);
-        const onSil = keeperOnSilence(a);
-        if (wantQ && !onQ) {
-          a.loop = true;
-          a.src = KEEP_QUIET;
-        } else if (!wantQ && !onSil) {
-          a.loop = true;
-          a.src = KEEP_SILENCE;
-        }
-        a.muted = false;
-        a.volume = vol;
+      const cur = String(a.currentSrc || a.src || "");
+      if (!/keep-quiet\.wav/.test(cur)) {
         a.loop = true;
-        const p = a.play();
-        if (p && typeof p.catch === "function") {
-          p.catch(() => {
-            try {
-              a.src = KEEP_QUIET;
-              a.loop = true;
-              a.volume = vol;
-              a.play().catch(() => {});
-            } catch {}
-          });
-        }
-      } else {
-        try {
-          a.volume = Math.max(0.001, Math.min(a.volume || vol, vol));
-        } catch {}
+        a.src = KEEP_QUIET;
+      }
+      a.muted = false;
+      a.volume = vol;
+      a.loop = true;
+      const p = a.play();
+      if (p && typeof p.catch === "function") {
+        p.catch(() => {
+          try {
+            a.load();
+            a.muted = false;
+            a.volume = vol;
+            a.play().catch(() => {});
+          } catch {}
+        });
       }
     } catch {}
     try {
-      if (isAppHidden() && run && !run.paused && navigator.wakeLock && !startBgKeepAlive._lock) {
+      if (hidden && run && !run.paused && navigator.wakeLock && !startBgKeepAlive._lock) {
         navigator.wakeLock
           .request("screen")
           .then((lk) => {
@@ -773,7 +816,7 @@
     } catch {}
     setMediaPlaying(true, (run && (run.title || "تمرین")) || "ست‌یار");
     wireMediaSessionKeep();
-    if (isAppHidden()) startBgHeartbeat();
+    if (hidden) startBgHeartbeat();
   }
 
   function stopBgKeepAlive() {
@@ -786,8 +829,6 @@
     if (!a) return;
     try {
       a.pause();
-      a.removeAttribute("src");
-      a.load();
     } catch {}
   }
 
@@ -4877,11 +4918,21 @@
       resumeBgIfNeeded();
       if (run && !run.paused) {
         run.lastTick = performance.now();
-        if (!tickIv) loop();
+        loop();
       }
     } else if (run && !run.paused && !soundMuted) {
-      // اپ دیگر باز شد ولی تمرین باز است — صدا کم ولی زنده بماند
+      // مینیمایز: حلقهٔ صدا را فوری پخش کن تا سیستم نکشد
       bgKeepOn = true;
+      try {
+        const a = ensureBgLoop();
+        a.muted = false;
+        a.volume = BG_KEEP_VOL;
+        a.loop = true;
+        if (!/keep-quiet\.wav/.test(String(a.currentSrc || a.src || ""))) {
+          a.src = KEEP_QUIET;
+        }
+        a.play().catch(() => {});
+      } catch {}
       resumeBgIfNeeded();
       startBgHeartbeat();
     }
@@ -4889,6 +4940,9 @@
   window.addEventListener("pagehide", () => {
     if (run && !run.paused && !soundMuted) {
       bgKeepOn = true;
+      try {
+        ensureBgLoop().play().catch(() => {});
+      } catch {}
       resumeBgIfNeeded();
       startBgHeartbeat();
     }
