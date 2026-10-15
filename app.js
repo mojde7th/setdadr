@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "208";
+  const APP_VER = "209";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -80,7 +80,7 @@
   let silentCtxKeep = null;
   let silentCtxGain = null;
   let bgHeartbeatIv = 0;
-  const BG_KEEP_VOL = 0.04;
+  const BG_KEEP_VOL = 0.08;
   const FG_KEEP_VOL = 0.002;
   // سرور دیلارا ابری دائمی (بدون لپ‌تاپ) + اختیاری تونل محلی
   const TTS_API_LS = "setdadr-tts-api";
@@ -520,7 +520,7 @@
       if (audioCtx.state === "suspended") {
         audioCtx.resume().catch(() => {});
       }
-      const want = isAppHidden() ? 0.006 : 0.00012;
+      const want = isAppHidden() ? 0.012 : 0.00012;
       if (silentCtxKeep && silentCtxGain) {
         try {
           silentCtxGain.gain.setValueAtTime(want, audioCtx.currentTime);
@@ -650,6 +650,7 @@
   // یک عنصر صوتی که با لمس شروع/بعدی آنلاک می‌شود و دیگر عوض نمی‌شود.
   // آیفون عنصر صوتی تازه را بدون لمس پخش نمی‌کند؛ این یکی را چرا.
   const KEEP_SILENCE = VOICE_BASE + "silence.wav" + VOICE_Q;
+  const KEEP_SOFT = VOICE_BASE + "keep-soft.wav" + VOICE_Q;
   let keeperVoice = null;
 
   function keeperOnSilence(a) {
@@ -700,7 +701,7 @@
           loop();
         } catch {}
       }
-    }, 1800);
+    }, 1200);
   }
 
   function stopBgHeartbeat() {
@@ -719,9 +720,16 @@
     startSilentCtxKeep();
     const a = ensureKeeper();
     const vol = isAppHidden() ? BG_KEEP_VOL : FG_KEEP_VOL;
+    const keepSrc = isAppHidden() ? KEEP_SOFT : KEEP_SILENCE;
     try {
+      // در پس‌زمینه فایل نرمِ شنیدنی؛ سکوت مطلق را گوشی می‌کشد
+      const wantSoft = /keep-soft\.wav/.test(keepSrc);
+      const onSoft = /keep-soft\.wav/.test(String(a.currentSrc || a.src || ""));
       if (!keeperVoice) {
-        if (!keeperOnSilence(a)) {
+        if (wantSoft && !onSoft) {
+          a.loop = true;
+          a.src = keepSrc;
+        } else if (!wantSoft && !keeperOnSilence(a)) {
           a.loop = true;
           a.src = KEEP_SILENCE;
         }
@@ -729,11 +737,31 @@
         a.volume = vol;
         a.loop = true;
         const p = a.play();
-        if (p && typeof p.catch === "function") p.catch(() => {});
+        if (p && typeof p.catch === "function") {
+          p.catch(() => {
+            try {
+              a.load();
+              a.play().catch(() => {});
+            } catch {}
+          });
+        }
       } else {
         try {
-          a.volume = Math.max(a.volume || 0, vol);
+          a.volume = Math.max(a.volume || 0, vol * 0.5);
         } catch {}
+      }
+    } catch {}
+    // Wake Lock تا مرورگر زود نخوابد (اگر پشتیبانی کند)
+    try {
+      if (isAppHidden() && run && !run.paused && navigator.wakeLock && !startBgKeepAlive._lock) {
+        navigator.wakeLock.request("screen").then((lk) => {
+          startBgKeepAlive._lock = lk;
+          try {
+            lk.addEventListener("release", () => {
+              startBgKeepAlive._lock = null;
+            });
+          } catch {}
+        }).catch(() => {});
       }
     } catch {}
     setMediaPlaying(true, (run && (run.title || "تمرین")) || "ست‌یار");
@@ -3377,26 +3405,89 @@
     );
   }
 
-  async function speakMidHalf() {
-    // فقط بگو — روی صفحه ننویس
+  async function speakCueLine(line, clipRel) {
+    if (soundMuted || !line) return false;
     let ok = false;
+    if (clipRel) {
+      try {
+        ok = !!(await playVoiceFile(clipRel, 1));
+      } catch {}
+      if (ok) return true;
+      try {
+        ok = !!(await playVoiceFileHtml(clipRel, 1));
+      } catch {}
+      if (ok) return true;
+    }
     try {
-      ok = !!(await playMidHalfClipDirect());
+      ok = !!(await playBakedDynClip(line, 1));
     } catch {}
     if (ok) return true;
     try {
-      ok = !!(await speakFaAny("نصفشو رفتی", 1));
+      ok = !!(await speakFaAny(line, 1));
     } catch {}
     if (ok) return true;
     try {
-      ok = !!(await speakSynthLang("نصفشو رفتی", 1, "fa", {
+      ok = !!(await speakSynthLang(line, 1, "fa", {
         noCancel: true,
-        rate: 0.92,
+        rate: 0.95,
         pitch: 1.0
       }));
     } catch {}
     return !!ok;
   }
+
+  const CUE_CLIPS = {
+    half: "dyn/5b47ffb16507f9a1.mp3",
+    q1: "dyn/bb7a803bd57eb121.mp3",
+    q3: "dyn/5f8689243f704f73.mp3",
+    good: "dyn/69e150b185a2a243.mp3"
+  };
+
+  async function speakMidHalf() {
+    let ok = false;
+    try {
+      ok = !!(await playMidHalfClipDirect());
+    } catch {}
+    if (!ok) {
+      try {
+        ok = !!(await speakCueLine("نصفشو رفتی", CUE_CLIPS.half));
+      } catch {}
+    }
+    try {
+      const leftSec = Math.max(1, Math.round((run && run.left) || 0));
+      if (leftSec >= 3) {
+        await sleep(160);
+        await speakCueLine(faNum(leftSec) + " ثانیه");
+      }
+    } catch {}
+    return !!ok;
+  }
+
+  async function speakQuarterCue(kind) {
+    if (kind === "q1") {
+      let ok = false;
+      if (CUE_CLIPS.q1.indexOf("/x.mp3") < 0) {
+        ok = await speakCueLine("یه ربعش رفت", CUE_CLIPS.q1);
+      }
+      if (!ok) ok = await speakCueLine("یه ربعش رفت");
+      if (!ok) ok = await speakCueLine("شروع خوب");
+      return !!ok;
+    }
+    if (kind === "q3") {
+      let ok = false;
+      if (CUE_CLIPS.q3.indexOf("/x.mp3") < 0) {
+        ok = await speakCueLine("یه ربع مونده", CUE_CLIPS.q3);
+      }
+      if (!ok) ok = await speakCueLine("یه ربع مونده");
+      if (!ok) {
+        const leftSec = Math.max(1, Math.round((run && run.left) || 0));
+        ok = await speakCueLine(faNum(leftSec) + " ثانیه");
+      }
+      return !!ok;
+    }
+    return false;
+  }
+
 
   async function speakDoneAmount(sec, total) {
     const n = Math.round(sec);
@@ -3718,17 +3809,7 @@
   }
 
   function flashAutoSave() {
-    const el = $("#autoSaveHint");
-    if (!el) return;
-    el.textContent = "ذخیره شد";
-    el.classList.add("on");
-    clearTimeout(flashAutoSave._t);
-    flashAutoSave._t = setTimeout(() => {
-      try {
-        el.textContent = "ذخیره خودکار است";
-        el.classList.remove("on");
-      } catch {}
-    }, 900);
+    /* UI hint removed — autosave silent */
   }
 
   function autoSavePlan() {
@@ -4141,16 +4222,38 @@
     run.prevLeftCeil = cur;
     if (prev == null) return;
 
-    // وسط فاز کار: اولین تیک که از نصف رد شد (بدون miss با Math.ceil)
+    // کیوهای پیشرفت کار: ۱/۴، نصف(+ثانیه)، ۳/۴
     if (step.kind === "work") {
-      const midKey = run.i + ":halfPlus";
       const total = Math.max(1, Number(run.phaseDur) || 0);
-      const halfLeft = total / 2;
-      if (total >= 10 && !run.announced[midKey] && run.left <= halfLeft) {
-        run.announced[midKey] = true;
-        try {
-          speakMidHalf();
-        } catch {}
+      if (total >= 16) {
+        const q1Left = total * 0.75;
+        const q1Key = run.i + ":q1";
+        if (!run.announced[q1Key] && run.left <= q1Left) {
+          run.announced[q1Key] = true;
+          try {
+            speakQuarterCue("q1");
+          } catch {}
+        }
+      }
+      if (total >= 10) {
+        const midKey = run.i + ":halfPlus";
+        const halfLeft = total / 2;
+        if (!run.announced[midKey] && run.left <= halfLeft) {
+          run.announced[midKey] = true;
+          try {
+            speakMidHalf();
+          } catch {}
+        }
+      }
+      if (total >= 16) {
+        const q3Left = total * 0.25;
+        const q3Key = run.i + ":q3";
+        if (!run.announced[q3Key] && run.left <= q3Left && run.left > 4.2) {
+          run.announced[q3Key] = true;
+          try {
+            speakQuarterCue("q3");
+          } catch {}
+        }
       }
     }
 
@@ -4587,6 +4690,23 @@
     editId = null;
     show("home");
   });
+  const btnStartFromEdit = $("#btnStartFromEdit");
+  if (btnStartFromEdit) {
+    btnStartFromEdit.addEventListener("click", () => {
+      unlockAudio();
+      autoSavePlan();
+      if (!circuit.length) {
+        try {
+          $("#pickMoveName").focus();
+        } catch {}
+        return;
+      }
+      if (!editId) autoSavePlan();
+      const id = editId;
+      if (!id) return;
+      startRun(id);
+    });
+  }
   const btnDoneHome = $("#btnDoneHome");
   if (btnDoneHome) btnDoneHome.addEventListener("click", () => show("home"));
   const btnDoneAgain = $("#btnDoneAgain");

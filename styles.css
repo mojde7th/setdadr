@@ -1591,3 +1591,15 @@ input[type="text"], input[type="number"] {
   .add-plus { grid-column: 2; grid-row: 1; }
   .add-sec { grid-column: 1 / -1; }
 }
+
+/* v209 edit actions */
+.edit-actions {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+}
+.edit-actions #btnStartFromEdit {
+  min-height: 52px;
+  font-weight: 900;
+}
+.auto-save-hint { display: none !important; }

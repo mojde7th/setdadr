@@ -1,4 +1,4 @@
-const CACHE = "setdadr-v208";
+const CACHE = "setdadr-v209";
 const ASSETS = [
   "./",
   "./index.html",
@@ -59,6 +59,9 @@ const ASSETS = [
   "./voice/phase-90.mp3",
   "./voice/phase-95.mp3",
   "./voice/cheer-ali.mp3",
+  "./voice/dyn/69e150b185a2a243.mp3",
+  "./voice/dyn/5f8689243f704f73.mp3",
+  "./voice/dyn/bb7a803bd57eb121.mp3",
   "./voice/dyn/bb7f6d49812b1736.mp3",
   "./voice/dyn/5b47ffb16507f9a1.mp3",
   "./voice/dyn/0211c960f65410c4.mp3",
@@ -93,6 +96,7 @@ const ASSETS = [
   "./voice/dyn/f844f4d4f48025a1.mp3",
   "./voice/phrase-next.mp3",
   "./voice/silence.wav",
+  "./voice/keep-soft.wav",
   "./voice/move-air-squat.mp3",
   "./voice/move-battle.mp3",
   "./voice/move-bench.mp3",
