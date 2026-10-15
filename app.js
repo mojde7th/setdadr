@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "262";
+  const APP_VER = "263";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -71,7 +71,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=262";
+  const VOICE_Q = "?v=263";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -1349,17 +1349,17 @@
       try {
         a.loop = false;
         a.muted = false;
-        a.volume = 0.95;
+        a.volume = 0.88;
         a.onended = () => finish(true);
         a.onerror = () => finish(false);
         a.src = src;
         const p = a.play();
         if (p && typeof p.then === "function") {
           p.then(() => {
-            setTimeout(() => finish(true), 880);
+            setTimeout(() => finish(true), 860);
           }).catch(() => finish(false));
         } else {
-          setTimeout(() => finish(true), 880);
+          setTimeout(() => finish(true), 860);
         }
       } catch {
         finish(false);
