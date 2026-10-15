@@ -1,9 +1,9 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "165";
-  // باشگاه: HTML حداکثر ۱ است؛ بلندی واقعی فقط با WebAudio (بدون کمپرسور خفه‌کن)
-  const VOICE_LOUD = 240;
-  const VOICE_STAT_LOUD = 18;
+  const APP_VER = "166";
+  // باشگاه: بلند بدون خش — گین معقول، بدون دیستورت WaveShaper
+  const VOICE_LOUD = 56;
+  const VOICE_STAT_LOUD = 14;
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -986,32 +986,16 @@
   function loudVol(vol, kind) {
     const base = vol == null ? 1 : Number(vol);
     const mult = kind === "stat" ? VOICE_STAT_LOUD : VOICE_LOUD;
-    return Math.max(0.05, Math.min(480, base * mult));
-  }
-
-  let loudCurve = null;
-  function getLoudCurve() {
-    if (loudCurve) return loudCurve;
-    const n = 2048;
-    const curve = new Float32Array(n);
-    // درایو قوی‌تر برای باشگاه؛ tanh جلوی کلیپ خشن را می‌گیرد
-    for (let i = 0; i < n; i++) {
-      const x = (i * 2) / n - 1;
-      curve[i] = Math.tanh(x * 4.2);
-    }
-    loudCurve = curve;
-    return curve;
+    // سقف پایین‌تر تا اسپیکر گوشی خش نخورد
+    return Math.max(0.05, Math.min(72, base * mult));
   }
 
   function connectLoudOut(srcNode, gainVal) {
     const g = audioCtx.createGain();
-    const sh = audioCtx.createWaveShaper();
-    sh.curve = getLoudCurve();
-    sh.oversample = "2x";
+    // فقط گین تمیز — شکل‌دهنده موج صدا را خش‌دار می‌کرد
     g.gain.value = gainVal;
     srcNode.connect(g);
-    g.connect(sh);
-    sh.connect(audioCtx.destination);
+    g.connect(audioCtx.destination);
     return g;
   }
 
