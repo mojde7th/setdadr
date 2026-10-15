@@ -1,9 +1,9 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "164";
-  // صدای باشگاه: HTML حداکثر ۱ است؛ بلندی واقعی با WebAudio بدون سقف نرم
-  const VOICE_LOUD = 24;
-  const VOICE_STAT_LOUD = 4;
+  const APP_VER = "165";
+  // باشگاه: HTML حداکثر ۱ است؛ بلندی واقعی فقط با WebAudio (بدون کمپرسور خفه‌کن)
+  const VOICE_LOUD = 240;
+  const VOICE_STAT_LOUD = 18;
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -160,7 +160,7 @@
   });
   for (let i = 1; i <= 15; i++) VOICE_FILES.done[i] = true;
 
-  const viewIds = ["home", "moves", "edit", "run", "done"];
+  const viewIds = ["home", "edit", "run", "done"];
 
   const FA_NUM = {
     0: "صفر",
@@ -986,8 +986,33 @@
   function loudVol(vol, kind) {
     const base = vol == null ? 1 : Number(vol);
     const mult = kind === "stat" ? VOICE_STAT_LOUD : VOICE_LOUD;
-    // سقف بالا؛ کمپرسور فقط از کلیپ جلوگیری می‌کند نه از بلندی
-    return Math.max(0.05, Math.min(48, base * mult));
+    return Math.max(0.05, Math.min(480, base * mult));
+  }
+
+  let loudCurve = null;
+  function getLoudCurve() {
+    if (loudCurve) return loudCurve;
+    const n = 2048;
+    const curve = new Float32Array(n);
+    // درایو قوی‌تر برای باشگاه؛ tanh جلوی کلیپ خشن را می‌گیرد
+    for (let i = 0; i < n; i++) {
+      const x = (i * 2) / n - 1;
+      curve[i] = Math.tanh(x * 4.2);
+    }
+    loudCurve = curve;
+    return curve;
+  }
+
+  function connectLoudOut(srcNode, gainVal) {
+    const g = audioCtx.createGain();
+    const sh = audioCtx.createWaveShaper();
+    sh.curve = getLoudCurve();
+    sh.oversample = "2x";
+    g.gain.value = gainVal;
+    srcNode.connect(g);
+    g.connect(sh);
+    sh.connect(audioCtx.destination);
+    return g;
   }
 
   function edgeUuid() {
@@ -1416,21 +1441,8 @@
               return;
             }
             const src = audioCtx.createBufferSource();
-            const g = audioCtx.createGain();
-            const comp = audioCtx.createDynamicsCompressor();
-            try {
-              // کمپرسور خیلی نرم — صدا را خفه نکند
-              comp.threshold.setValueAtTime(-6, audioCtx.currentTime);
-              comp.knee.setValueAtTime(12, audioCtx.currentTime);
-              comp.ratio.setValueAtTime(2, audioCtx.currentTime);
-              comp.attack.setValueAtTime(0.003, audioCtx.currentTime);
-              comp.release.setValueAtTime(0.2, audioCtx.currentTime);
-            } catch {}
-            g.gain.value = gainVal;
             src.buffer = buf;
-            src.connect(g);
-            g.connect(comp);
-            comp.connect(audioCtx.destination);
+            connectLoudOut(src, gainVal);
             liveSources.add(src);
             voicePlayer = src;
             const drop = () => {
@@ -1516,18 +1528,8 @@
               return;
             }
             const src = audioCtx.createBufferSource();
-            const g = audioCtx.createGain();
-            const comp = audioCtx.createDynamicsCompressor();
-            try {
-              comp.threshold.setValueAtTime(-18, audioCtx.currentTime);
-              comp.knee.setValueAtTime(24, audioCtx.currentTime);
-              comp.ratio.setValueAtTime(4, audioCtx.currentTime);
-            } catch {}
-            g.gain.value = gain;
             src.buffer = buf;
-            src.connect(g);
-            g.connect(comp);
-            comp.connect(audioCtx.destination);
+            connectLoudOut(src, gain);
             liveSources.add(src);
             voicePlayer = src;
             src.onended = () => {
@@ -2603,11 +2605,8 @@
           return;
         }
         const src = audioCtx.createBufferSource();
-        const g = audioCtx.createGain();
-        g.gain.value = Math.max(0.05, Math.min(1, vol == null ? 0.98 : vol));
         src.buffer = primedWorkAudioBuffer;
-        src.connect(g);
-        g.connect(audioCtx.destination);
+        connectLoudOut(src, loudVol(vol == null ? 1 : vol, "name"));
         liveSources.add(src);
         voicePlayer = src;
         src.onended = () => {
@@ -2675,35 +2674,27 @@
         return;
       }
       if (step.kind === "rest-set") {
-        // بین ست: عالی → چندمین ست → حرکت بعد (زود) → آمار تا اینجا
+        // بین ست: عالی → حرکت بعدی (اولویت) → چندمین ست
         const doneSets = Math.max(1, Math.round(Number(step.round) || 1));
         const totalSets = Math.max(
           doneSets,
           Math.round(Number(step.rounds) || doneSets)
         );
-        await sleep(450);
+        await sleep(350);
         if (!alive()) return;
         const ali = await playVoiceFile("cheer-ali.mp3", 1);
         if (!alive()) return;
         if (!ali) await speakFaAny("عالی", 1);
         if (!alive()) return;
-        await speakStatLine(setDoneLine(doneSets, totalSets), seq);
-        if (!alive()) return;
-        await sleep(120);
+        await sleep(80);
         await speakNextMoveName(step.nextName || "", seq);
         if (!alive()) return;
-        const mid =
-          run && run.steps
-            ? workStatsFromSteps(run.steps, Math.max(0, run.i - 1))
-            : null;
-        const line = midStatsLine(mid);
-        if (!line) return;
-        await sleep(200);
-        if (!alive()) return;
-        await speakStatLine(line, seq);
+        await sleep(100);
+        await speakStatLine(setDoneLine(doneSets, totalSets), seq);
         return;
       }
-      await sleep(300);
+      // استراحت بین حرکت: فقط حرکت بعدی
+      await sleep(280);
       if (!alive()) return;
       if (isRest || step.nextName) await speakNextMoveName(step.nextName || "", seq);
     });
@@ -2905,6 +2896,7 @@
   }
 
   function show(name) {
+    if (name === "moves") name = "home";
     viewIds.forEach((k) => {
       const el = document.getElementById("view-" + k);
       if (!el) return;
@@ -2917,6 +2909,25 @@
     if (tabEdit) tabEdit.hidden = name !== "edit";
     const topBar = $("#topBar");
     if (topBar) topBar.style.display = name === "run" ? "none" : "";
+    if (name === "edit") updatePlanSummary();
+  }
+
+  function updatePlanSummary() {
+    const el = $("#planSummary");
+    if (!el) return;
+    const rounds = Math.max(1, Number($("#planRounds") && $("#planRounds").value) || 4);
+    const restSet = Math.max(0, Number($("#planRestSet") && $("#planRestSet").value) || 0);
+    const restMove = Math.max(0, Number($("#planRestMove") && $("#planRestMove").value) || 0);
+    const moves = circuit.length;
+    el.textContent =
+      toFaDigits(rounds) +
+      " ست · " +
+      toFaDigits(moves) +
+      " حرکت · استراحت ست " +
+      toFaDigits(restSet) +
+      "ث · استراحت حرکت " +
+      toFaDigits(restMove) +
+      "ث";
   }
 
   function uid() {
@@ -3052,6 +3063,7 @@
       li.appendChild(rm);
       ol.appendChild(li);
     });
+    updatePlanSummary();
   }
 
   function autoTitle(list) {
@@ -3415,7 +3427,7 @@
 
     if (next.nextName) {
       showRestThenNext(
-        "استراحت " + toFaDigits(next.dur) + " ثانیه",
+        "استراحت " + toFaDigits(next.dur) + "ث",
         next.nextName
       );
       return;
@@ -3467,19 +3479,22 @@
   });
   $("#btnDoneHome").addEventListener("click", () => show("home"));
 
-  $("#moveForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const name = ($("#moveName").value || "").trim();
-    if (!name) return;
-    const work = Math.max(5, Number($("#moveWork").value) || 40);
-    state.moves.unshift({ id: uid(), name, work });
-    save(state);
-    try {
-      await warmMoveVoice(name);
-    } catch {}
-    $("#moveName").value = "";
-    renderMoves();
-  });
+  const moveFormEl = $("#moveForm");
+  if (moveFormEl) {
+    moveFormEl.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const name = ($("#moveName").value || "").trim();
+      if (!name) return;
+      const work = Math.max(5, Number($("#moveWork").value) || 40);
+      state.moves.unshift({ id: uid(), name, work });
+      save(state);
+      try {
+        await warmMoveVoice(name);
+      } catch {}
+      $("#moveName").value = "";
+      renderMoves();
+    });
+  }
 
   $("#addToSetForm").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -3498,22 +3513,15 @@
       await warmMoveVoice(name);
     } catch {}
     $("#pickMoveName").value = "";
-    const sel = $("#pickFromLib");
-    if (sel) sel.value = "";
     renderCircuit();
-    // فوکوس نکن — وگرنه پیشنهادها دوباره داخل اینپوت باز می‌شود
+    updatePlanSummary();
   });
 
-  $("#pickFromLib").addEventListener("change", () => {
-    const sel = $("#pickFromLib");
-    if (!sel || !sel.value) return;
-    const known = state.moves.find((m) => m.id === sel.value);
-    if (!known) return;
-    $("#pickMoveName").value = known.name;
-    $("#pickWork").value = String(known.work);
-    warmMoveVoice(known.name);
-    // سلکت را خالی کن تا «گزینه» داخل اینپوت متنی نماند
-    sel.value = "";
+  ["planRounds", "planRestSet", "planRestMove"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener("input", updatePlanSummary);
+    el.addEventListener("change", updatePlanSummary);
   });
 
   $("#btnSavePlan").addEventListener("click", () => {
@@ -3588,10 +3596,6 @@
     b.addEventListener("click", () => {
       const v = b.getAttribute("data-view");
       if (v === "home") show("home");
-      if (v === "moves") {
-        renderMoves();
-        show("moves");
-      }
       if (v === "edit" && !b.hidden) show("edit");
     });
   });
