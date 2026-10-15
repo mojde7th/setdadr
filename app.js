@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "242";
+  const APP_VER = "243";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -71,7 +71,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=242";
+  const VOICE_Q = "?v=243";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -4571,13 +4571,17 @@
 
     if (step.kind === "work") {
       const total = Math.max(1, Number(run.phaseDur) || 0);
-      function fireAtGone(pct, keySuffix, speakFn) {
+      const elapsed = Math.max(0, total - Number(run.left) || 0);
+      const prevElapsed = Math.max(0, total - (prev == null ? total : prev));
+      // درصدِ پرشده (رفته)، نه مانده — ۲ث زودتر برای تأخیر تلفظ
+      function fireAtFilled(pct, keySuffix, speakFn) {
         if (total < 12) return;
         if (nameSpeechGuard) return;
         const key = run.i + ":" + keySuffix;
         if (run.announced[key]) return;
-        const mark = Math.ceil(total * (1 - pct / 100) + 2);
-        if (prev > mark && cur <= mark) {
+        const target = total * (pct / 100);
+        const fireAt = Math.max(0, target - 2);
+        if (prevElapsed < fireAt && elapsed >= fireAt) {
           run.announced[key] = true;
           try {
             stopCueRail();
@@ -4587,8 +4591,8 @@
           } catch {}
         }
       }
-      fireAtGone(30, "pct30", () => speakPercentGone(30));
-      fireAtGone(80, "pct80", () => speakPercentGone(80));
+      fireAtFilled(30, "pct30", () => speakPercentGone(30));
+      fireAtFilled(80, "pct80", () => speakPercentGone(80));
 
       if (total >= 10 && !nameSpeechGuard) {
         const midKey = run.i + ":midBeep";
@@ -4600,7 +4604,6 @@
       }
     }
 
-    // ۴ ثانیه آخر: تیک ساعت بلند — هر ثانیه یک ضربه (۴،۳،۲،۱)
     if (run.phaseDur > 5 && !nameSpeechGuard) {
       for (let s = 4; s >= 1; s--) {
         const k = run.i + ":tick" + s;
