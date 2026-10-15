@@ -1,9 +1,9 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "178";
+  const APP_VER = "179";
   // باشگاه: بلند و نرم — بدون دیستورت خشن
-  const VOICE_LOUD = 70;
-  const VOICE_STAT_LOUD = 16;
+  const VOICE_LOUD = 52;
+  const VOICE_STAT_LOUD = 14;
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -802,11 +802,11 @@
     playWarmChime({
       atMs: atMs || 0,
       stack: false,
-      peak: 0.38,
-      total: 0.42,
+      peak: 0.22,
+      total: 0.32,
       notes: [
-        { f: 392.0, at: 0, dur: 0.28, g: 0.85 },
-        { f: 523.25, at: 0.08, dur: 0.3, g: 0.7 }
+        { f: 349.23, at: 0, dur: 0.22, g: 0.7 },
+        { f: 440.0, at: 0.06, dur: 0.24, g: 0.55 }
       ]
     });
   }
@@ -995,14 +995,11 @@
   function connectLoudOut(srcNode, gainVal) {
     const g = audioCtx.createGain();
     const lp = audioCtx.createBiquadFilter();
-    // فیلتر نرم؛ بدون کمپرسور خش‌دار انتهای جمله
+    // مسیر تمیز و نرم برای اسم حرکت — بدون رمپ تند
     lp.type = "lowpass";
-    lp.frequency.value = 7600;
-    lp.Q.value = 0.4;
-    const now = audioCtx.currentTime;
-    const target = Math.min(Number(gainVal) || 1, 88);
-    g.gain.setValueAtTime(0.0001, now);
-    g.gain.exponentialRampToValueAtTime(Math.max(0.001, target), now + 0.04);
+    lp.frequency.value = 6800;
+    lp.Q.value = 0.3;
+    g.gain.value = Math.min(Number(gainVal) || 1, 64);
     srcNode.connect(g);
     g.connect(lp);
     lp.connect(audioCtx.destination);
@@ -2632,23 +2629,10 @@
     const alive = () => soundAlive(gen, tok) && (seq == null || announceAlive(seq));
     if (!alive()) return false;
     if (!nm) return false;
-    // bare=true: فقط اسم — جمله «حرکت بعد» قاطی اسم نشود
-    if (!bare) {
-      try {
-        let pref = await playVoiceFile("phrase-next.mp3", 1);
-        if (!alive()) return false;
-        if (!pref) {
-          await speakFaAny("حرکت بعد", 1);
-          if (!alive()) return false;
-        }
-        // قطع کوتاه تا ته کلیپ روی اسم ننشیند
-        stopVoiceFile();
-        killAllHtmlAudio();
-        await sleep(90);
-      } catch {}
-      if (!alive()) return false;
-    }
-    await sleep(40);
+    // هرگز «حرکت بعد» نگو — فقط اسم بعدی
+    stopVoiceFile();
+    killAllHtmlAudio();
+    await sleep(50);
     if (!alive()) return false;
     let ok = false;
     try {
@@ -2682,7 +2666,9 @@
       const alive = () => announceAlive(seq) && soundAlive(gen, tok);
       if (step.kind === "work") {
         const nm = normSpeakKey(step.name);
-        await sleep(450);
+        await sleep(380);
+        // بوق را قبل از اسم قطع کن تا خش نماند
+        stopBeep();
         if (!nm || !alive()) return;
         let ok = false;
         try {
@@ -2692,6 +2678,14 @@
         if (!ok) ok = await speakMoveNameOnly(nm, 1);
         if (!alive()) return;
         if (!ok) await speakFaAny(nm, 1);
+        if (!alive()) return;
+        // آخرین حرکت کل تمرین
+        const next = run && run.steps[run.i + 1];
+        if (!next) {
+          await sleep(120);
+          if (!alive()) return;
+          await speakFaAny("حرکتی نیست، آخرین حرکت بود", 1);
+        }
         return;
       }
       if (step.kind === "rest-set") {
@@ -2879,7 +2873,7 @@
       } catch {}
       const phrase =
         pct >= 45
-          ? "وای، بیشتر از نصفشووو رفتی!"
+          ? "بیشتر از نصفشووو رفتی"
           : faNum(pct) + " درصد رفتی";
       await speakFaAny(phrase, 1);
       if (!live()) return;
@@ -3728,7 +3722,7 @@
         arrowLead.hidden = false;
         arrowLead.textContent = "↓";
       }
-      flow1.textContent = "(حرکتی نیست)";
+      flow1.textContent = "حرکتی نیست (پایان تمرین)";
       if (flow2) flow2.textContent = "";
       if (row2) row2.hidden = true;
       if (arrow) arrow.hidden = true;
@@ -3779,12 +3773,12 @@
       Math.round(Number(stats.totalMoves != null ? stats.totalMoves : stats.moveCount) || 0)
     );
     const tileData = [
-      ["ست", toFaDigits(rounds)],
       ["زمان تمرین", timePhrase(workSec)],
       ["استراحت", timePhrase(restSec)],
       ["کالری", toFaDigits(calories)],
       ["پیاده‌روی", toFaDigits(walkMin) + " دقیقه"],
-      ["حرکت‌ها", toFaDigits(movesN)]
+      ["حرکت‌ها", toFaDigits(movesN)],
+      ["دورها", toFaDigits(rounds)]
     ];
     if (tiles) {
       tileData.forEach(([k, v]) => {
@@ -3864,7 +3858,8 @@
     editId = null;
     show("home");
   });
-  $("#btnDoneHome").addEventListener("click", () => show("home"));
+  const btnDoneHome = $("#btnDoneHome");
+  if (btnDoneHome) btnDoneHome.addEventListener("click", () => show("home"));
   const btnDoneAgain = $("#btnDoneAgain");
   if (btnDoneAgain) {
     btnDoneAgain.addEventListener("click", () => show("home"));
