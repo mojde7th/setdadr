@@ -1,9 +1,9 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "189";
+  const APP_VER = "190";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
-  const VOICE_LOUD = 16;
-  const VOICE_STAT_LOUD = 7;
+  const VOICE_LOUD = 44;
+  const VOICE_STAT_LOUD = 12;
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -1041,33 +1041,23 @@
   function loudVol(vol, kind) {
     const base = vol == null ? 1 : Number(vol);
     const mult = kind === "stat" ? VOICE_STAT_LOUD : VOICE_LOUD;
-    return Math.max(0.08, Math.min(22, base * mult));
+    // مثل ۱۸۱: بلند برای باشگاه — پایدار
+    return Math.max(0.05, Math.min(96, base * mult));
   }
 
   function connectLoudOut(srcNode, gainVal) {
     const g = audioCtx.createGain();
-    const hp = audioCtx.createBiquadFilter();
     const lp = audioCtx.createBiquadFilter();
-    const comp = audioCtx.createDynamicsCompressor();
-    hp.type = "highpass";
-    hp.frequency.value = 80;
-    hp.Q.value = 0.7;
     lp.type = "lowpass";
-    lp.frequency.value = 5500;
-    lp.Q.value = 0.35;
-    comp.threshold.value = -14;
-    comp.knee.value = 12;
-    comp.ratio.value = 2.5;
-    comp.attack.value = 0.003;
-    comp.release.value = 0.15;
-    g.gain.value = Math.min(Number(gainVal) || 1, 18);
-    srcNode.connect(hp);
-    hp.connect(g);
-    g.connect(comp);
-    comp.connect(lp);
+    lp.frequency.value = 6200;
+    lp.Q.value = 0.25;
+    g.gain.value = Math.min(Number(gainVal) || 1, 48);
+    srcNode.connect(g);
+    g.connect(lp);
     lp.connect(audioCtx.destination);
     return g;
   }
+
 
   function edgeUuid() {
     if (crypto.randomUUID) return crypto.randomUUID().replace(/-/g, "");
@@ -2188,15 +2178,17 @@
       } catch {}
       const blob = await fetchDilaraOnly(text);
       if (!blob || !alive() || gen !== soundGen) return false;
-      const url = URL.createObjectURL(blob);
+      // مسیر پایدار ۱۸۱: WebAudio بلند
       let ok = false;
       try {
-        // مهم: روی همان عنصر آنلاک‌شدهٔ کیپر پخش کن (آی‌او‌اس/اندروید)
-        ok = !!(await playOnKeeper(url, 1, {
-          startCap: 6000,
-          maxMs: 20000,
-          gen
-        }));
+        ok = !!(await playBlobFa(blob, vol == null ? 1 : vol));
+      } catch {}
+      if (ok) return true;
+      if (!alive() || gen !== soundGen) return false;
+      // پشتیبان: کیپر آنلاک‌شده
+      const url = URL.createObjectURL(blob);
+      try {
+        ok = !!(await playOnKeeper(url, 1, { startCap: 6000, maxMs: 20000, gen }));
       } finally {
         setTimeout(() => {
           try {
@@ -2204,12 +2196,7 @@
           } catch {}
         }, 30000);
       }
-      if (ok) return true;
-      if (!alive() || gen !== soundGen) return false;
-      const okHtml = await playBlobHtmlFirst(blob, vol == null ? 1 : vol);
-      if (okHtml) return true;
-      if (!alive() || gen !== soundGen) return false;
-      return playBlobFa(blob, vol == null ? 1 : vol);
+      return !!ok;
     } catch {
       return false;
     }
@@ -2722,17 +2709,17 @@
     unlockAudio();
     startBgKeepAlive();
     startSilentCtxKeep();
-    await sleep(40);
+    stopVoiceFile();
+    await sleep(50);
     if (!alive()) return false;
-    // بگو: حرکت بعد فلان (دیلارا روی کیپر)
+    let ok = false;
     if (!bare) {
       try {
-        const lineOk = !!(await speakFaAny("حرکت بعد " + nm, 1));
-        if (lineOk) return true;
+        ok = !!(await speakFaAny("حرکت بعد " + nm, 1));
       } catch {}
+      if (ok) return true;
       if (!alive()) return false;
     }
-    let ok = false;
     try {
       ok = !!(await speakFaAny(nm, 1));
     } catch {}
@@ -2768,8 +2755,7 @@
       const alive = () => announceAlive(seq) && soundAlive(gen, tok);
       if (step.kind === "work") {
         const nm = normSpeakKey(step.name);
-        await sleep(120);
-        // بوق را قبل از اسم قطع کن تا خش نماند
+        await sleep(280);
         stopBeep();
         unlockAudio();
         startBgKeepAlive();
@@ -2779,24 +2765,15 @@
         } catch {}
         if (!nm || !alive()) return;
         let ok = false;
-        // اول دیلارا/زنده — مطمئن‌ترین مسیر اسم
         try {
-          ok = !!(await speakFaAny(nm, 1));
+          ok = await playPrimedWorkName(nm, 1);
         } catch {}
-        if (!alive()) return;
-        if (!ok) {
-          try {
-            ok = await playPrimedWorkName(nm, 1);
-          } catch {}
-        }
         if (!alive()) return;
         if (!ok) ok = await speakMoveNameOnly(nm, 1);
         if (!alive()) return;
         if (!ok) await speakFaAny(nm, 1);
         if (!alive()) return;
-        // بوق اضافه بعد اسم نگذار (خش گوشی)
         stopBeep();
-        if (!alive()) return;
         // آخرین حرکت کل تمرین
         const next = run && run.steps[run.i + 1];
         if (!next) {
