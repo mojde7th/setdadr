@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "253";
+  const APP_VER = "254";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -71,7 +71,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=253";
+  const VOICE_Q = "?v=254";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -3167,26 +3167,31 @@
     const v = vol == null ? 1 : vol;
     const keyLow = raw.toLowerCase();
     unlockAudio();
+    keepSilenceAlive();
     const clip =
       MOVE_CLIP[speakText] ||
       MOVE_CLIP[raw] ||
       MOVE_CLIP[keyLow] ||
+      MOVE_CLIP[normSpeakKey(raw)] ||
       (said && MOVE_CLIP[said.text]);
     if (clip) {
       try {
         const ok = !!(await playOnKeeper(VOICE_BASE + clip + VOICE_Q, v, {
-          startCap: 4000,
-          maxMs: 20000,
-          gen,
-          protect: true
+          startCap: 2200,
+          maxMs: 10000,
+          gen
         }));
-        if (!alive()) return false;
         if (ok) return true;
       } catch {}
+      // اگر کیپر شکست، همان فایل را روی ریل بوق امتحان کن
+      try {
+        const ok2 = !!(await playBgCueFile(clip, 1, { waitMs: 8000 }));
+        if (ok2) return true;
+      } catch {}
     }
+    if (!alive()) return false;
     try {
       const ok = !!(await speakFaAny(speakText, v));
-      if (!alive()) return false;
       if (ok) return true;
     } catch {}
     return false;
@@ -3364,21 +3369,22 @@
         try {
           beepPhaseStart();
         } catch {}
-        await sleep(280);
+        // صبر تا بوق شروع تمام شود، بعد فقط اسم — بدون تایم‌اوت کوتاه که اسم را قطع کند
+        await sleep(340);
         if (!alive()) return;
         nameSpeechGuard = true;
         const guardTimer = setTimeout(() => {
           nameSpeechGuard = false;
-        }, 5500);
+        }, 12000);
         try {
           let ok = false;
           try {
-            ok = !!(await withTimeout(speakMoveNameOnly(nm, 1), 4500, false));
+            ok = !!(await speakMoveNameOnly(nm, 1));
           } catch {}
           if (!alive()) return;
           if (!ok) {
             try {
-              ok = !!(await withTimeout(speakFaAny(nm, 1), 3500, false));
+              ok = !!(await speakFaAny(nm, 1));
             } catch {}
           }
         } finally {
@@ -3395,9 +3401,9 @@
       nameSpeechGuard = true;
       const guardTimer = setTimeout(() => {
         nameSpeechGuard = false;
-      }, 8000);
+      }, 12000);
       try {
-        await withTimeout(speakNextMoveName(step.nextName || "", seq), 7000, false);
+        await speakNextMoveName(step.nextName || "", seq);
       } finally {
         clearTimeout(guardTimer);
         nameSpeechGuard = false;
