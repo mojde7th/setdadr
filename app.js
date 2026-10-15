@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "244";
+  const APP_VER = "245";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -71,7 +71,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=244";
+  const VOICE_Q = "?v=245";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -397,7 +397,7 @@
     } catch {}
     // پیش‌گرم بوق‌ها تا قبل از مینیمایز در کش/آنلاک باشند
     try {
-      ["beep-rest.wav", "beep-soft.wav", "beep-mid.wav", "beep-tick.wav"].forEach((rel) => {
+      ["beep-rest.wav", "beep-soft.wav", "beep-mid.wav", "beep-tick.wav", "beep-start.wav"].forEach((rel) => {
         const u = VOICE_BASE + rel + VOICE_Q;
         const pre = new Audio(u);
         pre.preload = "auto";
@@ -1381,7 +1381,7 @@
     if (soundMuted) return Promise.resolve(false);
     unlockAudio();
     startBgKeepAlive();
-    const src = VOICE_BASE + "beep-soft.wav" + VOICE_Q;
+    const src = VOICE_BASE + "beep-start.wav" + VOICE_Q;
     const a = ensureBgCueRail();
     try {
       a.pause();
