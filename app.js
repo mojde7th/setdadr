@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "275";
+  const APP_VER = "276";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -70,7 +70,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=275";
+  const VOICE_Q = "?v=276";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -80,8 +80,8 @@
   let silentCtxKeep = null;
   let silentCtxGain = null;
   let bgHeartbeatIv = 0;
-  const BG_KEEP_VOL = 0.08;
-  const FG_KEEP_VOL = 0.002;
+  const BG_KEEP_VOL = 0.001;
+  const FG_KEEP_VOL = 0.001;
   // سرور دیلارا ابری دائمی (بدون لپ‌تاپ) + اختیاری تونل محلی
   const TTS_API_LS = "setdadr-tts-api";
   const CLOUD_EDGE_TTS = "https://edge-tts.vercel.app/api/tts";
@@ -514,33 +514,13 @@
   }
 
   function startSilentCtxKeep() {
+    // فقط بیدار نگه داشتن کانتکست — بدون نوسان‌ساز شنیدنی
     try {
       unlockAudio();
       if (!audioCtx) return false;
       if (audioCtx.state === "suspended") {
         audioCtx.resume().catch(() => {});
       }
-      const want = isAppHidden() ? 0.012 : 0.00012;
-      if (silentCtxKeep && silentCtxGain) {
-        try {
-          silentCtxGain.gain.setValueAtTime(want, audioCtx.currentTime);
-        } catch {
-          try {
-            silentCtxGain.gain.value = want;
-          } catch {}
-        }
-        return true;
-      }
-      const g = audioCtx.createGain();
-      g.gain.value = want;
-      g.connect(audioCtx.destination);
-      const o = audioCtx.createOscillator();
-      o.type = "sine";
-      o.frequency.value = isAppHidden() ? 55 : 28;
-      o.connect(g);
-      o.start();
-      silentCtxKeep = o;
-      silentCtxGain = g;
       return true;
     } catch {
       return false;
@@ -720,16 +700,11 @@
     startSilentCtxKeep();
     const a = ensureKeeper();
     const vol = isAppHidden() ? BG_KEEP_VOL : FG_KEEP_VOL;
-    const keepSrc = isAppHidden() ? KEEP_SOFT : KEEP_SILENCE;
+    const keepSrc = KEEP_SILENCE;
     try {
-      // در پس‌زمینه فایل نرمِ شنیدنی؛ سکوت مطلق را گوشی می‌کشد
-      const wantSoft = /keep-soft\.wav/.test(keepSrc);
-      const onSoft = /keep-soft\.wav/.test(String(a.currentSrc || a.src || ""));
+      // فقط سکوت خیلی کم — بدون keep-soft (نویز)
       if (!keeperVoice) {
-        if (wantSoft && !onSoft) {
-          a.loop = true;
-          a.src = keepSrc;
-        } else if (!wantSoft && !keeperOnSilence(a)) {
+        if (!keeperOnSilence(a)) {
           a.loop = true;
           a.src = KEEP_SILENCE;
         }
