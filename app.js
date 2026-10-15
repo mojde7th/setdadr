@@ -1,9 +1,9 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "179";
+  const APP_VER = "180";
   // باشگاه: بلند و نرم — بدون دیستورت خشن
-  const VOICE_LOUD = 52;
-  const VOICE_STAT_LOUD = 14;
+  const VOICE_LOUD = 44;
+  const VOICE_STAT_LOUD = 12;
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -802,11 +802,11 @@
     playWarmChime({
       atMs: atMs || 0,
       stack: false,
-      peak: 0.22,
-      total: 0.32,
+      peak: 0.14,
+      total: 0.26,
       notes: [
-        { f: 349.23, at: 0, dur: 0.22, g: 0.7 },
-        { f: 440.0, at: 0.06, dur: 0.24, g: 0.55 }
+        { f: 329.63, at: 0, dur: 0.18, g: 0.55 },
+        { f: 392.0, at: 0.05, dur: 0.2, g: 0.4 }
       ]
     });
   }
@@ -995,11 +995,11 @@
   function connectLoudOut(srcNode, gainVal) {
     const g = audioCtx.createGain();
     const lp = audioCtx.createBiquadFilter();
-    // مسیر تمیز و نرم برای اسم حرکت — بدون رمپ تند
+    // نرم و بدون کلیک انتهای جمله
     lp.type = "lowpass";
-    lp.frequency.value = 6800;
-    lp.Q.value = 0.3;
-    g.gain.value = Math.min(Number(gainVal) || 1, 64);
+    lp.frequency.value = 6200;
+    lp.Q.value = 0.25;
+    g.gain.value = Math.min(Number(gainVal) || 1, 48);
     srcNode.connect(g);
     g.connect(lp);
     lp.connect(audioCtx.destination);
@@ -2679,10 +2679,13 @@
         if (!alive()) return;
         if (!ok) await speakFaAny(nm, 1);
         if (!alive()) return;
+        // بوق اضافه بعد اسم نگذار (خش گوشی)
+        stopBeep();
+        if (!alive()) return;
         // آخرین حرکت کل تمرین
         const next = run && run.steps[run.i + 1];
         if (!next) {
-          await sleep(120);
+          await sleep(160);
           if (!alive()) return;
           await speakFaAny("حرکتی نیست، آخرین حرکت بود", 1);
         }
