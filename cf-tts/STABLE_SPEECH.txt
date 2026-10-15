@@ -2,7 +2,7 @@ SETDADR STABLE SPEECH — 2026-10-15 (owner restore point)
 =========================================================
 APP_VER: 204
 GIT_TAG: setdadr-stable-speech-v204
-COMMIT: (filled after commit)
+COMMIT: 7cd432ba4e820c20c8de3ae9dbe731fa9ca1eb70
 Restore command when owner says «برگردون پایه» / restore stable:
   git checkout setdadr-stable-speech-v204 -- app.js index.html styles.css sw.js tts-endpoint.js voice/dyn/
 
