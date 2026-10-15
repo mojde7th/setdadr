@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "260";
+  const APP_VER = "261";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -71,7 +71,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=260";
+  const VOICE_Q = "?v=261";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -1263,16 +1263,15 @@
 
   function beepClockTick(secLeft) {
     if (soundMuted) return;
-    // فقط یک مسیر فایل — بدون ویواودیو موازی
+    // تیک نرم و بلند — یک فایل، نه تیز
     try {
-      const rel = secLeft <= 2 ? "beep-soft.wav" : "beep-tick.wav";
-      const src = VOICE_BASE + rel + VOICE_Q;
+      const src = VOICE_BASE + "beep-tick.wav" + VOICE_Q;
       const a = ensureBgCueRail();
       a.onended = null;
       a.onerror = null;
       a.loop = false;
       a.muted = false;
-      a.volume = secLeft <= 2 ? 0.9 : 0.78;
+      a.volume = secLeft <= 2 ? 1 : 0.92;
       a.src = src;
       const p = a.play();
       if (p && typeof p.catch === "function") p.catch(() => {});
@@ -1330,7 +1329,7 @@
   function beepPhaseStart() {
     if (soundMuted) return Promise.resolve(false);
     unlockAudio();
-    // فقط یک بار — فایل ملایم؛ بدون ویواودیو موازی (دوبل نمی‌زند)
+    // فقط یک بار — فایل ملایم؛ تمام‌شدن واقعی تا اسم بلافاصله بعدش بیاید
     const src = VOICE_BASE + "beep-start.wav" + VOICE_Q;
     const a = ensureBgCueRail();
     try {
@@ -1355,8 +1354,14 @@
         a.onerror = () => finish(false);
         a.src = src;
         const p = a.play();
-        if (p && typeof p.catch === "function") p.catch(() => finish(false));
-        setTimeout(() => finish(true), 650);
+        if (p && typeof p.then === "function") {
+          p.then(() => {
+            // اگر ended نیامد، کمی بعد از طول فایل جمع کن
+            setTimeout(() => finish(true), 560);
+          }).catch(() => finish(false));
+        } else {
+          setTimeout(() => finish(true), 560);
+        }
       } catch {
         finish(false);
       }
@@ -3130,7 +3135,6 @@
     const v = vol == null ? 1 : vol;
     const keyLow = raw.toLowerCase();
     unlockAudio();
-    keepSilenceAlive();
     const clip =
       MOVE_CLIP[speakText] ||
       MOVE_CLIP[raw] ||
@@ -3140,8 +3144,8 @@
     if (clip) {
       try {
         const ok = !!(await playOnKeeper(VOICE_BASE + clip + VOICE_Q, v, {
-          startCap: 2200,
-          maxMs: 10000,
+          startCap: 900,
+          maxMs: 8000,
           gen
         }));
         if (ok) return true;
@@ -3320,10 +3324,13 @@
       if (step.kind === "work") {
         const nm = normSpeakKey(step.name);
         if (!nm || !alive()) return;
+        // همزمان با بوق شروع، اسم را گرم کن تا بعد از بوق تأخیر نباشد
+        try {
+          warmMoveVoice(nm);
+        } catch {}
         try {
           await beepPhaseStart();
         } catch {}
-        await sleep(40);
         if (!alive()) return;
         nameSpeechGuard = true;
         const guardTimer = setTimeout(() => {
