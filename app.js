@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "239";
+  const APP_VER = "240";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -70,7 +70,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=239";
+  const VOICE_Q = "?v=240";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -396,7 +396,7 @@
     } catch {}
     // پیش‌گرم بوق‌ها تا قبل از مینیمایز در کش/آنلاک باشند
     try {
-      ["beep-rest.wav", "beep-soft.wav"].forEach((rel) => {
+      ["beep-rest.wav", "beep-soft.wav", "beep-mid.wav"].forEach((rel) => {
         const u = VOICE_BASE + rel + VOICE_Q;
         const pre = new Audio(u);
         pre.preload = "auto";
@@ -774,6 +774,9 @@
   function stopCueRail() {
     try {
       beepFourSecWarning._on = false;
+    } catch {}
+    try {
+      beepMidExact._on = false;
     } catch {}
     try {
       const a = bgCueRail;
@@ -1335,6 +1338,49 @@
       }, 8000);
     } catch {
       beepFourSecWarning._on = false;
+    }
+  }
+
+  function beepMidExact() {
+    if (soundMuted) return;
+    if (beepMidExact._on) return;
+    beepMidExact._on = true;
+    unlockAudio();
+    startBgKeepAlive();
+    try {
+      cutKeeperVoice(false);
+    } catch {}
+    const src = VOICE_BASE + "beep-mid.wav" + VOICE_Q;
+    const a = ensureBgCueRail();
+    try {
+      a.pause();
+    } catch {}
+    try {
+      a.onended = () => {
+        beepMidExact._on = false;
+        try {
+          a.volume = 0;
+          a.src = KEEP_SILENCE;
+        } catch {}
+      };
+      a.onerror = () => {
+        beepMidExact._on = false;
+      };
+      a.loop = false;
+      a.muted = false;
+      a.volume = 1;
+      a.src = src;
+      const p = a.play();
+      if (p && typeof p.catch === "function") {
+        p.catch(() => {
+          beepMidExact._on = false;
+        });
+      }
+      setTimeout(() => {
+        beepMidExact._on = false;
+      }, 2500);
+    } catch {
+      beepMidExact._on = false;
     }
   }
 
@@ -4500,7 +4546,6 @@
         if (total < 12) return;
         const key = run.i + ":" + keySuffix;
         if (run.announced[key]) return;
-        // ۲ ثانیه قبل از رسیدن به درصد (برای جبران تأخیر تلفظ)
         const mark = Math.ceil(total * (1 - pct / 100) + 2);
         if (prev > mark && cur <= mark) {
           run.announced[key] = true;
@@ -4514,6 +4559,16 @@
       }
       fireAtGone(30, "pct30", () => speakPercentGone(30));
       fireAtGone(80, "pct80", () => speakPercentGone(80));
+
+      // دقیقاً وسط — بوق متمایز دو‌تیونه
+      if (total >= 10) {
+        const midKey = run.i + ":midBeep";
+        const midMark = Math.ceil(total / 2);
+        if (!run.announced[midKey] && prev > midMark && cur <= midMark) {
+          run.announced[midKey] = true;
+          beepMidExact();
+        }
+      }
     }
 
     if (run.phaseDur > 5) {
