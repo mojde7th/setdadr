@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "256";
+  const APP_VER = "257";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -71,7 +71,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=256";
+  const VOICE_Q = "?v=257";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -1264,13 +1264,29 @@
   function beepClockTick(secLeft) {
     if (soundMuted) return;
     unlockAudio();
-    startBgKeepAlive();
-    const src = VOICE_BASE + "beep-tick.wav" + VOICE_Q;
-    const a = ensureBgCueRail();
+    keepSilenceAlive();
+    // تیک ساعت بلند — ویواودیو + فایل؛ بدون startBgKeepAlive سنگین
     try {
-      a.pause();
+      if (audioCtx) {
+        if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+        const t0 = audioCtx.currentTime + 0.01;
+        const g = audioCtx.createGain();
+        g.connect(audioCtx.destination);
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.9, t0 + 0.008);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.11);
+        const o = audioCtx.createOscillator();
+        o.type = "square";
+        o.frequency.setValueAtTime(secLeft <= 2 ? 1320 : 990, t0);
+        o.connect(g);
+        o.start(t0);
+        o.stop(t0 + 0.12);
+      }
     } catch {}
     try {
+      const rel = secLeft <= 2 ? "beep-soft.wav" : "beep-tick.wav";
+      const src = VOICE_BASE + rel + VOICE_Q;
+      const a = ensureBgCueRail();
       a.onended = null;
       a.onerror = null;
       a.loop = false;
@@ -1278,15 +1294,7 @@
       a.volume = 1;
       a.src = src;
       const p = a.play();
-      if (p && typeof p.catch === "function") {
-        p.catch(() => {
-          try {
-            a.src = src;
-            a.volume = 1;
-            a.play().catch(() => {});
-          } catch {}
-        });
-      }
+      if (p && typeof p.catch === "function") p.catch(() => {});
     } catch {}
   }
 
@@ -4558,18 +4566,14 @@
     if (step.kind === "work") {
       const total = Math.max(1, Number(run.phaseDur) || 0);
       const elapsed = Math.max(0, total - (Number(run.left) || 0));
-      function fireAtFilled(pct, keySuffix, speakFn, leadSec) {
+      function fireAtFilled(pct, keySuffix, speakFn) {
         if (total < 12) return;
         const key = run.i + ":" + keySuffix;
         if (run.announced[key]) return;
-        const lead = leadSec == null ? 1 : leadSec;
+        // یک ثانیه زودتر؛ اگر حتی یک ثانیه دیر شد اصلاً نگو
         const target = total * (pct / 100);
-        const fireAt = Math.max(0, target - lead);
-        // پنجرهٔ انقضا جدا برای زود/دیر — ۳۰٪ قبل از نصف منقضی؛ ۷۰٪ بعد از نصف
-        const expireAt =
-          pct <= 40
-            ? Math.min(target + 1.2, total * 0.45)
-            : Math.min(total - 4.5, target + 2.5);
+        const fireAt = Math.max(0, target - 1);
+        const expireAt = fireAt + 1;
         if (elapsed > expireAt) {
           run.announced[key] = true;
           return;
@@ -4584,9 +4588,8 @@
           speakFn();
         } catch {}
       }
-      // فقط دو تا: ۳۰٪ و ۷۰٪ — نه هر دو ۷۰ و ۸۰
-      fireAtFilled(30, "pct30", () => speakPercentGone(30), 1);
-      fireAtFilled(70, "pct70", () => speakPercentGone(70), 2);
+      fireAtFilled(30, "pct30", () => speakPercentGone(30));
+      fireAtFilled(70, "pct70", () => speakPercentGone(70));
 
       if (total >= 10 && !nameSpeechGuard) {
         const midKey = run.i + ":midBeep";
@@ -4598,7 +4601,8 @@
       }
     }
 
-    if (run.phaseDur > 5 && !nameSpeechGuard) {
+    // تیک ۴…۱ حتی وسط اسم — وگرنه شنیده نمی‌شود
+    if (run.phaseDur > 5) {
       for (let s = 4; s >= 1; s--) {
         const k = run.i + ":tick" + s;
         if (!run.announced[k] && prev > s && cur <= s) {
