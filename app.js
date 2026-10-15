@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "199";
+  const APP_VER = "193";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 16;
   const VOICE_STAT_LOUD = 6;
@@ -73,7 +73,7 @@
   const VOICE_Q = "?v=109";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
-  const DYN_FA_CACHE = "setdadr-fa-tts-v2";
+  const DYN_FA_CACHE = "setdadr-fa-tts-v3";
   let tickIv = 0;
   let bgKeepAudio = null;
   let bgKeepOn = false;
@@ -3703,6 +3703,7 @@
       startSilentCtxKeep();
     } else {
       softCutForAdvance();
+      hushKeeperToSilence();
     }
     run.i += 1;
     if (run.i >= run.steps.length) {

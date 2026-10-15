@@ -1,4 +1,4 @@
-const CACHE = "setdadr-v199";
+const CACHE = "setdadr-v193-reforce";
 const ASSETS = [
   "./",
   "./index.html",
