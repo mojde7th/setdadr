@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "218";
+  const APP_VER = "219";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -70,7 +70,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=218";
+  const VOICE_Q = "?v=219";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -1494,9 +1494,9 @@
     const base = vol == null ? 1 : Number(vol);
     const mult = kind === "stat" ? VOICE_STAT_LOUD : VOICE_LOUD;
     let v = Math.max(0.08, Math.min(10, base * mult));
-    // پس‌زمینه: همان صدا، کمی آرام‌تر
+    // پس‌زمینه: کمی آرام‌تر ولی قابل شنیدن
     try {
-      if (document.visibilityState === "hidden") v *= 0.55;
+      if (document.visibilityState === "hidden") v *= 0.78;
     } catch {}
     return v;
   }
@@ -1512,7 +1512,7 @@
   function htmlVol(vol) {
     let v = Math.max(0.05, Math.min(1, vol == null ? 0.98 : Number(vol) || 0.98));
     try {
-      if (document.visibilityState === "hidden") v = Math.min(v, 0.62);
+      if (document.visibilityState === "hidden") v = Math.min(v, 0.92);
     } catch {}
     return v;
   }
@@ -1944,13 +1944,15 @@
     try {
       unlockAudio();
       if (gen !== soundGen) return false;
-      // پس‌زمینه: اول HTML — WebAudio روی گوشی اغلب suspend می‌شود
+      // پس‌زمینه: روی کیپر آنلاک‌شده — Audio تازه معمولاً ساکت می‌ماند
       if (isAppHidden()) {
         try {
           const url = URL.createObjectURL(blob);
-          const a = makeHtmlAudio(url);
-          dynFaAudio.set(String(url), a);
-          const ok = await playHtmlAudioEl(a, vol == null ? 1 : Math.min(1, Number(vol) || 1), 12000);
+          const ok = await playOnKeeper(url, vol == null ? 1 : Math.min(1, Number(vol) || 1), {
+            startCap: 4500,
+            maxMs: 12000,
+            gen
+          });
           setTimeout(() => {
             try {
               URL.revokeObjectURL(url);
@@ -2009,12 +2011,15 @@
         } catch {}
       }
       if (gen !== soundGen) return false;
-      // پشتیبان HTML (حداکثر ولوم ۱)
+      // پشتیبان: کیپر آنلاک سپس HTML
       try {
         const url = URL.createObjectURL(blob);
-        const a = makeHtmlAudio(url);
-        dynFaAudio.set(String(url), a);
-        const ok = await playHtmlAudioEl(a, 1, 10000);
+        let ok = await playOnKeeper(url, 1, { startCap: 3500, maxMs: 10000, gen });
+        if (!ok) {
+          const a = makeHtmlAudio(url);
+          dynFaAudio.set(String(url), a);
+          ok = await playHtmlAudioEl(a, 1, 10000);
+        }
         setTimeout(() => {
           try {
             URL.revokeObjectURL(url);
@@ -2022,6 +2027,7 @@
         }, 20000);
         if (ok) return true;
       } catch {}
+
       return false;
     } catch {
       return false;
@@ -3318,18 +3324,12 @@
         try {
           cloudTtsDeadUntil = 0;
         } catch {}
-        // اول اسم را بگو (قبل از بوق طولانی) تا ژست لمس از دست نرود
+        // اول کلیپ/کیپر محلی — WebAudio پرایم گاهی بعد از stop ساکت می‌ماند
         if (!nm || !alive()) return;
         let ok = false;
         try {
-          ok = await playPrimedWorkName(nm, 1);
+          ok = await speakMoveNameOnly(nm, 1);
         } catch {}
-        if (!alive()) return;
-        if (!ok) {
-          try {
-            ok = await speakMoveNameOnly(nm, 1);
-          } catch {}
-        }
         if (!alive()) return;
         if (!ok) {
           try {
@@ -3339,11 +3339,23 @@
         if (!alive()) return;
         if (!ok) {
           try {
+            ok = await playPrimedWorkName(nm, 1);
+          } catch {}
+        }
+        if (!alive()) return;
+        if (!ok) {
+          try {
             const clipRel =
               MOVE_CLIP[nm] ||
               MOVE_CLIP[String(step.name || "").trim()] ||
               "";
-            if (clipRel) ok = !!(await playVoiceFileHtml(clipRel, 1));
+            if (clipRel) {
+              ok = !!(await playOnKeeper(VOICE_BASE + clipRel + VOICE_Q, 1, {
+                startCap: 3500,
+                maxMs: 10000
+              }));
+            }
+            if (!ok && clipRel) ok = !!(await playVoiceFileHtml(clipRel, 1));
           } catch {}
         }
         if (!alive()) return;
@@ -4120,7 +4132,17 @@
   }
 
   function flashAutoSave() {
-    /* UI hint removed — autosave silent */
+    const el = $("#autoSaveHint");
+    if (!el) return;
+    el.textContent = "ذخیره شد";
+    el.classList.add("on");
+    clearTimeout(flashAutoSave._t);
+    flashAutoSave._t = setTimeout(() => {
+      try {
+        el.textContent = "ذخیره خودکار است";
+        el.classList.remove("on");
+      } catch {}
+    }, 900);
   }
 
   function autoSavePlan() {
@@ -4448,6 +4470,10 @@
   }
 
   function startRun(id) {
+    try {
+      cloudTtsDeadUntil = 0;
+    } catch {}
+
     const p = state.plans.find((x) => x.id === id);
     if (!p || !p.circuit.length) return;
     lastPlanId = id;

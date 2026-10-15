@@ -1548,7 +1548,7 @@ input[type="text"], input[type="number"] {
 }
 .add-sec {
   display: grid;
-  grid-template-columns: 64px auto;
+  grid-template-columns: auto auto;
   align-items: center;
   gap: 4px;
   min-height: 52px;
@@ -1558,7 +1558,7 @@ input[type="text"], input[type="number"] {
   background: var(--bg2, #17130e);
 }
 .add-sec input {
-  width: 64px;
+  width: 70px;
   min-height: 48px;
   border: 0;
   background: transparent;
@@ -1602,4 +1602,4 @@ input[type="text"], input[type="number"] {
   min-height: 52px;
   font-weight: 900;
 }
-.auto-save-hint { display: none !important; }
+.auto-save-hint { display: block; }
