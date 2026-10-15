@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "216";
+  const APP_VER = "217";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -1138,6 +1138,11 @@
   }
 
   function beepSoftRing(atMs) {
+    if (soundMuted) return;
+    if (isAppHidden()) {
+      setTimeout(() => playHtmlBeep("beep-soft.wav", 0.7), atMs || 0);
+      return;
+    }
     playWarmChime({
       atMs: atMs || 0,
       stack: false,
@@ -1150,8 +1155,14 @@
     });
   }
 
-  // استراحت: بوق آرام حدود پنج برابر زنگ شروع
   function beepCalmLong() {
+    if (soundMuted) return;
+    unlockAudio();
+    startBgKeepAlive();
+    if (isAppHidden()) {
+      playHtmlBeep("beep-rest.wav", 0.95);
+      return;
+    }
     playWarmChime({
       stack: false,
       peak: 0.95,
@@ -1170,19 +1181,26 @@
     setTimeout(() => beepSoftRing(0), 520);
   }
 
-  // ۴ ثانیه آخر: همان حس بوق استراحت — گرم و کشیده
+  function playHtmlBeep(rel, vol) {
+    if (soundMuted || !rel) return;
+    try {
+      unlockAudio();
+      startBgKeepAlive();
+      const a = makeHtmlAudio(VOICE_BASE + rel + VOICE_Q);
+      a.loop = false;
+      const v = vol == null ? 0.95 : vol;
+      const p = playHtmlAudioEl(a, v, 8000);
+      if (p && typeof p.catch === "function") p.catch(() => {});
+    } catch {}
+  }
+
+  // ۴ ثانیه آخر: بوق استراحت — در پس‌زمینه فقط بوق فایل (نه ready/آماده)
   function beepReadyLikeRest() {
     if (soundMuted) return;
     unlockAudio();
     startBgKeepAlive();
-    // پس‌زمینه: WebAudio قطع می‌شود — فایل آماده با HTML
     if (isAppHidden()) {
-      try {
-        playVoiceFileHtml("ready.mp3", 0.95);
-      } catch {}
-      try {
-        playVoiceFile("ready.mp3", 0.95);
-      } catch {}
+      playHtmlBeep("beep-rest.wav", 1);
       return;
     }
     playWarmChime({
