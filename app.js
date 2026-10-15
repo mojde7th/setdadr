@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "247";
+  const APP_VER = "248";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -71,7 +71,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=247";
+  const VOICE_Q = "?v=248";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -397,7 +397,7 @@
     } catch {}
     // پیش‌گرم بوق‌ها تا قبل از مینیمایز در کش/آنلاک باشند
     try {
-      ["beep-rest.wav", "beep-soft.wav", "beep-mid.wav", "beep-tick.wav", "beep-start.wav"].forEach((rel) => {
+      ["beep-rest.wav", "beep-soft.wav", "beep-mid.wav", "beep-tick.wav", "beep-start.wav", "cue-pct-30.mp3", "cue-pct-80.mp3"].forEach((rel) => {
         const u = VOICE_BASE + rel + VOICE_Q;
         const pre = new Audio(u);
         pre.preload = "auto";
@@ -1300,8 +1300,6 @@
     if (soundMuted) return;
     unlockAudio();
     startBgKeepAlive();
-    // تیک ساعت بلند — چندضرب ۴→۱؛ هر ثانیه یک ضربه
-    const vol = secLeft <= 1 ? 1 : secLeft <= 2 ? 0.98 : 0.95;
     const src = VOICE_BASE + "beep-tick.wav" + VOICE_Q;
     const a = ensureBgCueRail();
     try {
@@ -1312,12 +1310,11 @@
       a.onerror = null;
       a.loop = false;
       a.muted = false;
-      a.volume = vol;
+      a.volume = 1;
       a.src = src;
       const p = a.play();
       if (p && typeof p.catch === "function") {
         p.catch(() => {
-          // فوری دوباره تلاش روی همان ریل
           try {
             a.src = src;
             a.volume = 1;
@@ -3816,23 +3813,33 @@
 
   async function speakPercentGone(pct) {
     const p = Math.max(5, Math.min(95, Math.round(Number(pct) || 0)));
-    const line = faNum(p) + " درصد رفتی";
     const gen = soundGen;
     unlockAudio();
     startBgKeepAlive();
+    const clip = p >= 70 ? "cue-pct-80.mp3" : "cue-pct-30.mp3";
+    // فایل محلی فوری — تا بعد از نصف دیر شنیده نشود
     try {
-      cloudTtsDeadUntil = 0;
-    } catch {}
-    // سریع‌ترین مسیر ممکن تا با lead سه‌ثانیه‌ای سر وقت برسد
-    try {
-      const ok = !!(await speakFaAny(line, 1));
+      const ok = !!(await playOnKeeper(VOICE_BASE + clip + VOICE_Q, 1, {
+        startCap: 2500,
+        maxMs: 8000,
+        gen,
+        protect: true
+      }));
       if (ok && gen === soundGen) return true;
     } catch {}
     try {
-      const baked = await playBakedDynClip(line, 1);
-      if (baked && gen === soundGen) return true;
+      const ok = !!(await playBgCueFile(clip, 1, { waitMs: 5000 }));
+      if (ok && gen === soundGen) return true;
     } catch {}
-    return !!(await speakCueLine(line));
+    const line = faNum(p) + " درصد رفتی";
+    try {
+      cloudTtsDeadUntil = 0;
+    } catch {}
+    try {
+      return !!(await speakFaAny(line, 1));
+    } catch {
+      return false;
+    }
   }
 
   async function speakDoneAmount(sec, total) {
@@ -4575,28 +4582,31 @@
     if (step.kind === "work") {
       const total = Math.max(1, Number(run.phaseDur) || 0);
       const elapsed = Math.max(0, total - (Number(run.left) || 0));
-      const prevElapsed = Math.max(0, total - (prev == null ? total : prev));
-      // درصدِ پرشده؛ leadث زودتر تریگر تا با تأخیر تلفظ سر وقت شنیده شود
+      // درصد پرشده؛ ۱ث زودتر برای ۳۰٪ (مثلاً ۳۰ث → ثانیه ۸)
+      // اگر از پنجره رد شد دیگر نگو تا بعد از نصف دیر نیاید
       function fireAtFilled(pct, keySuffix, speakFn, leadSec) {
         if (total < 12) return;
-        if (nameSpeechGuard) return;
         const key = run.i + ":" + keySuffix;
         if (run.announced[key]) return;
-        const lead = leadSec == null ? 2 : leadSec;
+        const lead = leadSec == null ? 1 : leadSec;
         const target = total * (pct / 100);
         const fireAt = Math.max(0, target - lead);
-        if (prevElapsed < fireAt && elapsed >= fireAt) {
+        const expireAt = Math.min(target + 1.0, total * 0.48);
+        if (elapsed > expireAt) {
           run.announced[key] = true;
-          try {
-            stopCueRail();
-          } catch {}
-          try {
-            speakFn();
-          } catch {}
+          return;
         }
+        if (elapsed < fireAt) return;
+        if (nameSpeechGuard) return;
+        run.announced[key] = true;
+        try {
+          stopCueRail();
+        } catch {}
+        try {
+          speakFn();
+        } catch {}
       }
-      fireAtFilled(30, "pct30", () => speakPercentGone(30), 2);
-      // ۸۰٪ واقعی: ۳ث زودتر شروع کن تا دیر نگوید
+      fireAtFilled(30, "pct30", () => speakPercentGone(30), 1);
       fireAtFilled(80, "pct80", () => speakPercentGone(80), 3);
 
       if (total >= 10 && !nameSpeechGuard) {
