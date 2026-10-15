@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "174";
+  const APP_VER = "175";
   // باشگاه: بلند بدون خش — گین معقول، بدون دیستورت WaveShaper
   const VOICE_LOUD = 56;
   const VOICE_STAT_LOUD = 14;
@@ -2860,7 +2860,7 @@
       if (!announceAlive(seq)) return;
       const alive = aliveNow();
       const live = () => announceAlive(seq) && alive();
-      // حدود دو سوم: فقط پیشرفت همین حرکت (نه کل ست)
+      // حدود دو سوم: فقط پیشرفت همین حرکت
       const pct =
         tot > 0 ? Math.max(1, Math.min(99, Math.round((n / tot) * 100))) : 0;
       try {
@@ -2870,10 +2870,14 @@
           if (sub) sub.textContent = run.progressLabel;
         }
       } catch {}
-      const phrase =
-        pct > 0
-          ? faNum(pct) + " درصد"
-          : timePhrase(n) + " از همین حرکت";
+      let phrase = timePhrase(n) + " از همین حرکت";
+      if (pct > 0) {
+        if (pct >= 48 && pct <= 55) phrase = "نصف این حرکت رفتی";
+        else if (pct >= 56 && pct <= 70)
+          phrase = "بیشتر از نصف این حرکت رفتی";
+        else if (pct >= 72 && pct <= 80) phrase = "سه چهارم این حرکت رفتی";
+        else phrase = faNum(pct) + " درصد رفتی";
+      }
       await speakFaAny(phrase, 1);
       if (!live()) return;
     });
@@ -3594,6 +3598,12 @@
     el.textContent = toFaDigits(pct) + "٪";
   }
 
+  function paintFracPair(el, a, b) {
+    if (!el) return;
+    el.innerHTML =
+      toFaDigits(a) + "<span>/</span>" + toFaDigits(b);
+  }
+
   function paintRun(announceStart) {
     if (!run) return;
     const step = run.steps[run.i];
@@ -3603,17 +3613,14 @@
     stage.classList.toggle("work", !isRest);
     stage.classList.toggle("rest", isRest);
     paintOverallProgress();
-    $("#runFrac").innerHTML = toFaDigits(step.round) + "<span>/</span>" + toFaDigits(step.rounds);
+    paintFracPair($("#runFrac"), step.round, step.rounds);
     const mc = $("#runMoveCount");
     const mpi = $("#moveProgressItem");
     if (step.kind === "work") {
       $("#runPhase").textContent = "تمرین";
       moveEl.textContent = step.name;
       moveEl.hidden = false;
-      if (mc) {
-        mc.innerHTML =
-          toFaDigits(step.moveIndex) + "<span>/</span>" + toFaDigits(step.moveCount);
-      }
+      if (mc) paintFracPair(mc, step.moveIndex, step.moveCount);
       if (mpi) mpi.hidden = false;
       $("#runSub").textContent = (run && run.progressLabel) || "";
     } else {
@@ -3622,10 +3629,7 @@
       moveEl.textContent = "";
       moveEl.hidden = true;
       $("#runSub").textContent = "";
-      if (mc) {
-        mc.innerHTML =
-          toFaDigits(step.moveIndex) + "<span>/</span>" + toFaDigits(step.moveCount);
-      }
+      if (mc) paintFracPair(mc, step.moveIndex, step.moveCount);
       if (mpi) mpi.hidden = false;
     }
     $("#runTimer").textContent = fmt(run.left);

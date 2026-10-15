@@ -443,23 +443,32 @@ input[type="text"], input[type="number"] {
 }
 .progress-item {
   background: #17130e;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 6px 8px 8px;
+  border: 2px solid rgba(232, 165, 75, 0.32);
+  border-radius: 14px;
+  padding: 8px 8px 10px;
+  min-height: 4.6rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  box-sizing: border-box;
 }
 .progress-k {
-  font-size: var(--run-phase);
+  font-size: clamp(12px, 2.8dvh, 15px);
   font-weight: 900;
   color: var(--muted);
-  margin-bottom: 2px;
+  margin-bottom: 4px;
+  line-height: 1.1;
 }
 .progress-v {
   font-family: var(--display);
-  font-size: var(--run-frac);
-  font-weight: 700;
+  font-size: clamp(26px, 6.2dvh, 40px);
+  font-weight: 800;
   line-height: 1;
   direction: ltr;
   unicode-bidi: isolate;
+  text-align: center;
+  width: 100%;
 }
 .progress-v span { color: var(--muted); margin: 0 .06em; }
 .progress-item[hidden] { display: none !important; }
@@ -1195,22 +1204,24 @@ input[type="text"], input[type="number"] {
   font-size: clamp(22px, 5.5vw, 32px);
 }
 
-/* v174 overall in progress row + protect next card */
+/* v175 equal cards + clear frame */
 .progress-item.overall {
-  border-color: rgba(232, 165, 75, 0.4);
-  background: linear-gradient(160deg, rgba(232,165,75,.18), #17130e);
+  border-color: rgba(232, 165, 75, 0.55);
+  background: linear-gradient(160deg, rgba(232,165,75,.14), #17130e);
 }
 .progress-item.overall .progress-k {
   color: var(--accent);
 }
 .progress-item.overall .overall-v,
 .progress-v.overall-v {
-  font-family: var(--font) !important;
-  font-size: clamp(28px, 7.5dvh, 44px) !important;
-  font-weight: 900 !important;
+  font-family: var(--display) !important;
+  font-size: clamp(26px, 6.2dvh, 40px) !important;
+  font-weight: 800 !important;
   color: #f6d7a4 !important;
-  letter-spacing: -0.02em;
-  direction: rtl;
+  letter-spacing: 0;
+  direction: ltr !important;
+  unicode-bidi: isolate;
+  text-align: center;
 }
 #runSub {
   color: #f0c27a;
