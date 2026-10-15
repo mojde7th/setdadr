@@ -1,9 +1,9 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "163";
-  // صدای باشگاه: HTML حداکثر ۱ است؛ بلندی واقعی با WebAudio حدود ده برابر سیستم
-  const VOICE_LOUD = 10;
-  const VOICE_STAT_LOUD = 2.2;
+  const APP_VER = "164";
+  // صدای باشگاه: HTML حداکثر ۱ است؛ بلندی واقعی با WebAudio بدون سقف نرم
+  const VOICE_LOUD = 24;
+  const VOICE_STAT_LOUD = 4;
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -986,7 +986,8 @@
   function loudVol(vol, kind) {
     const base = vol == null ? 1 : Number(vol);
     const mult = kind === "stat" ? VOICE_STAT_LOUD : VOICE_LOUD;
-    return Math.max(0.05, Math.min(16, base * mult));
+    // سقف بالا؛ کمپرسور فقط از کلیپ جلوگیری می‌کند نه از بلندی
+    return Math.max(0.05, Math.min(48, base * mult));
   }
 
   function edgeUuid() {
@@ -1418,11 +1419,12 @@
             const g = audioCtx.createGain();
             const comp = audioCtx.createDynamicsCompressor();
             try {
-              comp.threshold.setValueAtTime(-18, audioCtx.currentTime);
-              comp.knee.setValueAtTime(24, audioCtx.currentTime);
-              comp.ratio.setValueAtTime(4, audioCtx.currentTime);
+              // کمپرسور خیلی نرم — صدا را خفه نکند
+              comp.threshold.setValueAtTime(-6, audioCtx.currentTime);
+              comp.knee.setValueAtTime(12, audioCtx.currentTime);
+              comp.ratio.setValueAtTime(2, audioCtx.currentTime);
               comp.attack.setValueAtTime(0.003, audioCtx.currentTime);
-              comp.release.setValueAtTime(0.25, audioCtx.currentTime);
+              comp.release.setValueAtTime(0.2, audioCtx.currentTime);
             } catch {}
             g.gain.value = gainVal;
             src.buffer = buf;
@@ -2235,9 +2237,11 @@
     return false;
   }
 
-  // هر متن دلخواه: کلیپ/کش → دیلارا (زنده) → اج (فقط مرورگر اج) → بقیه
+  // هر متن دلخواه فارسی: کلیپ/کش → دیلارا ابری دائمی → اج → سینث فارسی
+  // عمداً هیچ مسیر رومن/انگلیسی برای متن فارسی نیست
   async function speakTextChain(key, v, voice, alive) {
     const en = /^en/i.test(voice);
+    const hasFa = /[\u0600-\u06FF]/.test(key);
     const edgeOk = prefersEdgeWs();
     {
       const ok = await playBakedDynClip(key, v);
@@ -2249,13 +2253,14 @@
       if (!alive()) return false;
       if (ok) return true;
     }
-    if (edgeOk) {
-      const ok = await playEdgeTts(key, v, voice);
+    // اولویت: سرور دیلارا (کلودفلر) — بدون لپ‌تاپ
+    if (!en) {
+      const ok = await playDilaraFa(key, v);
       if (!alive()) return false;
       if (ok) return true;
     }
-    if (!en) {
-      const ok = await playDilaraFa(key, v);
+    if (edgeOk) {
+      const ok = await playEdgeTts(key, v, voice);
       if (!alive()) return false;
       if (ok) return true;
     }
@@ -2264,22 +2269,30 @@
       if (!alive()) return false;
       if (ok) return true;
     }
-    {
-      const ok = await playTextOnKeeper(key, v, voice);
-      if (!alive()) return false;
-      if (ok) return true;
-    }
-    {
-      const ok = await playCloudEdgeTts(key, v, voice);
-      if (!alive()) return false;
-      if (ok) return true;
-    }
     if (en) {
-      const ok = await playGoogleQuick(key, v, "en");
+      {
+        const ok = await playTextOnKeeper(key, v, voice);
+        if (!alive()) return false;
+        if (ok) return true;
+      }
+      {
+        const ok = await playCloudEdgeTts(key, v, voice);
+        if (!alive()) return false;
+        if (ok) return true;
+      }
+      {
+        const ok = await playGoogleQuick(key, v, "en");
+        if (!alive()) return false;
+        if (ok) return true;
+      }
+      return false;
+    }
+    // فارسی: فقط مسیرهای فارسی
+    {
+      const ok = await playCloudEdgeTts(key, v, EDGE_TTS_VOICE_FA);
       if (!alive()) return false;
       if (ok) return true;
     }
-    if (en) return false;
     {
       const ok = await playGoogleQuick(key, v, "fa");
       if (!alive()) return false;
@@ -2290,6 +2303,7 @@
       if (!alive()) return false;
       if (ok) return true;
     }
+    if (hasFa) return false;
     return false;
   }
 

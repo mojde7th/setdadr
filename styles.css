@@ -336,6 +336,12 @@ input[type="text"], input[type="number"] {
   overflow: hidden;
   padding-top: 2px;
   padding-bottom: 2px;
+  /* فونت‌ها نسبت به ارتفاع صفحه بزرگ می‌مانند ولی اسکرول نمی‌خورند */
+  --run-name: clamp(34px, 7.2dvh, 58px);
+  --run-timer: clamp(64px, 13dvh, 112px);
+  --run-frac: clamp(36px, 8dvh, 64px);
+  --run-next: clamp(26px, 5.2dvh, 42px);
+  --run-phase: clamp(16px, 3.2dvh, 22px);
 }
 .run-stage.work { --glow: var(--work); }
 .run-stage.rest { --glow: var(--rest); }
@@ -350,8 +356,8 @@ input[type="text"], input[type="number"] {
 .progress-box {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  width: min(92vw, 360px);
+  gap: 8px;
+  width: min(94vw, 420px);
   margin: 0 0 4px;
   flex-shrink: 0;
 }
@@ -359,17 +365,17 @@ input[type="text"], input[type="number"] {
   background: #17130e;
   border: 1px solid var(--line);
   border-radius: 12px;
-  padding: 4px 6px 6px;
+  padding: 6px 8px 8px;
 }
 .progress-k {
-  font-size: clamp(12px, 3.2vw, 14px);
+  font-size: var(--run-phase);
   font-weight: 900;
   color: var(--muted);
   margin-bottom: 2px;
 }
 .progress-v {
   font-family: var(--display);
-  font-size: clamp(28px, 8vw, 40px);
+  font-size: var(--run-frac);
   font-weight: 700;
   line-height: 1;
   direction: ltr;
@@ -378,27 +384,27 @@ input[type="text"], input[type="number"] {
 .progress-v span { color: var(--muted); margin: 0 .06em; }
 .progress-item[hidden] { display: none !important; }
 .run-stage.rest .phase {
-  font-size: clamp(14px, 3.6vw, 18px);
+  font-size: var(--run-phase);
   margin-bottom: 0;
 }
 .run-stage.rest .timer-big {
-  font-size: clamp(48px, 14vw, 72px);
+  font-size: var(--run-timer);
   margin: 2px 0 4px;
 }
 .run-stage.rest .move-big {
   display: block;
-  font-size: clamp(22px, 6vw, 32px);
+  font-size: var(--run-name);
   color: #f0b75a;
 }
 .run-stage.rest .sub {
   display: block;
-  font-size: clamp(13px, 3.5vw, 16px);
+  font-size: var(--run-phase);
   color: #f0b75a;
   font-weight: 900;
 }
 .frac {
   font-family: var(--display);
-  font-size: clamp(24px, 7vw, 36px);
+  font-size: var(--run-frac);
   font-weight: 700;
   line-height: .95;
   letter-spacing: .02em;
@@ -414,7 +420,7 @@ input[type="text"], input[type="number"] {
   margin-bottom: 2px;
 }
 .phase {
-  font-size: clamp(14px, 3.6vw, 18px);
+  font-size: var(--run-phase);
   font-weight: 900;
   color: var(--glow, var(--accent));
   letter-spacing: .04em;
@@ -422,7 +428,7 @@ input[type="text"], input[type="number"] {
 }
 .move-count {
   font-family: var(--display);
-  font-size: clamp(22px, 6vw, 32px);
+  font-size: var(--run-frac);
   font-weight: 700;
   color: var(--txt);
   margin: 0;
@@ -431,7 +437,7 @@ input[type="text"], input[type="number"] {
 }
 .move-count[hidden] { display: none !important; }
 .move-big {
-  font-size: clamp(28px, 7.5vw, 40px);
+  font-size: var(--run-name);
   font-weight: 900;
   margin: 2px 0 4px;
   max-width: 94vw;
@@ -442,13 +448,13 @@ input[type="text"], input[type="number"] {
 }
 .timer-big {
   font-family: var(--display);
-  font-size: clamp(52px, 15vw, 84px);
+  font-size: var(--run-timer);
   font-weight: 700;
   line-height: .92;
   color: var(--glow, var(--accent));
   direction: ltr;
   unicode-bidi: isolate;
-  text-shadow: 0 0 24px color-mix(in srgb, var(--glow, var(--accent)) 35%, transparent);
+  text-shadow: 0 0 28px color-mix(in srgb, var(--glow, var(--accent)) 40%, transparent);
   margin: 0 0 4px;
   flex-shrink: 0;
 }
@@ -462,7 +468,7 @@ input[type="text"], input[type="number"] {
   margin-top: 4px;
   margin-left: auto;
   margin-right: auto;
-  width: min(92vw, 340px);
+  width: min(94vw, 400px);
   max-width: 100%;
   box-sizing: border-box;
   text-align: center;
@@ -473,7 +479,7 @@ input[type="text"], input[type="number"] {
   background: #1a1510;
   border: 2px solid var(--accent);
   border-radius: 14px;
-  padding: 8px 10px 10px;
+  padding: 10px 12px 12px;
   box-shadow: 0 8px 18px rgba(0, 0, 0, .3);
 }
 .next-card[hidden] { display: none !important; }
@@ -514,7 +520,7 @@ input[type="text"], input[type="number"] {
   background: var(--work);
 }
 .flow-txt {
-  font-size: clamp(18px, 5vw, 26px);
+  font-size: var(--run-next);
   font-weight: 900;
   line-height: 1.2;
   word-break: break-word;
@@ -522,7 +528,7 @@ input[type="text"], input[type="number"] {
   min-width: 0;
 }
 .flow-arrow {
-  font-size: clamp(14px, 3.8vw, 18px);
+  font-size: var(--run-phase);
   font-weight: 900;
   color: #f0b75a;
   line-height: 1.15;
@@ -532,13 +538,13 @@ input[type="text"], input[type="number"] {
   padding: 2px 0;
 }
 .flow-arrow-lead {
-  font-size: clamp(20px, 5.5vw, 28px);
+  font-size: clamp(22px, 4.5dvh, 34px);
   margin-bottom: 2px;
   color: #f0b75a;
   animation: nextPulse 1.2s ease-in-out infinite;
 }
 .next-label {
-  font-size: clamp(13px, 3.5vw, 16px);
+  font-size: var(--run-phase);
   font-weight: 900;
   color: #f0b75a;
   letter-spacing: .04em;
