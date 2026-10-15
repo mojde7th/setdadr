@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "238";
+  const APP_VER = "239";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -70,7 +70,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=238";
+  const VOICE_Q = "?v=239";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -4500,7 +4500,8 @@
         if (total < 12) return;
         const key = run.i + ":" + keySuffix;
         if (run.announced[key]) return;
-        const mark = Math.ceil(total * (1 - pct / 100) + 1 + 4);
+        // ۲ ثانیه قبل از رسیدن به درصد (برای جبران تأخیر تلفظ)
+        const mark = Math.ceil(total * (1 - pct / 100) + 2);
         if (prev > mark && cur <= mark) {
           run.announced[key] = true;
           try {
@@ -4511,11 +4512,10 @@
           } catch {}
         }
       }
-      fireAtGone(20, "pct20", () => speakPercentGone(20));
-      fireAtGone(60, "pct60", () => speakPercentGone(60));
+      fireAtGone(30, "pct30", () => speakPercentGone(30));
+      fireAtGone(80, "pct80", () => speakPercentGone(80));
     }
 
-    // بوق ۴ث: اگر تلفظ هنوز جاری است صبر نکن — قطع تلفظ، فقط بوق
     if (run.phaseDur > 5) {
       const k4 = run.i + ":beep4";
       if (!run.announced[k4] && prev > 4 && cur <= 4) {
