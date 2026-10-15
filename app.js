@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "188";
+  const APP_VER = "189";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 16;
   const VOICE_STAT_LOUD = 7;
@@ -112,10 +112,12 @@
   }
   function getTtsApiBases() {
     const out = [];
+    // همیشه ورکر دائمی — حتی اگر tts-endpoint.js از کش قدیمی جا بماند
+    out.push("https://setdadr-tts.minasi24100.workers.dev");
     if (typeof window !== "undefined" && window.SETDADR_TTS_API) {
       const u = String(window.SETDADR_TTS_API || "").replace(/\/$/, "");
       // آدرس صریح در tts-endpoint.js — حتی تونل موقت — برای متن زنده روی گوشی
-      if (u) out.push(u);
+      if (u && out.indexOf(u) === -1) out.push(u);
     }
     try {
       const saved = localStorage.getItem(TTS_API_LS);
@@ -866,19 +868,20 @@
     setTimeout(() => beepSoftRing(0), 520);
   }
 
-  // ۴ ثانیه آخر: همان جنس بوق استراحت (آرام و گرم)، کمی بلندتر برای باشگاه
+  // ۴ ثانیه آخر: بوق تمیز، شفاف، بلند (دو ضربهٔ کوتاه)
   function beepReadyLikeRest() {
     if (soundMuted) return;
     playWarmChime({
       stack: false,
-      peak: 2.4,
-      total: 1.35,
+      peak: 5.8,
+      total: 0.7,
       notes: [
-        { f: 349.23, at: 0, dur: 0.55, g: 1.0 },
-        { f: 392.0, at: 0.35, dur: 0.6, g: 1.05 },
-        { f: 329.63, at: 0.75, dur: 0.55, g: 0.95 }
+        { f: 587.33, at: 0, dur: 0.16, g: 2.0 },
+        { f: 783.99, at: 0.2, dur: 0.22, g: 2.3 },
+        { f: 587.33, at: 0.42, dur: 0.18, g: 1.8 }
       ]
     });
+    buzz([120, 40, 160]);
   }
 
   function beepWhite(ms, soft) {
@@ -2175,20 +2178,37 @@
 
   async function playDilaraFa(text, vol) {
     const alive = aliveNow();
+    const gen = soundGen;
     try {
       unlockAudio();
       startBgKeepAlive();
       startSilentCtxKeep();
-      const blob = await fetchDilaraOnly(text);
-      if (!blob || !alive()) return false;
       try {
         if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
       } catch {}
-      if (!alive()) return false;
-      // اول HTML — بعد از fetch ژست لمس از بین رفته و WebAudio گاهی ساکت می‌ماند
+      const blob = await fetchDilaraOnly(text);
+      if (!blob || !alive() || gen !== soundGen) return false;
+      const url = URL.createObjectURL(blob);
+      let ok = false;
+      try {
+        // مهم: روی همان عنصر آنلاک‌شدهٔ کیپر پخش کن (آی‌او‌اس/اندروید)
+        ok = !!(await playOnKeeper(url, 1, {
+          startCap: 6000,
+          maxMs: 20000,
+          gen
+        }));
+      } finally {
+        setTimeout(() => {
+          try {
+            URL.revokeObjectURL(url);
+          } catch {}
+        }, 30000);
+      }
+      if (ok) return true;
+      if (!alive() || gen !== soundGen) return false;
       const okHtml = await playBlobHtmlFirst(blob, vol == null ? 1 : vol);
       if (okHtml) return true;
-      if (!alive()) return false;
+      if (!alive() || gen !== soundGen) return false;
       return playBlobFa(blob, vol == null ? 1 : vol);
     } catch {
       return false;
@@ -2699,19 +2719,31 @@
     const alive = () => soundAlive(gen, tok) && (seq == null || announceAlive(seq));
     if (!alive()) return false;
     if (!nm) return false;
-    // هرگز «حرکت بعد» نگو — فقط اسم بعدی
-    stopVoiceFile();
-    killAllHtmlAudio();
-    await sleep(50);
+    unlockAudio();
+    startBgKeepAlive();
+    startSilentCtxKeep();
+    await sleep(40);
     if (!alive()) return false;
+    // بگو: حرکت بعد فلان (دیلارا روی کیپر)
+    if (!bare) {
+      try {
+        const lineOk = !!(await speakFaAny("حرکت بعد " + nm, 1));
+        if (lineOk) return true;
+      } catch {}
+      if (!alive()) return false;
+    }
     let ok = false;
     try {
-      ok = await playPrimedWorkName(nm, 1);
+      ok = !!(await speakFaAny(nm, 1));
     } catch {}
     if (!alive()) return false;
-    if (!ok) ok = await speakMoveNameOnly(nm, 1);
+    if (!ok) {
+      try {
+        ok = await playPrimedWorkName(nm, 1);
+      } catch {}
+    }
     if (!alive()) return false;
-    if (!ok) ok = !!(await speakFaAny(nm, 1));
+    if (!ok) ok = await speakMoveNameOnly(nm, 1);
     return !!ok;
   }
 
@@ -3937,23 +3969,42 @@
         li.querySelector(".mus-name").textContent = m.fa;
         li.querySelector(".mus-pct").textContent = toFaDigits(pct) + "٪ بار نسبی";
         li.querySelector(".mus-fill").style.width = Math.max(8, pct) + "%";
-        const tip = MUSCLE_META[m.id] && MUSCLE_META[m.id].tip;
-        if (tip) {
-          const p = document.createElement("div");
-          p.className = "mus-tip";
-          p.textContent = tip;
-          li.appendChild(p);
-        }
+        const tip =
+          (MUSCLE_META[m.id] && MUSCLE_META[m.id].tip) ||
+          ("روی " + m.fa + " کنترل و فرم را حفظ کن.");
+        const p = document.createElement("div");
+        p.className = "mus-tip";
+        p.textContent = tip;
+        li.appendChild(p);
         musclesEl.appendChild(li);
       });
     }
-    // زمان‌ها داخل کارت‌هاست؛ نمودار جدا برای کم‌کردن اسکرول پر نمی‌شود
+    // نمودار حرکت‌ها + نکته زیر هر میله (حتی تکراری)
     if (chart) {
       chart.innerHTML = "";
       const wrap = chart.closest(".done-chart-wrap");
-      if (wrap) wrap.hidden = true;
+      if (wrap) wrap.hidden = !byMove.length;
+      if (byMove.length) {
+        const maxSec = Math.max(1, byMove[0].sec || 1);
+        byMove.forEach((mv) => {
+          const row = document.createElement("div");
+          row.className = "done-bar";
+          const pct = Math.round((Math.max(0, mv.sec) / maxSec) * 100);
+          row.innerHTML =
+            '<div class="done-bar-top"><span class="done-bar-name"></span><span class="done-bar-sec"></span></div><div class="mus-track"><div class="mus-fill"></div></div><div class="mus-tip done-bar-tip"></div>';
+          row.querySelector(".done-bar-name").textContent = mv.name;
+          row.querySelector(".done-bar-sec").textContent =
+            timePhrase(Math.max(0, Math.round(mv.sec || 0)));
+          row.querySelector(".mus-fill").style.width = Math.max(8, pct) + "%";
+          const tipEl = row.querySelector(".done-bar-tip");
+          tipEl.textContent =
+            "نکته: فرم " +
+            mv.name +
+            " را کنترل کن؛ نفس منظم و بدون عجله.";
+          chart.appendChild(row);
+        });
+      }
     }
-    // لیست تکراری پایین حذف — همان نمودار کافی است
     if (movesEl) {
       movesEl.innerHTML = "";
       movesEl.hidden = true;
