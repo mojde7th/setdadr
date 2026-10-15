@@ -1,9 +1,9 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "190";
+  const APP_VER = "191";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
-  const VOICE_LOUD = 44;
-  const VOICE_STAT_LOUD = 12;
+  const VOICE_LOUD = 26;
+  const VOICE_STAT_LOUD = 8;
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -868,20 +868,20 @@
     setTimeout(() => beepSoftRing(0), 520);
   }
 
-  // ۴ ثانیه آخر: بوق تمیز، شفاف، بلند (دو ضربهٔ کوتاه)
+  // ۴ ثانیه آخر: بوق تمیز، شفاف، بلند
   function beepReadyLikeRest() {
     if (soundMuted) return;
     playWarmChime({
       stack: false,
-      peak: 5.8,
-      total: 0.7,
+      peak: 5.5,
+      total: 0.65,
       notes: [
-        { f: 587.33, at: 0, dur: 0.16, g: 2.0 },
-        { f: 783.99, at: 0.2, dur: 0.22, g: 2.3 },
-        { f: 587.33, at: 0.42, dur: 0.18, g: 1.8 }
+        { f: 659.25, at: 0, dur: 0.14, g: 2.1 },
+        { f: 783.99, at: 0.18, dur: 0.2, g: 2.4 },
+        { f: 659.25, at: 0.4, dur: 0.16, g: 1.9 }
       ]
     });
-    buzz([120, 40, 160]);
+    buzz([110, 35, 150]);
   }
 
   function beepWhite(ms, soft) {
@@ -1042,16 +1042,17 @@
     const base = vol == null ? 1 : Number(vol);
     const mult = kind === "stat" ? VOICE_STAT_LOUD : VOICE_LOUD;
     // مثل ۱۸۱: بلند برای باشگاه — پایدار
-    return Math.max(0.05, Math.min(96, base * mult));
+    return Math.max(0.08, Math.min(36, base * mult));
   }
 
   function connectLoudOut(srcNode, gainVal) {
     const g = audioCtx.createGain();
     const lp = audioCtx.createBiquadFilter();
+    // مثل ۱۸۱ ساده؛ کمی نرم‌تر تا خش ته جمله کم شود
     lp.type = "lowpass";
-    lp.frequency.value = 6200;
-    lp.Q.value = 0.25;
-    g.gain.value = Math.min(Number(gainVal) || 1, 48);
+    lp.frequency.value = 5200;
+    lp.Q.value = 0.3;
+    g.gain.value = Math.min(Number(gainVal) || 1, 32);
     srcNode.connect(g);
     g.connect(lp);
     lp.connect(audioCtx.destination);
@@ -2710,27 +2711,38 @@
     startBgKeepAlive();
     startSilentCtxKeep();
     stopVoiceFile();
-    await sleep(50);
+    await sleep(40);
     if (!alive()) return false;
-    let ok = false;
+    // «حرکت بعد» فایل محلی؛ اسم با دیلارای ۱۸۱
     if (!bare) {
+      let pref = false;
       try {
-        ok = !!(await speakFaAny("حرکت بعد " + nm, 1));
+        pref = await playVoiceFile("phrase-next.mp3", 1);
       } catch {}
-      if (ok) return true;
+      if (!alive()) return false;
+      if (!pref) {
+        try {
+          await speakFaAny("حرکت بعد", 1);
+        } catch {}
+      }
+      if (!alive()) return false;
+      await sleep(70);
       if (!alive()) return false;
     }
+    let ok = false;
     try {
-      ok = !!(await speakFaAny(nm, 1));
+      ok = await playPrimedWorkName(nm, 1);
     } catch {}
     if (!alive()) return false;
     if (!ok) {
       try {
-        ok = await playPrimedWorkName(nm, 1);
+        ok = !!(await speakFaAny(nm, 1));
       } catch {}
     }
     if (!alive()) return false;
     if (!ok) ok = await speakMoveNameOnly(nm, 1);
+    if (!alive()) return false;
+    if (!ok) ok = !!(await speakFaAny(nm, 1));
     return !!ok;
   }
 
@@ -3610,12 +3622,11 @@
       }
     }
 
-    // ۴ ثانیه مانده: کار و استراحت (ست و حرکت)
+    // ۴ ثانیه مانده: بوق تمیز و بلند
     const softKey = run.i + ":soft4";
     if (run.phaseDur > 5 && !run.announced[softKey] && prev > 4 && cur <= 4) {
       run.announced[softKey] = true;
-      beepSoftDouble();
-      buzz([90, 40, 120, 40, 140]);
+      beepReadyLikeRest();
     }
   }
 
