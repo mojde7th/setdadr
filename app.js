@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "211";
+  const APP_VER = "212";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -651,6 +651,7 @@
   // یک عنصر صوتی که با لمس شروع/بعدی آنلاک می‌شود و دیگر عوض نمی‌شود.
   // آیفون عنصر صوتی تازه را بدون لمس پخش نمی‌کند؛ این یکی را چرا.
   const KEEP_SILENCE = VOICE_BASE + "silence.wav" + VOICE_Q;
+  const KEEP_QUIET = VOICE_BASE + "keep-quiet.wav" + VOICE_Q;
   let keeperVoice = null;
 
   function keeperOnSilence(a) {
@@ -701,7 +702,7 @@
           loop();
         } catch {}
       }
-    }, 1200);
+    }, 800);
   }
 
   function stopBgHeartbeat() {
@@ -719,11 +720,19 @@
     } catch {}
     startSilentCtxKeep();
     const a = ensureKeeper();
-    const vol = BG_KEEP_VOL;
+    // پس‌زمینه: فایل خیلی‌آروم (نه بوق) تا سشن زنده بماند
+    const vol = isAppHidden() ? 0.012 : BG_KEEP_VOL;
+    const src = isAppHidden() ? KEEP_QUIET : KEEP_SILENCE;
     try {
-      // فقط سکوت حلقه‌ای — بدون بوق پس‌زمینهٔ اذیت‌کننده
       if (!keeperVoice) {
-        if (!keeperOnSilence(a)) {
+        const cur = String(a.currentSrc || a.src || "");
+        const wantQ = /keep-quiet\.wav/.test(src);
+        const onQ = /keep-quiet\.wav/.test(cur);
+        const onSil = keeperOnSilence(a);
+        if (wantQ && !onQ) {
+          a.loop = true;
+          a.src = KEEP_QUIET;
+        } else if (!wantQ && !onSil) {
           a.loop = true;
           a.src = KEEP_SILENCE;
         }
@@ -734,14 +743,16 @@
         if (p && typeof p.catch === "function") {
           p.catch(() => {
             try {
-              a.load();
+              a.src = KEEP_QUIET;
+              a.loop = true;
+              a.volume = vol;
               a.play().catch(() => {});
             } catch {}
           });
         }
       } else {
         try {
-          a.volume = Math.min(a.volume || vol, vol);
+          a.volume = Math.max(0.001, Math.min(a.volume || vol, vol));
         } catch {}
       }
     } catch {}
@@ -1004,6 +1015,18 @@
   // ۴ ثانیه آخر: همان حس بوق استراحت — گرم و کشیده
   function beepReadyLikeRest() {
     if (soundMuted) return;
+    unlockAudio();
+    startBgKeepAlive();
+    // پس‌زمینه: WebAudio قطع می‌شود — فایل آماده با HTML
+    if (isAppHidden()) {
+      try {
+        playVoiceFileHtml("ready.mp3", 0.95);
+      } catch {}
+      try {
+        playVoiceFile("ready.mp3", 0.95);
+      } catch {}
+      return;
+    }
     playWarmChime({
       stack: false,
       peak: 2.2,
@@ -2237,6 +2260,14 @@
       unlockAudio();
       startBgKeepAlive();
       startSilentCtxKeep();
+      // پس‌زمینه: مستقیم HTML
+      if (isAppHidden()) {
+        try {
+          const a = makeHtmlAudio(VOICE_BASE + MID_HALF_CLIP + VOICE_Q);
+          const ok = await playHtmlAudioEl(a, 1, 8000);
+          if (ok) return true;
+        } catch {}
+      }
       try {
         if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
       } catch {}
@@ -3449,18 +3480,8 @@
     half: "dyn/5b47ffb16507f9a1.mp3"
   };
 
-  function pctLeftNow() {
-    const total = Math.max(1, Number((run && run.phaseDur) || 0));
-    const left = Math.max(0, Number((run && run.left) || 0));
-    return Math.max(1, Math.min(99, Math.round((left / total) * 100)));
-  }
-
-  function pctGoneNow() {
-    return Math.max(1, Math.min(99, 100 - pctLeftNow()));
-  }
-
   async function speakMidHalf() {
-    // فقط وسط: نصفشو رفتی — بدون ربع
+    // وسط: نصفشو رفتی
     let ok = false;
     try {
       ok = !!(await playMidHalfClipDirect());
@@ -3473,26 +3494,13 @@
     return !!ok;
   }
 
-  async function speakPercentCue(kind) {
-    // early: چند درصد رفتی | late: چند درصد مونده — هرگز «ربع» نگو
-    if (kind === "early") {
-      let p = pctGoneNow();
-      p = Math.round(p / 5) * 5;
-      if (p < 20) p = 25;
-      if (p > 40) p = 35;
-      const line = faNum(p) + " درصد رفتی";
-      return !!(await speakCueLine(line));
-    }
-    if (kind === "late") {
-      let p = pctLeftNow();
-      p = Math.round(p / 5) * 5;
-      if (p < 10) p = 10;
-      if (p > 30) p = 20;
-      const line = faNum(p) + " درصد مونده";
-      return !!(await speakCueLine(line));
-    }
-    return false;
+  async function speakPercentGone(pct) {
+    // فقط «رفت» — نه مونده، نه ربع
+    const p = Math.max(5, Math.min(95, Math.round(Number(pct) || 0)));
+    const line = faNum(p) + " درصد رفتی";
+    return !!(await speakCueLine(line));
   }
+
 
 
 
@@ -4229,22 +4237,27 @@
     run.prevLeftCeil = cur;
     if (prev == null) return;
 
-    // وسط: نصفشو رفتی | جدا حداکثر ۲ بار درصد (بدون ربع)
+    // درصدِ رفته — ۲ ثانیه زودتر از نقطهٔ هدف؛ وسط هم نصفشو رفتی
     if (step.kind === "work") {
       const total = Math.max(1, Number(run.phaseDur) || 0);
-      if (total >= 18) {
-        const earlyLeft = total * 0.7;
-        const earlyKey = run.i + ":pctEarly";
-        if (!run.announced[earlyKey] && run.left <= earlyLeft) {
-          run.announced[earlyKey] = true;
+      // نقطهٔ اعلام = (۱ - درصد/۱۰۰)*کل + ۲ث
+      function fireAtGone(pct, keySuffix, speakFn) {
+        if (total < 14) return;
+        const key = run.i + ":" + keySuffix;
+        if (run.announced[key]) return;
+        const targetLeft = total * (1 - pct / 100) + 2;
+        if (run.left <= targetLeft) {
+          run.announced[key] = true;
           try {
-            speakPercentCue("early");
+            speakFn();
           } catch {}
         }
       }
+      // حدود ۲۵٪ و ۸۰٪ رفته (+ وسط)
+      fireAtGone(25, "pct25", () => speakPercentGone(25));
       if (total >= 10) {
         const midKey = run.i + ":halfPlus";
-        const halfLeft = total / 2;
+        const halfLeft = total / 2 + 2;
         if (!run.announced[midKey] && run.left <= halfLeft) {
           run.announced[midKey] = true;
           try {
@@ -4252,16 +4265,7 @@
           } catch {}
         }
       }
-      if (total >= 18) {
-        const lateLeft = total * 0.2;
-        const lateKey = run.i + ":pctLate";
-        if (!run.announced[lateKey] && run.left <= lateLeft && run.left > 4.5) {
-          run.announced[lateKey] = true;
-          try {
-            speakPercentCue("late");
-          } catch {}
-        }
-      }
+      fireAtGone(80, "pct80", () => speakPercentGone(80));
     }
 
     // ۴ ثانیه مانده: بوق تمیز و بلند
