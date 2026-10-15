@@ -1,9 +1,9 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "176";
-  // باشگاه: بلند بدون خش — گین معقول، بدون دیستورت WaveShaper
-  const VOICE_LOUD = 56;
-  const VOICE_STAT_LOUD = 14;
+  const APP_VER = "177";
+  // باشگاه: بلند و نرم — بدون دیستورت خشن
+  const VOICE_LOUD = 70;
+  const VOICE_STAT_LOUD = 16;
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -22,6 +22,7 @@
   let state = load();
   let editId = null;
   let circuit = [];
+  let lastPlanId = null;
   let run = null;
   let raf = 0;
   let voiceReady = false;
@@ -987,16 +988,28 @@
   function loudVol(vol, kind) {
     const base = vol == null ? 1 : Number(vol);
     const mult = kind === "stat" ? VOICE_STAT_LOUD : VOICE_LOUD;
-    // سقف پایین‌تر تا اسپیکر گوشی خش نخورد
-    return Math.max(0.05, Math.min(72, base * mult));
+    // بلند برای باشگاه؛ سقف کنترل‌شده تا خش نخورد
+    return Math.max(0.05, Math.min(96, base * mult));
   }
 
   function connectLoudOut(srcNode, gainVal) {
     const g = audioCtx.createGain();
-    // فقط گین تمیز — شکل‌دهنده موج صدا را خش‌دار می‌کرد
+    const lp = audioCtx.createBiquadFilter();
+    const comp = audioCtx.createDynamicsCompressor();
+    // نرم‌کردن اوج‌های تیز + کمپرس ملایم = بلند بدون خش
+    lp.type = "lowpass";
+    lp.frequency.value = 8200;
+    lp.Q.value = 0.55;
+    comp.threshold.value = -22;
+    comp.knee.value = 28;
+    comp.ratio.value = 2.6;
+    comp.attack.value = 0.008;
+    comp.release.value = 0.22;
     g.gain.value = gainVal;
     srcNode.connect(g);
-    g.connect(audioCtx.destination);
+    g.connect(lp);
+    lp.connect(comp);
+    comp.connect(audioCtx.destination);
     return g;
   }
 
@@ -2862,14 +2875,12 @@
       const live = () => announceAlive(seq) && alive();
       const pct =
         tot > 0 ? Math.max(1, Math.min(99, Math.round((n / tot) * 100))) : 0;
+      // روی صفحه ننویس — فقط بگو
       try {
-        if (run && pct > 0) {
-          run.progressLabel = toFaDigits(pct) + "٪";
-          const sub = $("#runSub");
-          if (sub) sub.textContent = run.progressLabel;
-        }
+        if (run) run.progressLabel = "";
+        const sub = $("#runSub");
+        if (sub) sub.textContent = "";
       } catch {}
-      // وسط حرکت: صریح بگو بیشتر از نصف همین حرکت رفته
       const phrase =
         pct >= 45
           ? "بیشتر از نصفش رفتی"
@@ -3402,6 +3413,7 @@
   function startRun(id) {
     const p = state.plans.find((x) => x.id === id);
     if (!p || !p.circuit.length) return;
+    lastPlanId = id;
     // دوبار زدن شروع = زوم صدا؛ قفل کوتاه + قطع قبلی
     if (startLock) return;
     startLock = true;
@@ -3720,7 +3732,7 @@
         arrowLead.hidden = false;
         arrowLead.textContent = "↓";
       }
-      flow1.textContent = "حرکتی نیست";
+      flow1.textContent = "(حرکتی نیست)";
       if (flow2) flow2.textContent = "";
       if (row2) row2.hidden = true;
       if (arrow) arrow.hidden = true;
@@ -3766,13 +3778,18 @@
     const byMove = Array.isArray(stats.byMove) ? stats.byMove : [];
     const load = muscleLoadFromStats(stats);
     const tops = topMuscles(load, 5);
+    const movesN = Math.max(
+      0,
+      Math.round(Number(stats.totalMoves != null ? stats.totalMoves : stats.moveCount) || 0)
+    );
     const tileData = [
       ["ست", toFaDigits(rounds)],
       ["تمرین", timePhrase(workSec)],
       ["استراحت", timePhrase(restSec)],
-      ["کالری", toFaDigits(calories)]
+      ["کالری", toFaDigits(calories)],
+      ["پیاده‌روی", toFaDigits(walkMin) + " دقیقه"],
+      ["حرکت‌ها", toFaDigits(movesN)]
     ];
-    if (walkMin > 0) tileData.push(["پیاده‌روی", toFaDigits(walkMin) + " دقیقه"]);
     if (tiles) {
       tileData.forEach(([k, v]) => {
         const d = document.createElement("div");
@@ -3873,6 +3890,17 @@
     show("home");
   });
   $("#btnDoneHome").addEventListener("click", () => show("home"));
+  const btnDoneAgain = $("#btnDoneAgain");
+  if (btnDoneAgain) {
+    btnDoneAgain.addEventListener("click", () => {
+      if (lastPlanId) {
+        unlockAudio();
+        startRun(lastPlanId);
+      } else {
+        show("home");
+      }
+    });
+  }
 
   const moveFormEl = $("#moveForm");
   if (moveFormEl) {

@@ -414,8 +414,9 @@ input[type="text"], input[type="number"] {
   text-align: center;
   gap: 0;
   overflow: hidden;
-  padding-top: 2px;
+  padding-top: 6px;
   padding-bottom: 2px;
+  padding-inline: 4px;
   /* فونت‌ها نسبت به ارتفاع صفحه بزرگ می‌مانند ولی اسکرول نمی‌خورند */
   --run-name: clamp(34px, 7dvh, 56px);
   --run-timer: clamp(78px, 16dvh, 136px);
@@ -436,30 +437,31 @@ input[type="text"], input[type="number"] {
 .progress-box {
   display: grid;
   grid-template-columns: 1fr 1fr 1.15fr;
-  gap: 8px;
-  width: min(94vw, 420px);
-  margin: 4px 0 6px;
-  padding: 2px;
+  gap: 10px;
+  width: min(92vw, 400px);
+  margin: 6px auto 8px;
+  padding: 4px;
   flex-shrink: 0;
   overflow: visible;
   box-sizing: border-box;
 }
 .progress-item {
   background: #17130e;
-  border: 2px solid rgba(232, 165, 75, 0.45);
+  outline: 2px solid rgba(232, 165, 75, 0.5);
+  outline-offset: 0;
+  border: 0;
   border-radius: 14px;
-  padding: 10px 8px 12px;
-  min-height: 5rem;
+  padding: 12px 8px 14px;
+  min-height: 5.4rem;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
   box-sizing: border-box;
-  box-shadow: inset 0 0 0 1px rgba(232, 165, 75, 0.12);
   overflow: visible;
 }
 .progress-k {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 900;
   color: var(--muted);
   margin-bottom: 6px;
@@ -467,7 +469,7 @@ input[type="text"], input[type="number"] {
 }
 .progress-v {
   font-family: var(--display);
-  font-size: clamp(32px, 8dvh, 48px);
+  font-size: clamp(36px, 9dvh, 52px);
   font-weight: 800;
   line-height: 1;
   direction: ltr;
@@ -1217,10 +1219,13 @@ input[type="text"], input[type="number"] {
 .progress-item.overall .progress-k {
   color: var(--accent);
 }
+.progress-item.overall {
+  outline-color: rgba(232, 165, 75, 0.7);
+}
 .progress-item.overall .overall-v,
 .progress-v.overall-v {
   font-family: var(--display) !important;
-  font-size: clamp(32px, 8dvh, 48px) !important;
+  font-size: clamp(36px, 9dvh, 52px) !important;
   font-weight: 800 !important;
   color: #f6d7a4 !important;
   letter-spacing: 0;
@@ -1249,4 +1254,18 @@ input[type="text"], input[type="number"] {
 .run-stage .move-big {
   flex-shrink: 1;
   min-height: 0;
+}
+
+/* v177 done */
+.done-back {
+  margin: 0 0 12px !important;
+  font-weight: 900 !important;
+}
+.done-tiles {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+@media (min-width: 420px) {
+  .done-tiles {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
 }
