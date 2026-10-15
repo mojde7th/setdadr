@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "182";
+  const APP_VER = "183";
   // باشگاه: بلند ولی تمیز — گین خیلی بالا روی گوشی نویز/خش می‌سازد
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 6;
@@ -830,6 +830,36 @@
   function beepSoftDouble() {
     beepSoftRing(0);
     setTimeout(() => beepSoftRing(0), 520);
+  }
+
+  // ۴ ثانیه آخر: بلند و واضح برای آماده‌باش
+  function beepReadyPulse(n) {
+    if (soundMuted) return;
+    const step = Math.max(1, Math.min(4, Math.round(Number(n) || 4)));
+    const base = 523.25 + (4 - step) * 65;
+    playWarmChime({
+      stack: false,
+      peak: 1.85,
+      total: 0.42,
+      notes: [
+        { f: base, at: 0, dur: 0.2, g: 1.35 },
+        { f: base * 1.25, at: 0.1, dur: 0.28, g: 1.55 }
+      ]
+    });
+    if (step === 4) {
+      setTimeout(() => {
+        if (soundMuted) return;
+        playWarmChime({
+          stack: false,
+          peak: 1.9,
+          total: 0.5,
+          notes: [
+            { f: 659.25, at: 0, dur: 0.22, g: 1.45 },
+            { f: 880.0, at: 0.16, dur: 0.32, g: 1.65 }
+          ]
+        });
+      }, 380);
+    }
   }
 
   function beepWhite(ms, soft) {
@@ -3015,7 +3045,10 @@
     const n = Math.max(1, Math.round(Number(s.rounds) || 0));
     const { moves, workSec, calories, walkMin } = statNumbers(s);
     const myGen = soundGen;
-    const alive = () => myGen === soundGen && !soundMuted;
+    const alive = () => {
+      const doneOn = $("#view-done") && $("#view-done").classList.contains("on");
+      return myGen === soundGen && !soundMuted && !!doneOn;
+    };
     unlockAudio();
     startBgKeepAlive();
     startSilentCtxKeep();
@@ -3122,6 +3155,11 @@
 
   function show(name) {
     if (name === "moves") name = "home";
+    const wasDone = $("#view-done") && $("#view-done").classList.contains("on");
+    if (wasDone && name !== "done") {
+      // خروج از داشبورد = قطع کامل اعلام آمار
+      stopAllSound();
+    }
     viewIds.forEach((k) => {
       const el = document.getElementById("view-" + k);
       if (!el) return;
@@ -3523,12 +3561,17 @@
       }
     }
 
-    // ۴ ثانیه مانده: کار و استراحت (ست و حرکت)
-    const softKey = run.i + ":soft4";
-    if (run.phaseDur > 5 && !run.announced[softKey] && prev > 4 && cur <= 4) {
-      run.announced[softKey] = true;
-      beepSoftDouble();
-      buzz([90, 40, 120, 40, 140]);
+    // ۴ ثانیه آخر: هر ثانیه بوق آماده‌باش بلند و واضح
+    if (run.phaseDur > 5) {
+      for (let n = 4; n >= 1; n -= 1) {
+        const readyKey = run.i + ":ready" + n;
+        if (!run.announced[readyKey] && prev > n && cur <= n) {
+          run.announced[readyKey] = true;
+          beepReadyPulse(n);
+          if (n === 4) buzz([110, 35, 150, 35, 180]);
+          else if (n === 1) buzz([160, 40, 200]);
+        }
+      }
     }
   }
 
@@ -3928,7 +3971,10 @@
   if (btnDoneHome) btnDoneHome.addEventListener("click", () => show("home"));
   const btnDoneAgain = $("#btnDoneAgain");
   if (btnDoneAgain) {
-    btnDoneAgain.addEventListener("click", () => show("home"));
+    btnDoneAgain.addEventListener("click", () => {
+      stopAllSound();
+      show("home");
+    });
   }
 
   function openDashboard() {
