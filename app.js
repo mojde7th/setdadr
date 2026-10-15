@@ -1,9 +1,9 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "181";
-  // باشگاه: بلند و نرم — بدون دیستورت خشن
-  const VOICE_LOUD = 44;
-  const VOICE_STAT_LOUD = 12;
+  const APP_VER = "182";
+  // باشگاه: بلند ولی تمیز — گین خیلی بالا روی گوشی نویز/خش می‌سازد
+  const VOICE_LOUD = 11;
+  const VOICE_STAT_LOUD = 6;
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -989,20 +989,32 @@
   function loudVol(vol, kind) {
     const base = vol == null ? 1 : Number(vol);
     const mult = kind === "stat" ? VOICE_STAT_LOUD : VOICE_LOUD;
-    // بلند برای باشگاه؛ سقف کنترل‌شده تا خش نخورد
-    return Math.max(0.05, Math.min(96, base * mult));
+    // سقف پایین‌تر = بدون کلیپ دیجیتال و نویز گوشی
+    return Math.max(0.05, Math.min(14, base * mult));
   }
 
   function connectLoudOut(srcNode, gainVal) {
     const g = audioCtx.createGain();
+    const hp = audioCtx.createBiquadFilter();
     const lp = audioCtx.createBiquadFilter();
-    // نرم و بدون کلیک انتهای جمله
+    const comp = audioCtx.createDynamicsCompressor();
+    // حذف همهمه پایین + نرم‌کردن اوج‌ها تا خش ندهد
+    hp.type = "highpass";
+    hp.frequency.value = 90;
+    hp.Q.value = 0.7;
     lp.type = "lowpass";
-    lp.frequency.value = 6200;
-    lp.Q.value = 0.25;
-    g.gain.value = Math.min(Number(gainVal) || 1, 48);
-    srcNode.connect(g);
-    g.connect(lp);
+    lp.frequency.value = 4600;
+    lp.Q.value = 0.5;
+    comp.threshold.value = -18;
+    comp.knee.value = 18;
+    comp.ratio.value = 3.5;
+    comp.attack.value = 0.003;
+    comp.release.value = 0.18;
+    g.gain.value = Math.min(Number(gainVal) || 1, 12);
+    srcNode.connect(hp);
+    hp.connect(g);
+    g.connect(comp);
+    comp.connect(lp);
     lp.connect(audioCtx.destination);
     return g;
   }
@@ -2945,7 +2957,8 @@
       restSec,
       calories,
       walkMin,
-      byMove
+      byMove,
+      finishedAt: new Date().toISOString()
     };
   }
 
@@ -3754,6 +3767,26 @@
     hideNext();
   }
 
+  function formatDoneWhen(iso) {
+    try {
+      const d = new Date(iso);
+      if (!isFinite(d.getTime())) return "";
+      const date = new Intl.DateTimeFormat("fa-IR", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        weekday: "long"
+      }).format(d);
+      const time = new Intl.DateTimeFormat("fa-IR", {
+        hour: "2-digit",
+        minute: "2-digit"
+      }).format(d);
+      return date + " — ساعت " + time;
+    } catch {
+      return "";
+    }
+  }
+
   function renderDoneStats(stats) {
     const tiles = $("#doneTiles");
     const chart = $("#doneChart");
@@ -3761,13 +3794,25 @@
     const anatomy = $("#doneAnatomy");
     const insight = $("#doneInsight");
     const musclesEl = $("#doneMuscles");
+    const whenEl = $("#doneWhen");
     if (tiles) tiles.innerHTML = "";
     if (chart) chart.innerHTML = "";
     if (movesEl) movesEl.innerHTML = "";
     if (anatomy) anatomy.innerHTML = "";
-    if (insight) insight.textContent = "";
+    if (insight) {
+      insight.textContent = "";
+      insight.hidden = true;
+    }
     if (musclesEl) musclesEl.innerHTML = "";
+    if (whenEl) whenEl.textContent = "";
     if (!stats) return;
+    const whenEl2 = $("#doneWhen");
+    if (whenEl2) {
+      const stamp = formatDoneWhen(stats.finishedAt);
+      whenEl2.textContent = stamp
+        ? "برای تمرین " + stamp
+        : "زمان این تمرین ثبت نشده";
+    }
     const rounds = Math.max(0, Math.round(Number(stats.rounds) || 0));
     const workSec = Math.max(0, Math.round(Number(stats.workSec) || 0));
     const restSec = Math.max(0, Math.round(Number(stats.restSec) || 0));
@@ -3799,21 +3844,10 @@
       });
     }
     if (anatomy) anatomy.innerHTML = anatomySvg(load);
+    // نکته فقط زیر میله؛ پاراگراف جدا نه
     if (insight) {
-      const tips = tops
-        .slice(0, 3)
-        .map((m) => {
-          const tip = MUSCLE_META[m.id] && MUSCLE_META[m.id].tip;
-          return tip ? m.fa + ": " + tip : "";
-        })
-        .filter(Boolean);
-      if (tips.length) {
-        insight.hidden = false;
-        insight.textContent = "نکته حرکت — " + tips.join(" · ");
-      } else {
-        insight.textContent = "";
-        insight.hidden = true;
-      }
+      insight.textContent = "";
+      insight.hidden = true;
     }
     if (musclesEl && tops.length) {
       const max = Math.max(1, tops[0].sec);
@@ -3868,6 +3902,7 @@
     }
     const kick = document.querySelector(".done-kicker");
     if (kick) kick.textContent = "✨ داشبورد پایان تمرین ✨";
+    if (!stats.finishedAt) stats.finishedAt = new Date().toISOString();
     lastDoneStats = stats;
     try {
       localStorage.setItem("setdadr-last-done", JSON.stringify(stats));
@@ -3923,6 +3958,10 @@
     show("done");
   }
 
+  const btnTopDash = $("#btnTopDash");
+  if (btnTopDash) {
+    btnTopDash.addEventListener("click", openDashboard);
+  }
   const btnHomeDash = $("#btnHomeDash");
   if (btnHomeDash) {
     btnHomeDash.addEventListener("click", openDashboard);
