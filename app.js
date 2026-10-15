@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "240";
+  const APP_VER = "241";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -30,6 +30,7 @@
   let faVoice = null;
   let enVoice = null;
   let speakToken = 0;
+  let nameSpeechGuard = false;
   let audioCtx = null;
   let activeBeep = null;
   let startLock = false;
@@ -70,7 +71,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=240";
+  const VOICE_Q = "?v=241";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -1012,7 +1013,8 @@
     else stopBgHeartbeat();
   }
 
-  function cutKeeperVoice(handover) {
+  function cutKeeperVoice(handover, force) {
+    if (nameSpeechGuard && !handover && !force) return;
     const kv = keeperVoice;
     if (kv) kv.finish(false, handover);
   }
@@ -1023,18 +1025,22 @@
     if (!src || soundMuted) return Promise.resolve(false);
     if (o.gen != null && o.gen !== soundGen) return Promise.resolve(false);
     const gen = soundGen;
-    cutKeeperVoice(true);
+    cutKeeperVoice(true, true);
     unlockAudio();
     startBgKeepAlive();
     const a = ensureKeeper();
     if (gen !== soundGen) return Promise.resolve(false);
     const hidden = isAppHidden();
-    const startCap = hidden
-      ? Math.min(Math.max(o.startCap || 3500, 2500), 8000)
-      : Math.min(o.startCap || 1800, 2500);
-    const maxMs = hidden
-      ? Math.min(Math.max(o.maxMs || 15000, 10000), 25000)
-      : Math.min(o.maxMs || 10000, 12000);
+    const startCap = o.protect
+      ? Math.min(Math.max(o.startCap || 4000, 3000), 9000)
+      : hidden
+        ? Math.min(Math.max(o.startCap || 3500, 2500), 8000)
+        : Math.min(o.startCap || 1800, 2500);
+    const maxMs = o.protect
+      ? Math.min(Math.max(o.maxMs || 20000, 12000), 30000)
+      : hidden
+        ? Math.min(Math.max(o.maxMs || 15000, 10000), 25000)
+        : Math.min(o.maxMs || 10000, 12000);
     return new Promise((resolve) => {
       let done = false;
       let started = false;
@@ -1045,7 +1051,7 @@
         if (!keeperOnSilence(a)) started = true;
       };
       const onTime = () => {
-        if (!keeperOnSilence(a) && (a.currentTime || 0) > 0.04) started = true;
+        if (!keeperOnSilence(a) && (a.currentTime || 0) > 0.02) started = true;
       };
       const onEnded = () => finish(started);
       const onError = () => finish(false);
@@ -1105,6 +1111,7 @@
         return;
       }
       t1 = setTimeout(() => {
+        // اگر شروع شده وسط حرف را قطع نکن
         if (!started) finish(false);
       }, startCap);
       t2 = setTimeout(() => finish(started), maxMs);
@@ -1293,16 +1300,16 @@
   function beepFourSecWarning() {
     if (soundMuted) return;
     if (beepFourSecWarning._on) return;
-    // اگر هنوز اسم/حرکت بعد روی کیپر است، اول قطع کن تا با بوق قاطی نشود
+    if (nameSpeechGuard) return;
+    beepFourSecWarning._on = true;
+    unlockAudio();
+    startBgKeepAlive();
     try {
       cutKeeperVoice(false);
     } catch {}
     try {
       hushKeeperToSilence();
     } catch {}
-    beepFourSecWarning._on = true;
-    unlockAudio();
-    startBgKeepAlive();
     const src = VOICE_BASE + "beep-soft.wav" + VOICE_Q;
     const a = ensureBgCueRail();
     try {
@@ -1329,13 +1336,12 @@
       const p = a.play();
       if (p && typeof p.catch === "function") {
         p.catch(() => {
-          // هرگز روی کیپر نرو — کیپر مال تلفظ است؛ دوبل/قاطی می‌شود
           beepFourSecWarning._on = false;
         });
       }
       setTimeout(() => {
         beepFourSecWarning._on = false;
-      }, 8000);
+      }, 3000);
     } catch {
       beepFourSecWarning._on = false;
     }
@@ -1344,12 +1350,11 @@
   function beepMidExact() {
     if (soundMuted) return;
     if (beepMidExact._on) return;
+    if (nameSpeechGuard) return;
     beepMidExact._on = true;
     unlockAudio();
     startBgKeepAlive();
-    try {
-      cutKeeperVoice(false);
-    } catch {}
+    // تلفظ را قطع نکن — فقط ریل بوق
     const src = VOICE_BASE + "beep-mid.wav" + VOICE_Q;
     const a = ensureBgCueRail();
     try {
@@ -1385,10 +1390,39 @@
   }
 
   function beepPhaseStart() {
-    if (soundMuted) return;
+    if (soundMuted) return Promise.resolve(false);
     unlockAudio();
     startBgKeepAlive();
-    playBgCueFile("beep-soft.wav", 1, { waitMs: 1800 });
+    const src = VOICE_BASE + "beep-soft.wav" + VOICE_Q;
+    const a = ensureBgCueRail();
+    try {
+      a.pause();
+    } catch {}
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (ok) => {
+        if (done) return;
+        done = true;
+        try {
+          a.onended = null;
+          a.onerror = null;
+        } catch {}
+        resolve(!!ok);
+      };
+      try {
+        a.loop = false;
+        a.muted = false;
+        a.volume = 1;
+        a.onended = () => finish(true);
+        a.onerror = () => finish(false);
+        a.src = src;
+        const p = a.play();
+        if (p && typeof p.catch === "function") p.catch(() => finish(false));
+        setTimeout(() => finish(true), 700);
+      } catch {
+        finish(false);
+      }
+    });
   }
 
   function beepReadyLikeRest() {
@@ -3166,9 +3200,10 @@
     if (clip) {
       try {
         const ok = !!(await playOnKeeper(VOICE_BASE + clip + VOICE_Q, v, {
-          startCap: 2000,
-          maxMs: 8000,
-          gen
+          startCap: 4000,
+          maxMs: 20000,
+          gen,
+          protect: true
         }));
         if (!alive()) return false;
         if (ok) return true;
@@ -3335,7 +3370,6 @@
   async function speakPhase(step) {
     return queueAnnounce(async (seq) => {
       if (!announceAlive(seq)) return;
-      const isRest = step.kind === "rest-set" || step.kind === "rest-move";
       const gen = soundGen;
       const tok = speakToken;
       const alive = () => announceAlive(seq) && soundAlive(gen, tok) && run && run.steps[run.i] === step;
@@ -3353,33 +3387,42 @@
         k.play().catch(() => {});
       } catch {}
       if (step.kind === "work") {
-        // بوق شروع جدا، بعد فاصله، بعد فقط اسم
-        try {
-          beepPhaseStart();
-        } catch {}
-        await sleep(380);
-        if (!alive()) return;
         const nm = normSpeakKey(step.name);
-        if (!nm) return;
-        let ok = false;
+        if (!nm || !alive()) return;
+        // حتماً اول بوق شروع تمام شود، بعد اسم — بدون قطع وسط حرف
         try {
-          ok = await speakMoveNameOnly(nm, 1);
+          await beepPhaseStart();
         } catch {}
+        await sleep(150);
         if (!alive()) return;
-        if (!ok) {
+        nameSpeechGuard = true;
+        try {
+          let ok = false;
           try {
-            ok = !!(await speakFaAny(nm, 1));
+            ok = await speakMoveNameOnly(nm, 1);
           } catch {}
+          if (!alive()) return;
+          if (!ok) {
+            try {
+              ok = !!(await speakFaAny(nm, 1));
+            } catch {}
+          }
+        } finally {
+          nameSpeechGuard = false;
         }
         return;
       }
-      // استراحت: بدون بوق شروع — اول سکوت کوتاه، بعد حرکت بعد، بعد اسم
       try {
         stopCueRail();
       } catch {}
       await sleep(220);
       if (!alive()) return;
-      await speakNextMoveName(step.nextName || "", seq);
+      nameSpeechGuard = true;
+      try {
+        await speakNextMoveName(step.nextName || "", seq);
+      } finally {
+        nameSpeechGuard = false;
+      }
     });
   }
 
@@ -4544,6 +4587,7 @@
       const total = Math.max(1, Number(run.phaseDur) || 0);
       function fireAtGone(pct, keySuffix, speakFn) {
         if (total < 12) return;
+        if (nameSpeechGuard) return;
         const key = run.i + ":" + keySuffix;
         if (run.announced[key]) return;
         const mark = Math.ceil(total * (1 - pct / 100) + 2);
@@ -4560,8 +4604,7 @@
       fireAtGone(30, "pct30", () => speakPercentGone(30));
       fireAtGone(80, "pct80", () => speakPercentGone(80));
 
-      // دقیقاً وسط — بوق متمایز دو‌تیونه
-      if (total >= 10) {
+      if (total >= 10 && !nameSpeechGuard) {
         const midKey = run.i + ":midBeep";
         const midMark = Math.ceil(total / 2);
         if (!run.announced[midKey] && prev > midMark && cur <= midMark) {
@@ -4571,14 +4614,10 @@
       }
     }
 
-    if (run.phaseDur > 5) {
+    if (run.phaseDur > 5 && !nameSpeechGuard) {
       const k4 = run.i + ":beep4";
       if (!run.announced[k4] && prev > 4 && cur <= 4) {
         run.announced[k4] = true;
-        try {
-          announceSeq += 1;
-          announceChain = Promise.resolve();
-        } catch {}
         beepFourSecWarning();
       }
     }
