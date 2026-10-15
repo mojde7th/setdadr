@@ -1,9 +1,9 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "195";
+  const APP_VER = "181";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
-  const VOICE_LOUD = 16;
-  const VOICE_STAT_LOUD = 6;
+  const VOICE_LOUD = 44;
+  const VOICE_STAT_LOUD = 12;
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -73,7 +73,7 @@
   const VOICE_Q = "?v=109";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
-  const DYN_FA_CACHE = "setdadr-fa-tts-v3";
+  const DYN_FA_CACHE = "setdadr-fa-tts-v181";
   let tickIv = 0;
   let bgKeepAudio = null;
   let bgKeepOn = false;
@@ -559,31 +559,6 @@
     startSilentCtxKeep();
   }
 
-  function hushKeeperToSilence() {
-    try {
-      cutKeeperVoice(false);
-    } catch {}
-    try {
-      const a = bgKeepAudio;
-      if (!a) return;
-      try {
-        a.onended = null;
-        a.onerror = null;
-        a.onplaying = null;
-        a.ontimeupdate = null;
-      } catch {}
-      try {
-        a.pause();
-      } catch {}
-      try {
-        a.loop = true;
-        a.volume = 0.001;
-        a.muted = false;
-        a.src = KEEP_SILENCE;
-      } catch {}
-    } catch {}
-  }
-
   function stopAllSound() {
     // نسل صدا را عوض کن تا هر پخش/اعلام قبلی بی‌اثر شود
     soundGen += 1;
@@ -592,7 +567,6 @@
     announceChain = Promise.resolve();
     stopBeep();
     stopVoiceFile();
-    hushKeeperToSilence();
     killAllHtmlAudio();
     killAllSources();
     if (window.speechSynthesis) {
@@ -894,22 +868,20 @@
     setTimeout(() => beepSoftRing(0), 520);
   }
 
-  // ۴ ثانیه آخر: بوق تمیز، شفاف، بلند
+  // ۴ ثانیه آخر: بوق تمیز، شفاف، بلند (دو ضربهٔ کوتاه)
   function beepReadyLikeRest() {
     if (soundMuted) return;
-    // تمیز و واضح برای باشگاه — بدون تیغ بالا
     playWarmChime({
       stack: false,
-      peak: 3.8,
-      total: 0.9,
+      peak: 5.8,
+      total: 0.7,
       notes: [
-        { f: 392.0, at: 0, dur: 0.28, g: 1.6 },
-        { f: 523.25, at: 0.12, dur: 0.32, g: 1.9 },
-        { f: 392.0, at: 0.48, dur: 0.3, g: 1.5 },
-        { f: 523.25, at: 0.58, dur: 0.28, g: 1.8 }
+        { f: 587.33, at: 0, dur: 0.16, g: 2.0 },
+        { f: 783.99, at: 0.2, dur: 0.22, g: 2.3 },
+        { f: 587.33, at: 0.42, dur: 0.18, g: 1.8 }
       ]
     });
-    buzz([100, 40, 140]);
+    buzz([120, 40, 160]);
   }
 
   function beepWhite(ms, soft) {
@@ -1070,26 +1042,17 @@
     const base = vol == null ? 1 : Number(vol);
     const mult = kind === "stat" ? VOICE_STAT_LOUD : VOICE_LOUD;
     // مثل ۱۸۱: بلند برای باشگاه — پایدار
-    return Math.max(0.08, Math.min(22, base * mult));
+    return Math.max(0.05, Math.min(96, base * mult));
   }
 
   function connectLoudOut(srcNode, gainVal) {
     const g = audioCtx.createGain();
-    const hp = audioCtx.createBiquadFilter();
     const lp = audioCtx.createBiquadFilter();
-    // همهمه پایین و تیغ بالا را کم کن تا نویز/خش کم شود
-    hp.type = "highpass";
-    hp.frequency.value = 140;
-    hp.Q.value = 0.7;
     lp.type = "lowpass";
-    lp.frequency.value = 3800;
-    lp.Q.value = 0.4;
-    const peak = Math.min(Number(gainVal) || 1, 18);
-    const t = audioCtx.currentTime;
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(peak, t + 0.03);
-    srcNode.connect(hp);
-    hp.connect(g);
+    lp.frequency.value = 6200;
+    lp.Q.value = 0.25;
+    g.gain.value = Math.min(Number(gainVal) || 1, 48);
+    srcNode.connect(g);
     g.connect(lp);
     lp.connect(audioCtx.destination);
     return g;
@@ -2747,38 +2710,27 @@
     startBgKeepAlive();
     startSilentCtxKeep();
     stopVoiceFile();
-    await sleep(40);
+    await sleep(50);
     if (!alive()) return false;
-    // «حرکت بعد» فایل محلی؛ اسم با دیلارای ۱۸۱
+    let ok = false;
     if (!bare) {
-      let pref = false;
       try {
-        pref = await playVoiceFile("phrase-next.mp3", 1);
+        ok = !!(await speakFaAny("حرکت بعد " + nm, 1));
       } catch {}
-      if (!alive()) return false;
-      if (!pref) {
-        try {
-          await speakFaAny("حرکت بعد", 1);
-        } catch {}
-      }
-      if (!alive()) return false;
-      await sleep(70);
+      if (ok) return true;
       if (!alive()) return false;
     }
-    let ok = false;
     try {
-      ok = await playPrimedWorkName(nm, 1);
+      ok = !!(await speakFaAny(nm, 1));
     } catch {}
     if (!alive()) return false;
     if (!ok) {
       try {
-        ok = !!(await speakFaAny(nm, 1));
+        ok = await playPrimedWorkName(nm, 1);
       } catch {}
     }
     if (!alive()) return false;
     if (!ok) ok = await speakMoveNameOnly(nm, 1);
-    if (!alive()) return false;
-    if (!ok) ok = !!(await speakFaAny(nm, 1));
     return !!ok;
   }
 
@@ -2951,8 +2903,8 @@
       return "rgba(232,165,75," + a + ")";
     }
     // شماتیک ساده بدن — نواحی عضله با رنگ بار تمرین
-    const rawSvg = (
-      '<svg viewBox="0 0 200 360" xmlns="http://www.w3.org/2000/svg" class="anatomy-svg anatomy-live" aria-hidden="true">' +
+    return (
+      '<svg viewBox="0 0 200 360" xmlns="http://www.w3.org/2000/svg" class="anatomy-svg" aria-hidden="true">' +
       '<rect x="0" y="0" width="200" height="360" rx="18" fill="#100e0a"/>' +
       '<ellipse cx="100" cy="36" rx="22" ry="26" fill="#2a241c" stroke="#3a342c"/>' +
       '<rect x="78" y="58" width="44" height="18" rx="6" fill="#2a241c"/>' +
@@ -3003,31 +2955,8 @@
       '<text x="100" y="348" text-anchor="middle" fill="#9a9080" font-size="11" font-family="Vazirmatn,sans-serif">نقشه درگیری عضله</text>' +
       "</svg>"
     );
-    return String(rawSvg).replace(
-      /fill="(rgba\\(232,165,75,0\\.(?:[5-9]\\d*|4[5-9]\\d*))\\)"/g,
-      'class="mus-hot" fill="$1"'
-    );
-
   }
 
-
-  async function speakMidHalf() {
-    return queueAnnounce(async (seq) => {
-      if (!announceAlive(seq)) return;
-      const alive = aliveNow();
-      const live = () => announceAlive(seq) && alive() && !!run && !run.paused;
-      if (!live()) return;
-      try {
-        if (run) run.progressLabel = "";
-        const sub = $("#runSub");
-        if (sub) sub.textContent = "";
-      } catch {}
-      // کوتاه و واضح
-      const ok = !!(await speakFaAny("نصفشو رفتی", 1));
-      if (!live()) return;
-      if (!ok) await speakFaAny("بیشتر از نصفش رفتی", 1);
-    });
-  }
 
   async function speakDoneAmount(sec, total) {
     const n = Math.round(sec);
@@ -3039,13 +2968,16 @@
       const live = () => announceAlive(seq) && alive();
       const pct =
         tot > 0 ? Math.max(1, Math.min(99, Math.round((n / tot) * 100))) : 0;
+      // روی صفحه ننویس — فقط بگو
       try {
         if (run) run.progressLabel = "";
         const sub = $("#runSub");
         if (sub) sub.textContent = "";
       } catch {}
       const phrase =
-        pct >= 45 ? "نصفشو رفتی" : faNum(pct) + " درصد رفتی";
+        pct >= 45
+          ? "بیشتر از نصفشووو رفتی"
+          : faNum(pct) + " درصد رفتی";
       await speakFaAny(phrase, 1);
       if (!live()) return;
     });
@@ -3165,74 +3097,70 @@
     return parts.join("، ");
   }
 
-  function nextDashSayIdx() {
-    let i = 0;
-    try {
-      i = Math.max(0, Math.round(Number(localStorage.getItem("setdadr-dash-say-i")) || 0));
-    } catch {}
-    try {
-      localStorage.setItem("setdadr-dash-say-i", String(i + 1));
-    } catch {}
-    return i;
-  }
-
   async function speakDone(stats) {
     const s = stats || {};
     const n = Math.max(1, Math.round(Number(s.rounds) || 0));
     const { moves, workSec, calories, walkMin } = statNumbers(s);
     const myGen = soundGen;
-    const sayi = nextDashSayIdx();
-    const alive = () => {
-      const on = $("#view-done") && $("#view-done").classList.contains("on");
-      return myGen === soundGen && !soundMuted && !!on;
-    };
+    const alive = () => myGen === soundGen && !soundMuted;
     unlockAudio();
     startBgKeepAlive();
     startSilentCtxKeep();
-    buzz([90, 50, 120]);
+    buzz([90, 50, 90, 50, 140]);
+    beepWhite(300);
+    await sleep(800);
     if (!alive()) return;
-    const opens = [
-      "آفرین، تمرین تمام شد",
-      "عالی بود، ست تموم شد",
-      "دمت گرم، تمرین جمع شد",
-      "خوب اومدی، کار تموم"
-    ];
-    await speakStatLine(opens[sayi % opens.length], null);
+    await speakStatLine("آفرین، تمرین تمام شد", null);
+    if (!alive()) return;
+    await sleep(150);
+    await speakStatLine(
+      "شما " +
+        setCountPhrase(n) +
+        (moves > 0 ? " و " + moveCountPhrase(moves) : "") +
+        " انجام دادید",
+      null
+    );
     if (!alive()) return;
     const bits = [];
-    if (n > 0) bits.push(faNum(n) + " ست");
-    if (moves > 0) bits.push(faNum(moves) + " حرکت");
-    if (workSec > 0) bits.push(timePhrase(workSec));
-    if (calories > 0) bits.push(faNum(calories) + " کالری");
-    if (walkMin > 0) bits.push(faNum(walkMin) + " دقیقه پیاده‌روی");
-    if (bits.length) await speakStatLine(bits.join("، "), null);
+    if (workSec > 0) bits.push("مجموعاً " + timePhrase(workSec) + " تمرین کردید");
+    if (calories > 0) bits.push("حدود " + faNum(calories) + " کالری سوزاندید");
+    if (walkMin > 0) bits.push("معادل حدود " + faNum(walkMin) + " دقیقه پیاده‌روی");
+    if (bits.length) {
+      await sleep(150);
+      await speakStatLine(bits.join("، "), null);
+    }
     if (!alive()) return;
     const byMove = Array.isArray(s.byMove) ? s.byMove : [];
     if (byMove.length) {
-      const top = byMove[sayi % byMove.length];
-      const variants = [
-        "بیشترین کار روی " + top.name,
-        "این‌بار روی " + top.name + " خوب فشار آوردی",
-        "تمرکز بعدی را روی فرم " + top.name + " بگذار",
-        top.name + " را کنترل‌شده‌تر تکرار کن"
-      ];
-      await speakStatLine(variants[sayi % variants.length], null);
+      const top = byMove[0];
+      await sleep(150);
+      if (!alive()) return;
+      await speakStatLine(
+        "بیشترین تمرین روی " +
+          top.name +
+          "، جمع " +
+          timePhrase(top.sec) +
+          " در " +
+          faNum(top.count) +
+          " بار",
+        null
+      );
     }
     if (!alive()) return;
     const load = muscleLoadFromStats(s);
-    const tops = topMuscles(load, 1);
+    const tops = topMuscles(load, 2);
     if (tops.length) {
-      const tip = MUSCLE_META[tops[0].id] && MUSCLE_META[tops[0].id].tip;
-      const tipLines = [
-        tip ? "نکته: " + tip : "",
-        "نکته: روی " + tops[0].fa + " نفس را منظم نگه دار",
-        "نکته: " + tops[0].fa + " را بدون عجله جمع کن",
-        "نکته: دامنه کامل " + tops[0].fa + " را حفظ کن"
-      ].filter(Boolean);
-      if (tipLines.length) {
-        await speakStatLine(tipLines[sayi % tipLines.length], null);
-      }
+      await sleep(150);
+      if (!alive()) return;
+      await speakStatLine(
+        "عضلات اصلی درگیر: " + tops.map((x) => x.fa).join(" و "),
+        null
+      );
     }
+    if (!alive()) return;
+    await sleep(180);
+    const ali = await playVoiceFile("cheer-ali.mp3", 1);
+    if (!ali && alive()) await speakStatLine("خیلی عالی بود", null);
   }
 
   function bumpNumber(input, dir) {
@@ -3281,11 +3209,6 @@
 
   function show(name) {
     if (name === "moves") name = "home";
-    const wasDone = $("#view-done") && $("#view-done").classList.contains("on");
-    if (wasDone && name !== "done") {
-      stopAllSound();
-      hushKeeperToSilence();
-    }
     viewIds.forEach((k) => {
       const el = document.getElementById("view-" + k);
       if (!el) return;
@@ -3667,27 +3590,32 @@
     run.prevLeftCeil = cur;
     if (prev == null) return;
 
-    // وسط فاز فقط برای کار — دقیقاً نصف
+    // وسط فاز فقط برای کار (نه استراحت)
     if (step.kind === "work") {
       const midKey = run.i + ":halfPlus";
       const total = Math.round(run.phaseDur);
-      const halfLeft = Math.max(1, Math.ceil(total / 2));
+      // حدود ۶۰٪ حرکت — برای جمله «بیشتر از نصفش رفتی»
+      const done = Math.max(1, Math.round((total * 3) / 5));
+      const targetLeft = Math.max(1, total - done);
+      const lead = 4;
+      const fireLeft = targetLeft + lead;
       if (
-        total >= 10 &&
+        total >= 8 &&
         !run.announced[midKey] &&
-        prev > halfLeft &&
-        cur <= halfLeft
+        prev > fireLeft &&
+        cur <= fireLeft
       ) {
         run.announced[midKey] = true;
-        speakMidHalf();
+        speakDoneAmount(done, total);
       }
     }
 
-    // ۴ ثانیه مانده: بوق تمیز و بلند
+    // ۴ ثانیه مانده: کار و استراحت (ست و حرکت)
     const softKey = run.i + ":soft4";
     if (run.phaseDur > 5 && !run.announced[softKey] && prev > 4 && cur <= 4) {
       run.announced[softKey] = true;
-      beepReadyLikeRest();
+      beepSoftDouble();
+      buzz([90, 40, 120, 40, 140]);
     }
   }
 
@@ -3696,13 +3624,10 @@
     const skip = !!fromSkip;
     // بعدی: قطع سخت؛ خودکار: قطع نرم تا HTML آنلاک برای تلفظ سخت بماند
     if (skip) {
-      // قطع سخت صدای فاز قبل تا وارد بعدی نشود
       stopAllSound();
-      hushKeeperToSilence();
       startBgKeepAlive();
       startSilentCtxKeep();
     } else {
-      // عبور خودکار: قطع نرم — کیپر را خفه نکن تا تلفظ بعدی بماند
       softCutForAdvance();
     }
     run.i += 1;
@@ -3995,13 +3920,6 @@
       ["حرکت‌ها", toFaDigits(movesN)],
       ["دورها", toFaDigits(rounds)]
     ];
-    // کارت آخر حذف؛ زمان هر حرکت همان بالا
-    byMove.slice(0, 4).forEach((mv) => {
-      tileData.push([
-        String(mv.name || "حرکت"),
-        timePhrase(Math.max(0, Math.round(Number(mv.sec) || 0)))
-      ]);
-    });
     if (tiles) {
       tileData.forEach(([k, v]) => {
         const d = document.createElement("div");
@@ -4027,12 +3945,7 @@
           '<div class="mus-row"><span class="mus-name"></span><span class="mus-pct"></span></div><div class="mus-track"><div class="mus-fill"></div></div>';
         li.querySelector(".mus-name").textContent = m.fa;
         li.querySelector(".mus-pct").textContent = toFaDigits(pct) + "٪ بار نسبی";
-        li.querySelector(".mus-fill").style.width = "0%";
-        requestAnimationFrame(() => {
-          try {
-            li.querySelector(".mus-fill").style.width = Math.max(8, pct) + "%";
-          } catch {}
-        });
+        li.querySelector(".mus-fill").style.width = Math.max(8, pct) + "%";
         const tip =
           (MUSCLE_META[m.id] && MUSCLE_META[m.id].tip) ||
           ("روی " + m.fa + " کنترل و فرم را حفظ کن.");
@@ -4043,11 +3956,31 @@
         musclesEl.appendChild(li);
       });
     }
-    // کارت پایین حذف — زمان حرکت‌ها در کاشی‌های بالاست
+    // نمودار حرکت‌ها + نکته زیر هر میله (حتی تکراری)
     if (chart) {
       chart.innerHTML = "";
       const wrap = chart.closest(".done-chart-wrap");
-      if (wrap) wrap.hidden = true;
+      if (wrap) wrap.hidden = !byMove.length;
+      if (byMove.length) {
+        const maxSec = Math.max(1, byMove[0].sec || 1);
+        byMove.forEach((mv) => {
+          const row = document.createElement("div");
+          row.className = "done-bar";
+          const pct = Math.round((Math.max(0, mv.sec) / maxSec) * 100);
+          row.innerHTML =
+            '<div class="done-bar-top"><span class="done-bar-name"></span><span class="done-bar-sec"></span></div><div class="mus-track"><div class="mus-fill"></div></div><div class="mus-tip done-bar-tip"></div>';
+          row.querySelector(".done-bar-name").textContent = mv.name;
+          row.querySelector(".done-bar-sec").textContent =
+            timePhrase(Math.max(0, Math.round(mv.sec || 0)));
+          row.querySelector(".mus-fill").style.width = Math.max(8, pct) + "%";
+          const tipEl = row.querySelector(".done-bar-tip");
+          tipEl.textContent =
+            "نکته: فرم " +
+            mv.name +
+            " را کنترل کن؛ نفس منظم و بدون عجله.";
+          chart.appendChild(row);
+        });
+      }
     }
     if (movesEl) {
       movesEl.innerHTML = "";
@@ -4101,11 +4034,7 @@
   if (btnDoneHome) btnDoneHome.addEventListener("click", () => show("home"));
   const btnDoneAgain = $("#btnDoneAgain");
   if (btnDoneAgain) {
-    btnDoneAgain.addEventListener("click", () => {
-      stopAllSound();
-      hushKeeperToSilence();
-      show("home");
-    });
+    btnDoneAgain.addEventListener("click", () => show("home"));
   }
 
   function openDashboard() {
@@ -4133,9 +4062,6 @@
     if (kick) kick.textContent = "✨ داشبورد تمرین ✨";
     renderDoneStats(stats);
     show("done");
-    Promise.resolve()
-      .then(() => speakDone(stats))
-      .catch(() => {});
   }
 
   const btnTopDash = $("#btnTopDash");
