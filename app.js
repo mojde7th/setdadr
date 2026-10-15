@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "257";
+  const APP_VER = "258";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -71,7 +71,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=257";
+  const VOICE_Q = "?v=258";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -5098,6 +5098,42 @@
       } catch {}
       $("#moveName").value = "";
       renderMoves();
+    });
+  }
+
+  function clampPickWork(n) {
+    n = Math.round(Number(n) || 40);
+    if (!Number.isFinite(n)) n = 40;
+    return Math.max(5, Math.min(600, n));
+  }
+  function bumpPickWork(delta) {
+    const el = $("#pickWork");
+    if (!el) return;
+    const cur = clampPickWork(el.value);
+    const step = 5;
+    el.value = String(clampPickWork(cur + delta * step));
+    try {
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    } catch {}
+  }
+  const btnSecMinus = $("#btnSecMinus");
+  const btnSecPlus = $("#btnSecPlus");
+  if (btnSecMinus) {
+    btnSecMinus.addEventListener("click", (e) => {
+      e.preventDefault();
+      bumpPickWork(-1);
+    });
+  }
+  if (btnSecPlus) {
+    btnSecPlus.addEventListener("click", (e) => {
+      e.preventDefault();
+      bumpPickWork(1);
+    });
+  }
+  const pickWorkEl = $("#pickWork");
+  if (pickWorkEl) {
+    pickWorkEl.addEventListener("change", () => {
+      pickWorkEl.value = String(clampPickWork(pickWorkEl.value));
     });
   }
 
