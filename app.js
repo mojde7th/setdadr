@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "177";
+  const APP_VER = "178";
   // باشگاه: بلند و نرم — بدون دیستورت خشن
   const VOICE_LOUD = 70;
   const VOICE_STAT_LOUD = 16;
@@ -802,11 +802,11 @@
     playWarmChime({
       atMs: atMs || 0,
       stack: false,
-      peak: 1.05,
-      total: 0.55,
+      peak: 0.38,
+      total: 0.42,
       notes: [
-        { f: 440, at: 0, dur: 0.32, g: 1.0 },
-        { f: 554.37, at: 0.1, dur: 0.36, g: 0.95 }
+        { f: 392.0, at: 0, dur: 0.28, g: 0.85 },
+        { f: 523.25, at: 0.08, dur: 0.3, g: 0.7 }
       ]
     });
   }
@@ -995,21 +995,17 @@
   function connectLoudOut(srcNode, gainVal) {
     const g = audioCtx.createGain();
     const lp = audioCtx.createBiquadFilter();
-    const comp = audioCtx.createDynamicsCompressor();
-    // نرم‌کردن اوج‌های تیز + کمپرس ملایم = بلند بدون خش
+    // فیلتر نرم؛ بدون کمپرسور خش‌دار انتهای جمله
     lp.type = "lowpass";
-    lp.frequency.value = 8200;
-    lp.Q.value = 0.55;
-    comp.threshold.value = -22;
-    comp.knee.value = 28;
-    comp.ratio.value = 2.6;
-    comp.attack.value = 0.008;
-    comp.release.value = 0.22;
-    g.gain.value = gainVal;
+    lp.frequency.value = 7600;
+    lp.Q.value = 0.4;
+    const now = audioCtx.currentTime;
+    const target = Math.min(Number(gainVal) || 1, 88);
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.001, target), now + 0.04);
     srcNode.connect(g);
     g.connect(lp);
-    lp.connect(comp);
-    comp.connect(audioCtx.destination);
+    lp.connect(audioCtx.destination);
     return g;
   }
 
@@ -2883,7 +2879,7 @@
       } catch {}
       const phrase =
         pct >= 45
-          ? "بیشتر از نصفش رفتی"
+          ? "وای، بیشتر از نصفشووو رفتی!"
           : faNum(pct) + " درصد رفتی";
       await speakFaAny(phrase, 1);
       if (!live()) return;
@@ -3784,7 +3780,7 @@
     );
     const tileData = [
       ["ست", toFaDigits(rounds)],
-      ["تمرین", timePhrase(workSec)],
+      ["زمان تمرین", timePhrase(workSec)],
       ["استراحت", timePhrase(restSec)],
       ["کالری", toFaDigits(calories)],
       ["پیاده‌روی", toFaDigits(walkMin) + " دقیقه"],
@@ -3815,35 +3811,14 @@
         li.querySelector(".mus-name").textContent = m.fa;
         li.querySelector(".mus-pct").textContent = toFaDigits(pct) + "٪ بار نسبی";
         li.querySelector(".mus-fill").style.width = Math.max(8, pct) + "%";
-        const tip = MUSCLE_META[m.id] && MUSCLE_META[m.id].tip;
-        if (tip) {
-          const p = document.createElement("div");
-          p.className = "mus-tip";
-          p.textContent = tip;
-          li.appendChild(p);
-        }
         musclesEl.appendChild(li);
       });
     }
-    const maxSec = Math.max(1, ...byMove.map((m) => m.sec || 0));
-    if (chart && byMove.length) {
-      byMove.forEach((m) => {
-        const row = document.createElement("div");
-        row.className = "done-bar-row";
-        const pct = Math.max(6, Math.round(((m.sec || 0) / maxSec) * 100));
-        const ms = musclesForMove(m.name)
-          .map((id) => (MUSCLE_META[id] && MUSCLE_META[id].fa) || id)
-          .join("، ");
-        row.innerHTML =
-          '<div class="done-bar-name"></div><div class="done-bar-meta"><div class="done-bar-track"><div class="done-bar-fill"></div></div><div class="done-bar-sec"></div></div>';
-        row.querySelector(".done-bar-name").textContent = m.name;
-        row.querySelector(".done-bar-fill").style.width = pct + "%";
-        row.querySelector(".done-bar-sec").textContent =
-          timePhrase(m.sec) + (ms ? " · " + ms : "");
-        chart.appendChild(row);
-      });
-    } else if (chart) {
-      chart.textContent = "حرکتی ثبت نشد";
+    // زمان‌ها داخل کارت‌هاست؛ نمودار جدا برای کم‌کردن اسکرول پر نمی‌شود
+    if (chart) {
+      chart.innerHTML = "";
+      const wrap = chart.closest(".done-chart-wrap");
+      if (wrap) wrap.hidden = true;
     }
     // لیست تکراری پایین حذف — همان نمودار کافی است
     if (movesEl) {
@@ -3892,14 +3867,7 @@
   $("#btnDoneHome").addEventListener("click", () => show("home"));
   const btnDoneAgain = $("#btnDoneAgain");
   if (btnDoneAgain) {
-    btnDoneAgain.addEventListener("click", () => {
-      if (lastPlanId) {
-        unlockAudio();
-        startRun(lastPlanId);
-      } else {
-        show("home");
-      }
-    });
+    btnDoneAgain.addEventListener("click", () => show("home"));
   }
 
   const moveFormEl = $("#moveForm");
