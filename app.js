@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "221";
+  const APP_VER = "222";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -70,7 +70,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=221";
+  const VOICE_Q = "?v=222";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -752,28 +752,62 @@
   }
 
   function bgKeepSrc() {
-    // آیفون نویز تقریباً صفر را سشن مدیا می‌کشد؛ keep-ios نرم و غیرتونال است
+    // آیفون: همیشه keep-ios — dither نزدیک صفر را سیستم می‌کشد (آیکون می‌آید ولی صدا می‌میرد)
     try {
-      if (isIOSLike() || isAppHidden()) return KEEP_IOS;
+      if (isIOSLike()) return KEEP_IOS;
+      if (isAppHidden()) return KEEP_IOS;
     } catch {}
     return makeQuietKeepUrl();
   }
 
   function bgKeepVolume() {
     try {
-      if (isIOSLike()) return isAppHidden() ? 0.045 : 0.02;
-      if (isAppHidden()) return Math.max(BG_KEEP_VOL, 0.03);
+      if (isIOSLike()) return isAppHidden() ? 0.11 : 0.06;
+      if (isAppHidden()) return Math.max(BG_KEEP_VOL, 0.05);
     } catch {}
     return BG_KEEP_VOL;
   }
 
+  function applyBgKeepSrc(a) {
+    if (!a) return;
+    try {
+      const want = bgKeepSrc();
+      const cur = String(a.currentSrc || a.src || "");
+      a.loop = true;
+      a.muted = false;
+      a.volume = bgKeepVolume();
+      if (want === KEEP_IOS) {
+        if (cur.indexOf("keep-ios") < 0) a.src = KEEP_IOS;
+      } else if (!cur) {
+        a.src = want;
+      }
+    } catch {}
+  }
+
   function ensureBgLoop() {
-    if (bgKeepAudio) return bgKeepAudio;
+    if (bgKeepAudio) {
+      try {
+        const want = bgKeepSrc();
+        const cur = String(bgKeepAudio.currentSrc || bgKeepAudio.src || "");
+        if (want === KEEP_IOS && cur.indexOf("keep-ios") < 0) {
+          bgKeepAudio.src = KEEP_IOS;
+          bgKeepAudio.loop = true;
+          bgKeepAudio.muted = false;
+          bgKeepAudio.volume = bgKeepVolume();
+          bgKeepAudio.play().catch(() => {});
+        }
+      } catch {}
+      return bgKeepAudio;
+    }
     const a = makeHtmlAudio(bgKeepSrc());
     a.loop = true;
     a.volume = bgKeepVolume();
     a.muted = false;
     a.setAttribute("data-setdadr-keep", "1");
+    try {
+      a.setAttribute("playsinline", "");
+      a.playsInline = true;
+    } catch {}
     bgKeepAudio = a;
     liveAudios.add(a);
     wireBgAudioTick(a);
@@ -864,12 +898,9 @@
       } catch {}
       try {
         const a = ensureBgLoop();
-        a.muted = false;
-        a.volume = bgKeepVolume();
-        try {
-          if (String(a.src || "").indexOf("keep-ios") < 0) a.src = KEEP_IOS;
-        } catch {}
+        applyBgKeepSrc(a);
         if (a.paused) a.play().catch(() => {});
+        setMediaPlaying(true, (run && (run.title || "تمرین")) || "ست‌یار");
       } catch {}
       startBgKeepAlive();
       startSilentCtxKeep();
@@ -909,20 +940,10 @@
       bgKeepAudio = null;
       bgTickWired = false;
       const a = ensureBgLoop();
-      a.volume = bgKeepVolume();
-      try {
-        if ((isIOSLike() || isAppHidden()) && a.src && a.src.indexOf("keep-ios") < 0) a.src = KEEP_IOS;
-      } catch {}
-      a.muted = false;
-      a.loop = true;
+      applyBgKeepSrc(a);
     } else {
       try {
-        bgKeepAudio.muted = false;
-        bgKeepAudio.volume = bgKeepVolume();
-        try {
-          if ((isIOSLike() || isAppHidden()) && String(bgKeepAudio.src || "").indexOf("keep-ios") < 0) bgKeepAudio.src = KEEP_IOS;
-        } catch {}
-        bgKeepAudio.loop = true;
+        applyBgKeepSrc(bgKeepAudio);
       } catch {}
     }
     try {
@@ -972,12 +993,7 @@
     } catch {}
     if (bgKeepAudio) {
       try {
-        bgKeepAudio.muted = false;
-        bgKeepAudio.volume = bgKeepVolume();
-        if ((isIOSLike() || isAppHidden()) && String(bgKeepAudio.src || "").indexOf("keep-ios") < 0) {
-          bgKeepAudio.src = KEEP_IOS;
-          bgKeepAudio.loop = true;
-        }
+        applyBgKeepSrc(bgKeepAudio);
       } catch {}
       const p = bgKeepAudio.play();
       if (p && typeof p.then === "function") {
@@ -1195,18 +1211,21 @@
       a.loop = true;
       a.muted = false;
       a.volume = bgKeepVolume();
+      const want = bgKeepSrc();
       try {
-        if ((isIOSLike() || isAppHidden()) && a.src && a.src.indexOf("keep-ios") < 0) a.src = KEEP_IOS;
-      } catch {}
-      try {
-        const want = makeQuietKeepUrl();
-        if (a.src !== want && a.currentSrc !== want) a.src = want;
+        const cur = String(a.currentSrc || a.src || "");
+        if (want === KEEP_IOS) {
+          if (cur.indexOf("keep-ios") < 0) a.src = KEEP_IOS;
+        } else if (!cur || cur.indexOf("keep-ios") >= 0 || a.paused) {
+          a.src = want;
+        }
       } catch {
         try {
-          a.src = makeQuietKeepUrl();
+          a.src = want;
         } catch {}
       }
       a.play().catch(() => {});
+      setMediaPlaying(true, (run && (run.title || "تمرین")) || "ست‌یار");
       startBgKeepAlive();
     } catch {}
   }
@@ -5287,11 +5306,13 @@
       setMediaPlaying(true, (run && (run.title || "تمرین")) || "ست‌یار");
       try {
         const a = ensureBgLoop();
-        a.muted = false;
-        a.loop = true;
-        a.volume = bgKeepVolume();
+        applyBgKeepSrc(a);
         a.src = KEEP_IOS;
+        a.loop = true;
+        a.muted = false;
+        a.volume = bgKeepVolume();
         a.play().catch(() => {});
+        setMediaPlaying(true, (run && (run.title || "تمرین")) || "ست‌یار");
       } catch {}
       try {
         const k = ensureKeeper();
