@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "169";
+  const APP_VER = "170";
   // باشگاه: بلند بدون خش — گین معقول، بدون دیستورت WaveShaper
   const VOICE_LOUD = 56;
   const VOICE_STAT_LOUD = 14;
@@ -2621,14 +2621,25 @@
     const tok = speakToken;
     const alive = () => soundAlive(gen, tok) && (seq == null || announceAlive(seq));
     if (!alive()) return false;
-    let pref = await playVoiceFile("phrase-next.mp3", 1);
+    // اول ترجیحاً کلیپ «حرکت بعد»، ولی اسم حرکت را هیچ‌وقت جا نگذار
+    try {
+      let pref = await playVoiceFile("phrase-next.mp3", 1);
+      if (!alive()) return false;
+      if (!pref) await speakFaAny("حرکت بعد", 1);
+    } catch {}
     if (!alive()) return false;
-    if (!pref) pref = await speakFaAny("حرکت بعد", 1);
-    if (!alive()) return false;
-    if (!nm) return !!pref;
+    if (!nm) return false;
     await sleep(60);
     if (!alive()) return false;
-    return !!(await speakMoveNameOnly(nm, 1));
+    let ok = false;
+    try {
+      ok = await playPrimedWorkName(nm, 1);
+    } catch {}
+    if (!alive()) return false;
+    if (!ok) ok = await speakMoveNameOnly(nm, 1);
+    if (!alive()) return false;
+    if (!ok) ok = !!(await speakFaAny(nm, 1));
+    return !!ok;
   }
 
   async function speakCheerOnly(seq) {
@@ -2654,7 +2665,14 @@
         const nm = normSpeakKey(step.name);
         await sleep(450);
         if (!nm || !alive()) return;
-        await speakMoveNameOnly(nm, 1);
+        let ok = false;
+        try {
+          ok = await playPrimedWorkName(nm, 1);
+        } catch {}
+        if (!alive()) return;
+        if (!ok) ok = await speakMoveNameOnly(nm, 1);
+        if (!alive()) return;
+        if (!ok) await speakFaAny(nm, 1);
         return;
       }
       if (step.kind === "rest-set") {
@@ -2828,7 +2846,7 @@
     const n = Math.round(sec);
     const tot = Math.round(total || (run && run.phaseDur) || 0);
     if (n <= 0) return;
-    return voidAnnounce(async (seq) => {
+    return queueAnnounce(async (seq) => {
       if (!announceAlive(seq)) return;
       const alive = aliveNow();
       const live = () => announceAlive(seq) && alive();
@@ -3963,7 +3981,7 @@
   document.addEventListener("click", touchKeeper, { capture: true });
 
   wireNumSteppers();
-  // جلوگیری از زوم دبل‌تپ / ژست در وب‌اپ
+  // جلوگیری از زوم نیشگون؛ دبل‌تپ را قطع نکن (صدا/ژست iOS می‌شکند)
   try {
     document.addEventListener(
       "gesturestart",
@@ -3976,16 +3994,6 @@
       "gesturechange",
       (e) => {
         e.preventDefault();
-      },
-      { passive: false }
-    );
-    let lastTouchEnd = 0;
-    document.addEventListener(
-      "touchend",
-      (e) => {
-        const now = Date.now();
-        if (now - lastTouchEnd <= 300) e.preventDefault();
-        lastTouchEnd = now;
       },
       { passive: false }
     );
