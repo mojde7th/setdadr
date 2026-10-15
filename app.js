@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "277";
+  const APP_VER = "278";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -70,7 +70,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=277";
+  const VOICE_Q = "?v=278";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -603,6 +603,29 @@
     // keep-alive پس‌زمینه را قطع نکن — فقط با پایان/خروج/توقف
   }
 
+  function updateNowPlaying() {
+    if (!run || run.paused || soundMuted) return;
+    try {
+      if (!navigator.mediaSession) return;
+      const step = run.steps[run.i];
+      if (!step) return;
+      const sec = Math.max(0, Math.ceil(run.left || 0));
+      const name =
+        step.kind === "work"
+          ? step.name || "تمرین"
+          : step.kind === "rest-set"
+            ? "استراحت ست"
+            : "استراحت";
+      const title = name + " · " + sec + "ث";
+      navigator.mediaSession.playbackState = "playing";
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: title,
+        artist: "ست‌یار",
+        album: "تمرین"
+      });
+    } catch {}
+  }
+
   function setMediaPlaying(on, title) {
     try {
       if (!navigator.mediaSession) return;
@@ -662,10 +685,30 @@
     bgHeartbeatIv = setInterval(() => {
       if (!run || run.paused || soundMuted || !isAppHidden()) return;
       try {
-        const a = bgKeepAudio;
-        if (a && a.paused) a.play().catch(() => {});
+        if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
       } catch {}
-    }, 8000);
+      try {
+        const a = bgKeepAudio || ensureKeeper();
+        if (!keeperVoice) {
+          if (!keeperOnSilence(a)) {
+            a.loop = true;
+            a.src = KEEP_SILENCE;
+          }
+          a.muted = false;
+          a.volume = 0.001;
+          if (a.paused) a.play().catch(() => {});
+        }
+      } catch {}
+      try {
+        if (!tickIv) {
+          run.lastTick = performance.now();
+          loop();
+        }
+      } catch {}
+      try {
+        updateNowPlaying();
+      } catch {}
+    }, 5000);
   }
 
   function stopBgHeartbeat() {
@@ -1120,7 +1163,7 @@
     let v = Math.max(0.08, Math.min(10, base * mult));
     // پس‌زمینه: همان صدا، کمی آرام‌تر
     try {
-      if (document.visibilityState === "hidden") v *= 0.55;
+      if (document.visibilityState === "hidden") v *= 0.88;
     } catch {}
     return v;
   }
@@ -1136,7 +1179,7 @@
   function htmlVol(vol) {
     let v = Math.max(0.05, Math.min(1, vol == null ? 0.98 : Number(vol) || 0.98));
     try {
-      if (document.visibilityState === "hidden") v = Math.min(v, 0.62);
+      if (document.visibilityState === "hidden") v = Math.min(v, 0.95);
     } catch {}
     return v;
   }
@@ -4312,6 +4355,11 @@
     $("#runTimer").textContent = fmt(run.left);
     $("#btnPause").textContent = run.paused ? "ادامه" : "توقف";
     paintNext();
+    if (isAppHidden()) {
+      try {
+        updateNowPlaying();
+      } catch {}
+    }
   }
 
   function paintNext() {
@@ -4831,10 +4879,20 @@ $("#addToSetForm").addEventListener("submit", (e) => {
         if (!tickIv) loop();
       }
     } else if (run && !run.paused && !soundMuted) {
-      // اپ دیگر باز شد ولی تمرین باز است — صدا کم ولی زنده بماند
+      // رفت به هوم ولی اپ کشته نشده — سبک زنده بمان تا بفهمد کجاست
+      try {
+        startBgKeepAlive._t = 0;
+      } catch {}
       bgKeepOn = true;
-      resumeBgIfNeeded();
+      startBgKeepAlive();
+      try {
+        run.lastTick = performance.now();
+        if (!tickIv) loop();
+      } catch {}
       startBgHeartbeat();
+      try {
+        updateNowPlaying();
+      } catch {}
     }
   });
   window.addEventListener("pagehide", () => {
