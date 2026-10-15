@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "175";
+  const APP_VER = "176";
   // باشگاه: بلند بدون خش — گین معقول، بدون دیستورت WaveShaper
   const VOICE_LOUD = 56;
   const VOICE_STAT_LOUD = 14;
@@ -2860,7 +2860,6 @@
       if (!announceAlive(seq)) return;
       const alive = aliveNow();
       const live = () => announceAlive(seq) && alive();
-      // حدود دو سوم: فقط پیشرفت همین حرکت
       const pct =
         tot > 0 ? Math.max(1, Math.min(99, Math.round((n / tot) * 100))) : 0;
       try {
@@ -2870,14 +2869,11 @@
           if (sub) sub.textContent = run.progressLabel;
         }
       } catch {}
-      let phrase = timePhrase(n) + " از همین حرکت";
-      if (pct > 0) {
-        if (pct >= 48 && pct <= 55) phrase = "نصف این حرکت رفتی";
-        else if (pct >= 56 && pct <= 70)
-          phrase = "بیشتر از نصف این حرکت رفتی";
-        else if (pct >= 72 && pct <= 80) phrase = "سه چهارم این حرکت رفتی";
-        else phrase = faNum(pct) + " درصد رفتی";
-      }
+      // وسط حرکت: صریح بگو بیشتر از نصف همین حرکت رفته
+      const phrase =
+        pct >= 45
+          ? "بیشتر از نصفش رفتی"
+          : faNum(pct) + " درصد رفتی";
       await speakFaAny(phrase, 1);
       if (!live()) return;
     });
@@ -3486,14 +3482,15 @@
 
     // وسط فاز فقط برای کار (نه استراحت)
     if (step.kind === "work") {
-      const midKey = run.i + ":twoThirds";
+      const midKey = run.i + ":halfPlus";
       const total = Math.round(run.phaseDur);
-      const done = Math.max(1, Math.round((total * 2) / 3));
+      // حدود ۶۰٪ حرکت — برای جمله «بیشتر از نصفش رفتی»
+      const done = Math.max(1, Math.round((total * 3) / 5));
       const targetLeft = Math.max(1, total - done);
-      const lead = 3;
+      const lead = 4;
       const fireLeft = targetLeft + lead;
       if (
-        total >= 12 &&
+        total >= 8 &&
         !run.announced[midKey] &&
         prev > fireLeft &&
         cur <= fireLeft
@@ -3713,8 +3710,20 @@
     card.classList.remove("is-rest-next");
     const next = run.steps[run.i + 1];
     if (!next) {
-      // وسط آخرین حرکت جشن نگیر — جشن فقط صفحه پایان
-      hideNext();
+      card.hidden = false;
+      card.classList.add("is-rest-next", "is-next-only", "is-finale");
+      if (nextLbl) {
+        nextLbl.hidden = false;
+        nextLbl.textContent = "حرکت بعدی";
+      }
+      if (arrowLead) {
+        arrowLead.hidden = false;
+        arrowLead.textContent = "↓";
+      }
+      flow1.textContent = "حرکتی نیست";
+      if (flow2) flow2.textContent = "";
+      if (row2) row2.hidden = true;
+      if (arrow) arrow.hidden = true;
       return;
     }
 
@@ -3764,7 +3773,6 @@
       ["کالری", toFaDigits(calories)]
     ];
     if (walkMin > 0) tileData.push(["پیاده‌روی", toFaDigits(walkMin) + " دقیقه"]);
-    if (tops[0]) tileData.push(["عضلهٔ اصلی", tops[0].fa]);
     if (tiles) {
       tileData.forEach(([k, v]) => {
         const d = document.createElement("div");
@@ -3776,7 +3784,10 @@
       });
     }
     if (anatomy) anatomy.innerHTML = anatomySvg(load);
-    if (insight) insight.textContent = muscleInsightText(stats, load);
+    if (insight) {
+      insight.textContent = "";
+      insight.hidden = true;
+    }
     if (musclesEl && tops.length) {
       const max = Math.max(1, tops[0].sec);
       tops.forEach((m) => {

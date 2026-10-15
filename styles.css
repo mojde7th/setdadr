@@ -417,9 +417,9 @@ input[type="text"], input[type="number"] {
   padding-top: 2px;
   padding-bottom: 2px;
   /* فونت‌ها نسبت به ارتفاع صفحه بزرگ می‌مانند ولی اسکرول نمی‌خورند */
-  --run-name: clamp(28px, 5.8dvh, 48px);
-  --run-timer: clamp(56px, 12dvh, 104px);
-  --run-frac: clamp(36px, 8dvh, 64px);
+  --run-name: clamp(34px, 7dvh, 56px);
+  --run-timer: clamp(78px, 16dvh, 136px);
+  --run-frac: clamp(34px, 7.5dvh, 52px);
   --run-next: clamp(26px, 5.2dvh, 42px);
   --run-phase: clamp(16px, 3.2dvh, 22px);
 }
@@ -436,33 +436,38 @@ input[type="text"], input[type="number"] {
 .progress-box {
   display: grid;
   grid-template-columns: 1fr 1fr 1.15fr;
-  gap: 6px;
-  width: min(96vw, 440px);
-  margin: 0 0 2px;
+  gap: 8px;
+  width: min(94vw, 420px);
+  margin: 4px 0 6px;
+  padding: 2px;
   flex-shrink: 0;
+  overflow: visible;
+  box-sizing: border-box;
 }
 .progress-item {
   background: #17130e;
-  border: 2px solid rgba(232, 165, 75, 0.32);
+  border: 2px solid rgba(232, 165, 75, 0.45);
   border-radius: 14px;
-  padding: 8px 8px 10px;
-  min-height: 4.6rem;
+  padding: 10px 8px 12px;
+  min-height: 5rem;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
   box-sizing: border-box;
+  box-shadow: inset 0 0 0 1px rgba(232, 165, 75, 0.12);
+  overflow: visible;
 }
 .progress-k {
-  font-size: clamp(12px, 2.8dvh, 15px);
+  font-size: 14px;
   font-weight: 900;
   color: var(--muted);
-  margin-bottom: 4px;
+  margin-bottom: 6px;
   line-height: 1.1;
 }
 .progress-v {
   font-family: var(--display);
-  font-size: clamp(26px, 6.2dvh, 40px);
+  font-size: clamp(32px, 8dvh, 48px);
   font-weight: 800;
   line-height: 1;
   direction: ltr;
@@ -1215,7 +1220,7 @@ input[type="text"], input[type="number"] {
 .progress-item.overall .overall-v,
 .progress-v.overall-v {
   font-family: var(--display) !important;
-  font-size: clamp(26px, 6.2dvh, 40px) !important;
+  font-size: clamp(32px, 8dvh, 48px) !important;
   font-weight: 800 !important;
   color: #f6d7a4 !important;
   letter-spacing: 0;
@@ -1225,7 +1230,7 @@ input[type="text"], input[type="number"] {
 }
 #runSub {
   color: #f0c27a;
-  font-size: clamp(22px, 5vw, 30px) !important;
+  font-size: clamp(28px, 6.5vw, 40px) !important;
   font-weight: 900 !important;
   min-height: 0;
   flex-shrink: 0;
