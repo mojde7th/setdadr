@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "264";
+  const APP_VER = "265";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -71,7 +71,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=264";
+  const VOICE_Q = "?v=265";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -1263,7 +1263,7 @@
 
   function beepClockTick(secLeft) {
     if (soundMuted) return;
-    // تیک ۴ث: واضح، شفاف، خیلی بلند — فقط یک فایل
+    // شمارش ۴…۱ مثل بهترین بوق‌های سه‌ثانیه: بلند، واضح، طول‌دار — فقط یک‌بار
     try {
       const src = VOICE_BASE + "beep-tick.wav" + VOICE_Q;
       const a = ensureBgCueRail();
