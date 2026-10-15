@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "162";
+  const APP_VER = "163";
   // صدای باشگاه: HTML حداکثر ۱ است؛ بلندی واقعی با WebAudio حدود ده برابر سیستم
   const VOICE_LOUD = 10;
   const VOICE_STAT_LOUD = 2.2;
