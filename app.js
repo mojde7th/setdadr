@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "255";
+  const APP_VER = "256";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 14;
   const VOICE_STAT_LOUD = 7;
@@ -71,7 +71,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=255";
+  const VOICE_Q = "?v=256";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -81,6 +81,7 @@
   let stickySpeakAudio = null;
   let bgKeepOn = false;
   let bgKeepStamp = 0;
+  let mediaSessionWired = false;
   let silentCtxKeep = null;
   let silentCtxGain = null;
   let bgHeartbeatIv = 0;
@@ -677,10 +678,9 @@
     if (bgWatchIv) return;
     bgWatchIv = setInterval(() => {
       if (!run || run.paused || soundMuted) return;
-      resumeBgIfNeeded();
-      startSilentCtxKeep();
-      requestWakeLock();
-    }, 3500);
+      if (!isAppHidden()) return;
+      keepSilenceAlive();
+    }, 5000);
   }
 
   function stopBgWatch() {
@@ -692,10 +692,10 @@
     if (soundMuted) return;
     try {
       const bg = ensureBgLoop();
-      bg.muted = false;
-      bg.loop = true;
-      if ((bg.volume || 0) > 0.002) bg.volume = 0.001;
       if (bg.paused) {
+        bg.muted = false;
+        bg.loop = true;
+        bg.volume = 0.001;
         if (!/silence\.wav/.test(String(bg.currentSrc || bg.src || ""))) {
           bg.src = KEEP_SILENCE;
         }
@@ -705,11 +705,11 @@
     try {
       if (!keeperVoice) {
         const k = ensureKeeper();
-        k.muted = false;
-        k.loop = true;
         if (k.paused) {
-          if (!keeperOnSilence(k)) k.src = KEEP_SILENCE;
+          k.muted = false;
+          k.loop = true;
           k.volume = 0.001;
+          if (!keeperOnSilence(k)) k.src = KEEP_SILENCE;
           k.play().catch(() => {});
         }
       }
@@ -901,30 +901,26 @@
 
 
   function wireMediaSessionKeep() {
+    if (mediaSessionWired) return;
     try {
       if (!navigator.mediaSession) return;
       const kick = () => {
         if (soundMuted || !run || run.paused) return;
-        startBgKeepAlive();
-        startSilentCtxKeep();
+        keepSilenceAlive();
       };
-      // سیستم‌عامل با زدن مکث نتواند سشن تمرین را بکشد
       navigator.mediaSession.setActionHandler("pause", kick);
       navigator.mediaSession.setActionHandler("play", kick);
       navigator.mediaSession.setActionHandler("stop", kick);
+      mediaSessionWired = true;
     } catch {}
   }
 
   function startBgHeartbeat() {
     if (bgHeartbeatIv) return;
     bgHeartbeatIv = setInterval(() => {
-      if (!run || run.paused || soundMuted) return;
-      if (!isAppHidden()) return;
-      try {
-        if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
-      } catch {}
+      if (!run || run.paused || soundMuted || !isAppHidden()) return;
       keepSilenceAlive();
-    }, 2000);
+    }, 3000);
   }
 
   function stopBgHeartbeat() {
@@ -936,8 +932,7 @@
   function startBgKeepAlive() {
     if (soundMuted) return;
     const now = Date.now();
-    // کمتر از ۱٫۲ث دوباره کل مسیر را اجرا نکن — منبع هنگ
-    if (bgKeepOn && now - bgKeepStamp < 1200) {
+    if (bgKeepOn && now - bgKeepStamp < 2500) {
       keepSilenceAlive();
       return;
     }
@@ -947,34 +942,14 @@
     try {
       if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
     } catch {}
-    let dead = false;
-    if (bgKeepAudio) {
-      try {
-        if (!bgKeepAudio.src && !bgKeepAudio.currentSrc) dead = true;
-      } catch {
-        dead = true;
-      }
-    }
-    if (!bgKeepAudio || dead) {
-      try {
-        if (bgKeepAudio) {
-          liveAudios.delete(bgKeepAudio);
-          try {
-            bgKeepAudio.pause();
-          } catch {}
-        }
-      } catch {}
-      bgKeepAudio = null;
-      bgTickWired = false;
-      ensureBgLoop();
-    }
+    if (!bgKeepAudio) ensureBgLoop();
     keepSilenceAlive();
     setMediaPlaying(true, (run && (run.title || "تمرین")) || "ست‌یار");
     wireMediaSessionKeep();
-    startBgWatch();
     if (isAppHidden()) {
-      requestWakeLock();
+      startBgWatch();
       startBgHeartbeat();
+      requestWakeLock();
     }
   }
 
@@ -3355,36 +3330,26 @@
       const alive = () => announceAlive(seq) && soundAlive(gen, tok) && run && run.steps[run.i] === step;
       unlockAudio();
       keepSilenceAlive();
-      try {
-        const k = ensureKeeper();
-        k.muted = false;
-        k.loop = true;
-        k.volume = 0.001;
-        if (!k.src) k.src = KEEP_SILENCE;
-        if (k.paused) k.play().catch(() => {});
-      } catch {}
       if (step.kind === "work") {
         const nm = normSpeakKey(step.name);
         if (!nm || !alive()) return;
         try {
           beepPhaseStart();
         } catch {}
-        // صبر تا بوق شروع تمام شود، بعد فقط اسم — بدون تایم‌اوت کوتاه که اسم را قطع کند
-        await sleep(340);
+        await sleep(300);
         if (!alive()) return;
         nameSpeechGuard = true;
         const guardTimer = setTimeout(() => {
           nameSpeechGuard = false;
-        }, 12000);
+        }, 10000);
         try {
           let ok = false;
           try {
             ok = !!(await speakMoveNameOnly(nm, 1));
           } catch {}
-          if (!alive()) return;
-          if (!ok) {
+          if (!ok && alive()) {
             try {
-              ok = !!(await speakFaAny(nm, 1));
+              await speakFaAny(nm, 1);
             } catch {}
           }
         } finally {
@@ -3396,12 +3361,12 @@
       try {
         stopCueRail();
       } catch {}
-      await sleep(160);
+      await sleep(140);
       if (!alive()) return;
       nameSpeechGuard = true;
       const guardTimer = setTimeout(() => {
         nameSpeechGuard = false;
-      }, 12000);
+      }, 10000);
       try {
         await speakNextMoveName(step.nextName || "", seq);
       } finally {
@@ -4531,11 +4496,19 @@
     // گرم‌کردن بقیه بعد از شروع تلفظ اول
     setTimeout(() => {
       try {
-        p.circuit.forEach((c) => {
-          warmMoveVoice(c.name);
-        });
+        const names = (p.circuit || []).map((c) => c && c.name).filter(Boolean);
+        let i = 0;
+        const stepWarm = () => {
+          if (i >= names.length) return;
+          try {
+            warmMoveVoice(names[i]);
+          } catch {}
+          i += 1;
+          setTimeout(stepWarm, 350);
+        };
+        stepWarm();
       } catch {}
-    }, 900);
+    }, 1200);
   }
 
   function stopLoop() {
@@ -4553,8 +4526,10 @@
     const tick = () => {
       if (!run || run.paused) return;
       const now = performance.now();
-      const dt = (now - run.lastTick) / 1000;
+      let dt = (now - run.lastTick) / 1000;
       run.lastTick = now;
+      if (dt > 1.2) dt = 0.3;
+      if (dt < 0) dt = 0.05;
       run.left -= dt;
       maybeAnnounce();
       if (run.left <= 0) {
@@ -4568,7 +4543,7 @@
       }
     };
     tick();
-    tickIv = setInterval(tick, 250);
+    tickIv = setInterval(tick, 300);
   }
 
   function maybeAnnounce() {
