@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "274";
+  const APP_VER = "275";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -70,7 +70,7 @@
   }
   const voiceBuf = new Map();
   const VOICE_BASE = "./voice/";
-  const VOICE_Q = "?v=274";
+  const VOICE_Q = "?v=275";
   const dynFaAudio = new Map(); // متن → Audio
   const dynFaBlob = new Map(); // متن → Blob کش‌شده
   const DYN_FA_CACHE = "setdadr-fa-tts-v200";
@@ -3861,7 +3861,12 @@
     const nameEl = $("#pickMoveName");
     if (nameEl) nameEl.value = "";
     const workEl = $("#pickWork");
-    if (workEl && parsed.work != null) workEl.value = String(work);
+    if (workEl && parsed.work != null) {
+      workEl.value = String(work);
+      try {
+        syncPickWorkUi(work);
+      } catch {}
+    }
     renderCircuit();
     updatePlanSummary();
     renderMoveSuggest();
@@ -4752,7 +4757,47 @@
     });
   }
 
-  $("#addToSetForm").addEventListener("submit", (e) => {
+  
+  function clampPickWork(n) {
+    n = Math.round(Number(n) || 40);
+    if (!Number.isFinite(n)) n = 40;
+    return Math.max(5, Math.min(600, Math.round(n / 5) * 5));
+  }
+  function syncPickWorkUi(val) {
+    const v = clampPickWork(val);
+    const el = $("#pickWork");
+    const show = $("#pickWorkShow");
+    if (el) el.value = String(v);
+    if (show) {
+      try {
+        show.textContent = typeof toFaDigits === "function" ? toFaDigits(v) : String(v);
+      } catch {
+        show.textContent = String(v);
+      }
+    }
+  }
+  function bumpPickWork(delta) {
+    const el = $("#pickWork");
+    if (!el) return;
+    syncPickWorkUi(clampPickWork(el.value) + delta * 5);
+  }
+  const btnSecMinus = $("#btnSecMinus");
+  const btnSecPlus = $("#btnSecPlus");
+  if (btnSecMinus) {
+    btnSecMinus.addEventListener("click", (e) => {
+      e.preventDefault();
+      bumpPickWork(-1);
+    });
+  }
+  if (btnSecPlus) {
+    btnSecPlus.addEventListener("click", (e) => {
+      e.preventDefault();
+      bumpPickWork(1);
+    });
+  }
+  syncPickWorkUi(40);
+
+$("#addToSetForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const name = ($("#pickMoveName").value || "").trim();
     if (!name) {

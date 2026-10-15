@@ -1548,37 +1548,69 @@ input[type="text"], input[type="number"] {
 }
 .add-sec {
   display: grid;
-  grid-template-columns: 64px auto;
-  align-items: center;
-  gap: 4px;
-  min-height: 52px;
-  padding: 0 8px 0 4px;
-  border-radius: 14px;
+  grid-template-columns: 52px 1fr 52px;
+  align-items: stretch;
+  gap: 0;
+  min-height: 56px;
+  min-width: 168px;
+  padding: 0;
+  border-radius: 16px;
   border: 1px solid var(--line);
   background: var(--bg2, #17130e);
+  overflow: hidden;
 }
-.add-sec input {
-  width: 64px;
-  min-height: 48px;
-  border: 0;
-  background: transparent;
+.add-sec-mid {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 6px;
+}
+.sec-show {
+  font: 900 22px/1 var(--font);
   color: inherit;
-  font: 800 16px var(--font);
+  min-width: 2.2ch;
   text-align: center;
-  padding: 0;
 }
 .add-sec-lbl {
-  font: 900 14px var(--font);
+  font: 900 13px var(--font);
   color: var(--accent);
+  white-space: nowrap;
+}
+.sec-step {
+  border: 0;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  font: 900 28px/1 var(--font);
+  min-width: 52px;
+  min-height: 56px;
+  padding: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+}
+.sec-step:active {
+  background: color-mix(in srgb, var(--accent) 38%, transparent);
 }
 .add-plus {
-  min-width: 52px;
-  width: 52px;
-  height: 52px;
-  border-radius: 14px !important;
-  font: 900 28px/1 var(--font) !important;
-  padding: 0 !important;
+  display: inline-flex !important;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  min-width: 72px;
+  width: auto;
+  min-height: 56px;
+  height: 56px;
+  border-radius: 16px !important;
+  font-size: inherit !important;
+  line-height: 1 !important;
+  padding: 6px 12px !important;
 }
+.add-plus-ico { font: 900 24px/1 var(--font); }
+.add-plus-txt { font: 900 12px/1.1 var(--font); white-space: nowrap; }
+
 .auto-save-hint {
   margin: 0 0 8px;
   text-align: center;
@@ -1588,8 +1620,8 @@ input[type="text"], input[type="number"] {
 .auto-save-hint.on { color: var(--accent); }
 @media (max-width: 380px) {
   .add-inline { grid-template-columns: 1fr auto; }
-  .add-plus { grid-column: 2; grid-row: 1; }
-  .add-sec { grid-column: 1 / -1; }
+  .add-plus { grid-column: 2; grid-row: 1; min-width: 68px; }
+  .add-sec { grid-column: 1 / -1; min-width: 0; }
 }
 
 /* v209 edit actions */
