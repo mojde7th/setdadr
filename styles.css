@@ -1477,29 +1477,29 @@ input[type="text"], input[type="number"] {
   min-height: 78px;
 }
 
-/* v205 anatomy engage */
+/* v206 anatomy engage — opacity only (SVG-safe on mobile) */
 .anatomy-live .mus-zone {
   transform-box: fill-box;
   transform-origin: center;
 }
 .anatomy-live .mus-idle {
-  opacity: 0.55;
+  opacity: 0.45;
 }
-.anatomy-live .mus-hot {
-  animation: musEngage 1.1s ease-out forwards, musPulse 1.45s ease-in-out 1.1s infinite;
-  animation-delay: var(--d, 0s), calc(var(--d, 0s) + 1.1s);
+.anatomy-live .mus-hot,
+.anatomy-live .mus-pop {
+  animation: musPopIn 0.7s ease-out both, musGlow 1.2s ease-in-out 0.7s infinite;
+  animation-delay: var(--d, 0s), calc(var(--d, 0s) + 0.7s);
 }
-.anatomy-live .mus-lvl-1 { filter: drop-shadow(0 0 2px rgba(232,165,75,.25)); }
-.anatomy-live .mus-lvl-2 { filter: drop-shadow(0 0 5px rgba(232,165,75,.45)); }
-.anatomy-live .mus-lvl-3 { filter: drop-shadow(0 0 8px rgba(255,200,120,.7)); }
-@keyframes musEngage {
-  0% { opacity: 0.2; filter: brightness(0.7); transform: scale(0.92); }
-  55% { opacity: 1; filter: brightness(1.45); transform: scale(1.04); }
-  100% { opacity: 0.98; filter: brightness(1.12); transform: scale(1); }
+.anatomy-live .mus-lvl-1 { stroke: rgba(232,165,75,.35); stroke-width: 1; }
+.anatomy-live .mus-lvl-2 { stroke: rgba(255,200,120,.55); stroke-width: 1.5; }
+.anatomy-live .mus-lvl-3 { stroke: rgba(255,230,160,.9); stroke-width: 2; }
+@keyframes musPopIn {
+  0% { opacity: 0.15; }
+  100% { opacity: 1; }
 }
-@keyframes musPulse {
-  0%, 100% { filter: brightness(1.05); }
-  50% { filter: brightness(1.35); }
+@keyframes musGlow {
+  0%, 100% { opacity: 0.72; }
+  50% { opacity: 1; }
 }
 .done-move-science {
   list-style: none;

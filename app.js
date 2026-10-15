@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "205";
+  const APP_VER = "206";
   // باشگاه: بلند؛ پخش اسم اول HTML تا بعد از await شبکه ساکت نماند
   const VOICE_LOUD = 11;
   const VOICE_STAT_LOUD = 5;
@@ -368,6 +368,22 @@
         loadVoices();
       } catch {}
     }
+    // همیشه کیپر را دوباره play کن — بعد از stopAllSound آنلاک اول می‌میرد
+    try {
+      const a = ensureKeeper();
+      a.muted = false;
+      a.volume = 0.001;
+      a.loop = true;
+      try {
+        if (!a.src || !keeperOnSilence(a)) a.src = KEEP_SILENCE;
+      } catch {
+        try {
+          a.src = KEEP_SILENCE;
+        } catch {}
+      }
+      const p = a.play();
+      if (p && typeof p.catch === "function") p.catch(() => {});
+    } catch {}
     if (!speechWarmed) {
       speechWarmed = true;
       try {
@@ -380,14 +396,6 @@
           o.start();
           o.stop(audioCtx.currentTime + 0.015);
         }
-      } catch {}
-      // آنلاک HTML برای بعد از await شبکه (آی‌او‌اس)
-      try {
-        const a = ensureKeeper();
-        a.muted = false;
-        a.volume = 0.001;
-        const p = a.play();
-        if (p && typeof p.catch === "function") p.catch(() => {});
       } catch {}
     }
   }
@@ -2842,35 +2850,49 @@
     return queueAnnounce(async (seq) => {
       if (!announceAlive(seq)) return;
       const isRest = step.kind === "rest-set" || step.kind === "rest-move";
-      buzz(step.kind === "work" ? [80, 35, 90] : [55, 30, 70]);
-      startBgKeepAlive();
-      if (isRest) beepCalmLong();
-      else beepSoftRing(0);
       const gen = soundGen;
       const tok = speakToken;
       const alive = () => announceAlive(seq) && soundAlive(gen, tok);
+      buzz(step.kind === "work" ? [80, 35, 90] : [55, 30, 70]);
+      unlockAudio();
+      startBgKeepAlive();
+      startSilentCtxKeep();
+      try {
+        if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
+      } catch {}
       if (step.kind === "work") {
         const nm = normSpeakKey(step.name);
-        await sleep(280);
-        stopBeep();
-        unlockAudio();
-        startBgKeepAlive();
-        startSilentCtxKeep();
-        try {
-          if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
-        } catch {}
+        // اول اسم را بگو (قبل از بوق طولانی) تا ژست لمس از دست نرود
         if (!nm || !alive()) return;
         let ok = false;
         try {
           ok = await playPrimedWorkName(nm, 1);
         } catch {}
         if (!alive()) return;
-        if (!ok) ok = await speakMoveNameOnly(nm, 1);
+        if (!ok) {
+          try {
+            ok = await speakMoveNameOnly(nm, 1);
+          } catch {}
+        }
         if (!alive()) return;
-        if (!ok) await speakFaAny(nm, 1);
+        if (!ok) {
+          try {
+            ok = !!(await speakFaAny(nm, 1));
+          } catch {}
+        }
         if (!alive()) return;
-        stopBeep();
-        // آخرین حرکت کل تمرین
+        if (!ok) {
+          try {
+            const clipRel =
+              MOVE_CLIP[nm] ||
+              MOVE_CLIP[String(step.name || "").trim()] ||
+              "";
+            if (clipRel) ok = !!(await playVoiceFileHtml(clipRel, 1));
+          } catch {}
+        }
+        if (!alive()) return;
+        // بوق کوتاه بعد از اسم — قطع فوری نکن
+        beepSoftRing(0);
         const next = run && run.steps[run.i + 1];
         if (!next) {
           await sleep(160);
@@ -2879,6 +2901,8 @@
         }
         return;
       }
+      if (isRest) beepCalmLong();
+      else beepSoftRing(0);
       if (step.kind === "rest-set") {
         // بین ست: بوق استراحت را قطع کن، بعد اسم بعدی
         await sleep(220);
@@ -3188,10 +3212,23 @@
     }
     function zone(tag, attrs, id) {
       const level = lvl(id);
-      const delay = rankOf[id] != null ? (0.12 + rankOf[id] * 0.18).toFixed(2) : "0";
+      const delay = rankOf[id] != null ? (0.15 + rankOf[id] * 0.22).toFixed(2) : "0";
       const cls =
         "mus-zone" +
         (level > 0 ? " mus-hot mus-lvl-" + level : " mus-idle");
+      const anim =
+        level > 0
+          ? '<animate attributeName="opacity" values="0.25;1;0.7;1" dur="1.15s" begin="' +
+            delay +
+            's" repeatCount="indefinite"/>' +
+            '<animate attributeName="fill" values="' +
+            heat(id) +
+            ';rgba(255,210,120,1);' +
+            heat(id) +
+            '" dur="1.15s" begin="' +
+            delay +
+            's" repeatCount="indefinite"/>'
+          : "";
       return (
         "<" +
         tag +
@@ -3207,7 +3244,13 @@
         delay +
         's" fill="' +
         heat(id) +
-        '"/>'
+        '" opacity="' +
+        (level > 0 ? "0.35" : "0.55") +
+        '">' +
+        anim +
+        "</" +
+        tag +
+        ">"
       );
     }
     return (
@@ -3822,17 +3865,12 @@
     stopLoop();
     stopAllSound();
     const steps = buildTimeline(p);
+    // بلافاصله بعد از stop دوباره آنلاک — وگرنه حرکت اول ساکت می‌ماند
     unlockAudio();
     startBgKeepAlive();
     startSilentCtxKeep();
     try {
       if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
-    } catch {}
-    // صدا را در پس‌زمینه گرم کن؛ شروع را معطل نکن
-    try {
-      p.circuit.forEach((c) => {
-        warmMoveVoice(c.name);
-      });
     } catch {}
     run = {
       planId: p.id,
@@ -3849,8 +3887,17 @@
     };
     show("run");
     paintRun(false);
+    unlockAudio();
     speakPhase(steps[0]);
     loop();
+    // گرم‌کردن بقیه بعد از شروع تلفظ اول
+    setTimeout(() => {
+      try {
+        p.circuit.forEach((c) => {
+          warmMoveVoice(c.name);
+        });
+      } catch {}
+    }, 900);
   }
 
   function stopLoop() {
@@ -4225,7 +4272,16 @@
         tiles.appendChild(d);
       });
     }
-    if (anatomy) anatomy.innerHTML = anatomySvg(load);
+    if (anatomy) {
+      anatomy.innerHTML = anatomySvg(load);
+      try {
+        const hot = anatomy.querySelectorAll(".mus-hot");
+        hot.forEach((el, i) => {
+          el.classList.add("mus-pop");
+          el.style.setProperty("--d", (0.08 + i * 0.16).toFixed(2) + "s");
+        });
+      } catch {}
+    }
     // نکته فقط زیر میله؛ پاراگراف جدا نه
     if (insight) {
       insight.textContent = "";
