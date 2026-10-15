@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "173";
+  const APP_VER = "174";
   // باشگاه: بلند بدون خش — گین معقول، بدون دیستورت WaveShaper
   const VOICE_LOUD = 56;
   const VOICE_STAT_LOUD = 14;
@@ -2683,24 +2683,6 @@
         if (!ok) ok = await speakMoveNameOnly(nm, 1);
         if (!alive()) return;
         if (!ok) await speakFaAny(nm, 1);
-        if (!alive()) return;
-        // حرکت آخر مدار: حرکت بعدی را هم بگو؛ اگر آخر کل ست بود بگو آخرین حرکت
-        const isLastInCircuit =
-          Number(step.moveIndex) > 0 &&
-          Number(step.moveIndex) === Number(step.moveCount);
-        if (isLastInCircuit) {
-          const next = run && run.steps[run.i + 1];
-          await sleep(100);
-          if (!alive()) return;
-          if (!next) {
-            await speakFaAny("آخرین حرکت", 1);
-          } else {
-            const nxt =
-              next.nextName || (next.kind === "work" ? next.name : "");
-            // فقط اسم بعدی — بدون جمله «حرکت بعد» تا قاطی نشود
-            if (nxt) await speakNextMoveName(nxt, seq, true);
-          }
-        }
         return;
       }
       if (step.kind === "rest-set") {
@@ -2883,14 +2865,14 @@
         tot > 0 ? Math.max(1, Math.min(99, Math.round((n / tot) * 100))) : 0;
       try {
         if (run && pct > 0) {
-          run.progressLabel = toFaDigits(pct) + "٪ همین حرکت";
+          run.progressLabel = toFaDigits(pct) + "٪";
           const sub = $("#runSub");
           if (sub) sub.textContent = run.progressLabel;
         }
       } catch {}
       const phrase =
         pct > 0
-          ? "پیشرفت همین حرکت تقریباً " + faNum(pct) + " درصد"
+          ? faNum(pct) + " درصد"
           : timePhrase(n) + " از همین حرکت";
       await speakFaAny(phrase, 1);
       if (!live()) return;
@@ -3727,21 +3709,8 @@
     card.classList.remove("is-rest-next");
     const next = run.steps[run.i + 1];
     if (!next) {
-      // آخرین حرکت کل ست
-      card.hidden = false;
-      card.classList.add("is-rest-next", "is-next-only", "is-finale");
-      if (nextLbl) {
-        nextLbl.hidden = false;
-        nextLbl.textContent = "پایان ست";
-      }
-      if (arrowLead) {
-        arrowLead.hidden = false;
-        arrowLead.textContent = "🎉";
-      }
-      flow1.textContent = "آفرین، تموم شد";
-      if (flow2) flow2.textContent = "";
-      if (row2) row2.hidden = true;
-      if (arrow) arrow.hidden = true;
+      // وسط آخرین حرکت جشن نگیر — جشن فقط صفحه پایان
+      hideNext();
       return;
     }
 
@@ -3838,31 +3807,16 @@
         row.querySelector(".done-bar-name").textContent = m.name;
         row.querySelector(".done-bar-fill").style.width = pct + "%";
         row.querySelector(".done-bar-sec").textContent =
-          timePhrase(m.sec) +
-          " · " +
-          toFaDigits(m.count) +
-          " بار" +
-          (ms ? " · " + ms : "");
+          timePhrase(m.sec) + (ms ? " · " + ms : "");
         chart.appendChild(row);
       });
     } else if (chart) {
       chart.textContent = "حرکتی ثبت نشد";
     }
-    if (movesEl && byMove.length) {
-      byMove.forEach((m) => {
-        const li = document.createElement("li");
-        const ms = musclesForMove(m.name)
-          .map((id) => (MUSCLE_META[id] && MUSCLE_META[id].fa) || id)
-          .join("، ");
-        li.textContent =
-          m.name +
-          " — " +
-          toFaDigits(m.count) +
-          " بار · جمع " +
-          timePhrase(m.sec) +
-          (ms ? " · " + ms : "");
-        movesEl.appendChild(li);
-      });
+    // لیست تکراری پایین حذف — همان نمودار کافی است
+    if (movesEl) {
+      movesEl.innerHTML = "";
+      movesEl.hidden = true;
     }
   }
 

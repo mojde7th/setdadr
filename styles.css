@@ -417,8 +417,8 @@ input[type="text"], input[type="number"] {
   padding-top: 2px;
   padding-bottom: 2px;
   /* فونت‌ها نسبت به ارتفاع صفحه بزرگ می‌مانند ولی اسکرول نمی‌خورند */
-  --run-name: clamp(34px, 7.2dvh, 58px);
-  --run-timer: clamp(72px, 15dvh, 128px);
+  --run-name: clamp(28px, 5.8dvh, 48px);
+  --run-timer: clamp(56px, 12dvh, 104px);
   --run-frac: clamp(36px, 8dvh, 64px);
   --run-next: clamp(26px, 5.2dvh, 42px);
   --run-phase: clamp(16px, 3.2dvh, 22px);
@@ -435,10 +435,10 @@ input[type="text"], input[type="number"] {
 }
 .progress-box {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  width: min(94vw, 420px);
-  margin: 0 0 4px;
+  grid-template-columns: 1fr 1fr 1.15fr;
+  gap: 6px;
+  width: min(96vw, 440px);
+  margin: 0 0 2px;
   flex-shrink: 0;
 }
 .progress-item {
@@ -1195,27 +1195,42 @@ input[type="text"], input[type="number"] {
   font-size: clamp(22px, 5.5vw, 32px);
 }
 
-/* v173 overall */
-.overall-box {
-  display: grid;
-  justify-items: center;
-  gap: 2px;
-  margin: 0 0 8px;
-  padding: 10px 12px 8px;
-  border-radius: 16px;
-  border: 1px solid rgba(232, 165, 75, 0.35);
-  background: linear-gradient(160deg, rgba(232,165,75,.16), rgba(20,17,13,.55));
+/* v174 overall in progress row + protect next card */
+.progress-item.overall {
+  border-color: rgba(232, 165, 75, 0.4);
+  background: linear-gradient(160deg, rgba(232,165,75,.18), #17130e);
 }
-.overall-k {
-  font: 800 clamp(12px, 3.2vw, 15px) var(--font);
-  color: var(--muted);
+.progress-item.overall .progress-k {
+  color: var(--accent);
 }
-.overall-v {
-  font: 900 clamp(36px, 10vw, 56px)/1 var(--font);
-  color: #f6d7a4;
+.progress-item.overall .overall-v,
+.progress-v.overall-v {
+  font-family: var(--font) !important;
+  font-size: clamp(28px, 7.5dvh, 44px) !important;
+  font-weight: 900 !important;
+  color: #f6d7a4 !important;
   letter-spacing: -0.02em;
+  direction: rtl;
 }
 #runSub {
-  color: #d7c4a4;
-  font-size: clamp(16px, 4vw, 22px) !important;
+  color: #f0c27a;
+  font-size: clamp(22px, 5vw, 30px) !important;
+  font-weight: 900 !important;
+  min-height: 0;
+  flex-shrink: 0;
+}
+.run-stage .next-card {
+  flex: 0 0 auto !important;
+  flex-shrink: 0 !important;
+  margin-top: 4px !important;
+  min-height: 4.5rem;
+  z-index: 2;
+}
+.run-stage .timer-big {
+  flex-shrink: 1;
+  min-height: 0;
+}
+.run-stage .move-big {
+  flex-shrink: 1;
+  min-height: 0;
 }
