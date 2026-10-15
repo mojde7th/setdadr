@@ -15,7 +15,15 @@
   --display: "Space Grotesk", "Vazirmatn", sans-serif;
 }
 * { box-sizing: border-box; }
+html, /* v168 anti-zoom */
 html, body {
+  touch-action: manipulation;
+  -ms-touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  overscroll-behavior: none;
+}
+body {
   margin: 0;
   min-height: 100%;
   background:
@@ -128,7 +136,8 @@ html, body {
   font: 700 13px/1.45 var(--font);
   color: var(--muted);
 }
-.set-summary {
+.set-summary { display: none !important; /* v168 removed */
+
   margin: 0;
   padding: 12px 14px;
   border-radius: 14px;
@@ -409,7 +418,7 @@ input[type="text"], input[type="number"] {
   padding-bottom: 2px;
   /* فونت‌ها نسبت به ارتفاع صفحه بزرگ می‌مانند ولی اسکرول نمی‌خورند */
   --run-name: clamp(34px, 7.2dvh, 58px);
-  --run-timer: clamp(64px, 13dvh, 112px);
+  --run-timer: clamp(72px, 15dvh, 128px);
   --run-frac: clamp(36px, 8dvh, 64px);
   --run-next: clamp(26px, 5.2dvh, 42px);
   --run-phase: clamp(16px, 3.2dvh, 22px);
@@ -459,7 +468,8 @@ input[type="text"], input[type="number"] {
   margin-bottom: 0;
 }
 .run-stage.rest .timer-big {
-  font-size: var(--run-timer);
+  /* v168-rest-timer */
+  font-size: clamp(84px, 18dvh, 148px);
   margin: 2px 0 4px;
 }
 .run-stage.rest .move-big {
@@ -946,5 +956,59 @@ input[type="text"], input[type="number"] {
   white-space: nowrap;
 }
 .list .row.actions-row .btn.primary {
+  font-weight: 900;
+}
+
+/* v168 move memory chips + done polish */
+.move-suggest-wrap {
+  display: grid;
+  gap: 8px;
+  margin: 2px 0 4px;
+}
+.move-suggest-k {
+  font: 800 12px var(--font);
+  color: var(--muted);
+}
+.move-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.move-suggest[hidden] { display: none !important; }
+.move-chip {
+  border: 1px solid rgba(232, 165, 75, 0.35);
+  background: rgba(232, 165, 75, 0.1);
+  color: #f6d7a4;
+  border-radius: 999px;
+  padding: 8px 12px;
+  font: 800 13px var(--font);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  max-width: 100%;
+}
+.move-chip:active {
+  background: var(--accent);
+  color: #1a1208;
+  border-color: var(--accent);
+}
+.done-card {
+  background: #14110d;
+  border: 1px solid rgba(232, 165, 75, 0.22);
+  border-radius: 22px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+}
+.done-tiles {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (min-width: 420px) {
+  .done-tiles {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+.done-tile-k {
+  letter-spacing: 0;
+}
+.flow-txt {
   font-weight: 900;
 }

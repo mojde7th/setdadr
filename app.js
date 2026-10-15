@@ -1,6 +1,6 @@
 (() => {
   const LS = "setdadr-v2";
-  const APP_VER = "167";
+  const APP_VER = "168";
   // باشگاه: بلند بدون خش — گین معقول، بدون دیستورت WaveShaper
   const VOICE_LOUD = 56;
   const VOICE_STAT_LOUD = 14;
@@ -2915,25 +2915,67 @@
     if (tabEdit) tabEdit.hidden = name !== "edit";
     const topBar = $("#topBar");
     if (topBar) topBar.style.display = name === "run" ? "none" : "";
-    if (name === "edit") updatePlanSummary();
+    if (name === "edit") {
+      updatePlanSummary();
+      renderMoveSuggest();
+    }
   }
 
   function updatePlanSummary() {
-    const el = $("#planSummary");
-    if (!el) return;
-    const rounds = Math.max(1, Number($("#planRounds") && $("#planRounds").value) || 4);
-    const restSet = Math.max(0, Number($("#planRestSet") && $("#planRestSet").value) || 0);
-    const restMove = Math.max(0, Number($("#planRestMove") && $("#planRestMove").value) || 0);
-    const moves = circuit.length;
-    el.textContent =
-      toFaDigits(rounds) +
-      " ست · " +
-      toFaDigits(moves) +
-      " حرکت · استراحت ست " +
-      toFaDigits(restSet) +
-      " ثانیه · استراحت حرکت " +
-      toFaDigits(restMove) +
-      " ثانیه";
+    // خلاصه عددی در تنظیمات لازم نیست
+  }
+
+  function rememberedMoves() {
+    const map = new Map();
+    (state.moves || []).forEach((m) => {
+      const name = String(m && m.name || "").trim();
+      if (!name) return;
+      map.set(name, {
+        id: m.id || uid(),
+        name,
+        work: Math.max(5, Number(m.work) || 40)
+      });
+    });
+    (state.plans || []).forEach((p) => {
+      (p.circuit || []).forEach((c) => {
+        const name = String(c && c.name || "").trim();
+        if (!name || map.has(name)) return;
+        map.set(name, {
+          id: c.id || uid(),
+          name,
+          work: Math.max(5, Number(c.work) || 40)
+        });
+      });
+    });
+    return [...map.values()];
+  }
+
+  function renderMoveSuggest() {
+    const box = $("#moveSuggest");
+    if (!box) return;
+    box.innerHTML = "";
+    const list = rememberedMoves().slice(0, 24);
+    if (!list.length) {
+      box.hidden = true;
+      return;
+    }
+    box.hidden = false;
+    list.forEach((m) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "move-chip";
+      btn.textContent = m.name;
+      btn.addEventListener("click", () => {
+        const nameEl = $("#pickMoveName");
+        const workEl = $("#pickWork");
+        if (nameEl) nameEl.value = m.name;
+        if (workEl) workEl.value = String(m.work);
+        try {
+          warmMoveVoice(m.name);
+        } catch {}
+      });
+      box.appendChild(btn);
+    });
   }
 
   function uid() {
@@ -2944,7 +2986,7 @@
     sec = Math.max(0, Math.ceil(sec));
     const m = Math.floor(sec / 60);
     const s = sec % 60;
-    return m + ":" + String(s).padStart(2, "0");
+    return toFaDigits(m) + ":" + toFaDigits(String(s).padStart(2, "0"));
   }
 
   function toFaDigits(s) {
@@ -3438,7 +3480,7 @@
 
     if (next.nextName) {
       showRestThenNext(
-        "استراحت " + toFaDigits(next.dur) + " ثانیه",
+        "استراحت " + toFaDigits(next.dur) + "ث",
         next.nextName
       );
       return;
@@ -3463,7 +3505,7 @@
     const byMove = Array.isArray(stats.byMove) ? stats.byMove : [];
     const tileData = [
       ["ست", toFaDigits(rounds)],
-      ["کار", timePhrase(workSec)],
+      ["تمرین", timePhrase(workSec)],
       ["استراحت", timePhrase(restSec)],
       ["کالری", toFaDigits(calories)]
     ];
@@ -3526,12 +3568,7 @@
       toFaDigits(rounds) + "<span>/</span>" + toFaDigits(rounds);
     const msg = $("#doneMsg");
     if (msg) {
-      msg.textContent =
-        "آفرین، تمام شد · " +
-        toFaDigits(rounds) +
-        " ست · " +
-        toFaDigits(stats.totalMoves || 0) +
-        " حرکت کاری";
+      msg.textContent = "آفرین، تمرین تمام شد";
     }
     renderDoneStats(stats);
     show("done");
@@ -3588,6 +3625,7 @@
     $("#pickMoveName").value = "";
     renderCircuit();
     updatePlanSummary();
+    renderMoveSuggest();
   });
 
   ["planRounds", "planRestSet", "planRestMove"].forEach((id) => {
@@ -3710,6 +3748,34 @@
   document.addEventListener("click", touchKeeper, { capture: true });
 
   wireNumSteppers();
+  // جلوگیری از زوم دبل‌تپ / ژست در وب‌اپ
+  try {
+    document.addEventListener(
+      "gesturestart",
+      (e) => {
+        e.preventDefault();
+      },
+      { passive: false }
+    );
+    document.addEventListener(
+      "gesturechange",
+      (e) => {
+        e.preventDefault();
+      },
+      { passive: false }
+    );
+    let lastTouchEnd = 0;
+    document.addEventListener(
+      "touchend",
+      (e) => {
+        const now = Date.now();
+        if (now - lastTouchEnd <= 300) e.preventDefault();
+        lastTouchEnd = now;
+      },
+      { passive: false }
+    );
+  } catch {}
+
   const muteBtn = $("#btnMute");
   if (muteBtn) {
     muteBtn.addEventListener("click", () => {
